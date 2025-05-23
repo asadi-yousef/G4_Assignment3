@@ -11,6 +11,7 @@ import javafx.stage.Stage;
 
 import java.io.IOException;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.Catalog;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
@@ -21,6 +22,7 @@ public class App extends Application {
 
     private static Scene scene;
     private SimpleClient client;
+    private PrimaryController primaryController;
 
     @Override
     public void start(Stage stage) throws IOException {
@@ -53,16 +55,13 @@ public class App extends Application {
 	}
     
     @Subscribe
-    public void onWarningEvent(WarningEvent event) {
-    	Platform.runLater(() -> {
-    		Alert alert = new Alert(AlertType.WARNING,
-        			String.format("Message: %s\nTimestamp: %s\n",
-        					event.getWarning().getMessage(),
-        					event.getWarning().getTime().toString())
-        	);
-        	alert.show();
-    	});
-    	
+    public void onWarningEvent(Object msg) {
+    	if(msg.getClass().equals(Catalog.class)) {
+            //pass the received catalog to the primary controller through setCatalog
+        }
+        else if(msg instanceof String) {
+            System.out.println(msg);
+        }
     }
 
 	public static void main(String[] args) {

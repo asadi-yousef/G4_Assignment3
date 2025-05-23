@@ -1,5 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.Catalog;
+import il.cshaifasweng.OCSFMediatorExample.entities.Flower;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 
@@ -11,29 +13,23 @@ import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
 
 public class SimpleServer extends AbstractServer {
 	private static ArrayList<SubscribedClient> SubscribersList = new ArrayList<>();
+	private static Catalog catalog = new Catalog();
 
 	public SimpleServer(int port) {
 		super(port);
-		
+		//init catalog
 	}
 
 	@Override
 	protected void handleMessageFromClient(Object msg, ConnectionToClient client) {
 		String msgString = msg.toString();
-		if (msgString.startsWith("#warning")) {
-			Warning warning = new Warning("Warning from server!");
-			try {
-				client.sendToClient(warning);
-				System.out.format("Sent warning to client %s\n", client.getInetAddress().getHostAddress());
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-		}
-		else if(msgString.startsWith("add client")){
+
+		if(msgString.startsWith("add client")){
 			SubscribedClient connection = new SubscribedClient(client);
 			SubscribersList.add(connection);
 			try {
 				client.sendToClient("client added successfully");
+				client.sendToClient(catalog);
 			} catch (IOException e) {
 				throw new RuntimeException(e);
 			}
@@ -47,6 +43,9 @@ public class SimpleServer extends AbstractServer {
 					}
 				}
 			}
+		}
+		else if(msgString.contains("price")){
+			//update the price of flower with id x contained in the msgString
 		}
 	}
 	public void sendToAllClients(String message) {
