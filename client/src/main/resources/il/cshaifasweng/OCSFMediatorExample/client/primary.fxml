@@ -1,24 +1,56 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.scene.control.Button?>
-<?import javafx.scene.layout.AnchorPane?>
-<?import javafx.scene.layout.GridPane?>
-<?import javafx.scene.text.Text?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.shape.Line?>
+<?import javafx.scene.shape.Rectangle?>
+<?import javafx.scene.text.Font?>
 
 
-<AnchorPane fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController"
-            xmlns="http://javafx.com/javafx/8"
-            xmlns:fx="http://javafx.com/fxml"
-            prefHeight="400.0" prefWidth="600.0">
 
+<AnchorPane prefHeight="683.0" prefWidth="902.0"
+            xmlns="http://javafx.com/javafx/23.0.1"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController">
 
    <GridPane fx:id="catalogGrid"
-             layoutX="10.0" layoutY="10.0"
-             prefHeight="300.0" prefWidth="500.0"
-             hgap="20" vgap="20" />
+             hgap="20" vgap="20"
+             prefHeight="464.0" prefWidth="690.0"
+             AnchorPane.topAnchor="110.0"
+             AnchorPane.leftAnchor="106.0"
+             AnchorPane.rightAnchor="106.0"
+             AnchorPane.bottomAnchor="110.0">
+      <columnConstraints>
+         <ColumnConstraints percentWidth="33"/>
+         <ColumnConstraints percentWidth="33"/>
+         <ColumnConstraints percentWidth="33"/>
+      </columnConstraints>
+      <rowConstraints>
+         <RowConstraints percentHeight="33"/>
+         <RowConstraints percentHeight="33"/>
+         <RowConstraints percentHeight="33"/>
+      </rowConstraints>
+      <children>
+         <Button text="Preview 1" GridPane.columnIndex="0" GridPane.rowIndex="0" visible="false"/>
+         <Button text="Preview 2" GridPane.columnIndex="1" GridPane.rowIndex="0" visible="false"/>
+         <Button text="Preview 3" GridPane.columnIndex="2" GridPane.rowIndex="0" visible="false"/>
+         <Button text="Preview 4" GridPane.columnIndex="0" GridPane.rowIndex="1" visible="false"/>
+      </children>
+   </GridPane>
 
-   <Button fx:id="editPricesButton"
-           layoutX="240.0" layoutY="360.0"
-           text="Edit Prices"
-           onAction="#onEditPricesClicked"/>
+   <!-- Everything else stays the same -->
+   <Button fx:id="editPricesButton" layoutX="25.0" layoutY="643.0" onAction="#onEditPricesClicked" text="Edit Prices" />
+   <Label layoutX="382.0" layoutY="59.0" prefHeight="44.0" prefWidth="130.0" text="Catalog">
+      <font>
+         <Font name="Bell MT Bold" size="36.0" />
+      </font>
+   </Label>
+   <Line endX="164.0" endY="0.0" layoutX="744.0" layoutY="58.0" startX="-744.0" startY="0.0" />
+   <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ca83e7" height="60.0" stroke="BLACK" strokeType="INSIDE" width="910.0" />
+   <Label layoutX="19.0" layoutY="8.0" prefHeight="26.0" prefWidth="82.0" text="Lilac">
+      <font>
+         <Font name="Bell MT Italic" size="36.0" />
+      </font>
+   </Label>
 </AnchorPane>
+
