@@ -19,6 +19,7 @@ public class SimpleClient extends AbstractClient {
 		EventBus.getDefault().post(msg);
 	}
 
+
 	public static SimpleClient getClient() {
 		if (client == null) {
 			client = new SimpleClient("localhost", 3000);
