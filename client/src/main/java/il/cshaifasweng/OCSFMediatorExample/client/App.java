@@ -56,8 +56,6 @@ public class App extends Application {
 
             dialog.getDialogPane().setContent(grid);
 
-            Platform.runLater(ipField::requestFocus);
-
             dialog.setResultConverter(dialogButton -> {
                 if (dialogButton == connectButtonType) {
                     return new Pair<>(ipField.getText(), portField.getText());
