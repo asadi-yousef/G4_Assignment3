@@ -36,15 +36,19 @@ public class Main extends Application {
 		primaryStage.setScene(new Scene(root));
 		primaryStage.show();
 
-		//try {
-			//FXMLLoader loader = new FXMLLoader(Main.class.getResource("/il/cshaifasweng/OCSFMediatorExample/client/secondary.fxml"));
-			//Parent root = loader.load();
-			//primaryStage.setTitle("Edit Flower Price");
-			//primaryStage.setScene(new Scene(root));
-		//} catch (Exception e) {
-		//	e.printStackTrace();
-		//}
 
+	}
+
+	public static void switchToViewFlowerView() throws IOException {
+		FXMLLoader loader = new FXMLLoader(Main.class.getResource("viewFlower.fxml"));
+		Parent root = loader.load();
+
+		// Get controller and call the method to load flower data
+		ViewFlowerController controller = loader.getController();
+		controller.loadFlowerDetails();
+
+		primaryStage.setScene(new Scene(root));
+		primaryStage.show();
 	}
 
 	public static void main(String[] args) {

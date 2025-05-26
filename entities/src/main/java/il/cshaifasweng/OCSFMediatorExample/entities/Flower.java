@@ -21,7 +21,7 @@ public class Flower implements Serializable {
     @Column(name = "price")
     private double price;
 
-    @Lob
+    @Column(name = "ImagePath")
     private String image_path;
 
     public Flower() { }
@@ -70,12 +70,13 @@ public class Flower implements Serializable {
         Flower flower = (Flower) obj;
         return Objects.equals(name, flower.name) &&
                 Objects.equals(type, flower.type) &&
-                Double.compare(flower.price, price) == 0;
+                Double.compare(flower.price, price) == 0 &&
+                Objects.equals(image_path, flower.image_path);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, type, price);
+        return Objects.hash(name, type, price,image_path);
     }
 
 }

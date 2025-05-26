@@ -24,6 +24,7 @@ public class App {
         configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
 
         configuration.setProperty("hibernate.connection.password", password);
+        configuration.setProperty("hibernate.hbm2ddl.auto", "update");
 
         configuration.addAnnotatedClass(Flower.class);
 
@@ -43,26 +44,34 @@ public class App {
         SimpleServer server = new SimpleServer(3000);
         server.listen();
 
+
         // Test DB logic
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             Transaction tx = session.beginTransaction();
 
-            Flower flower1 = new Flower("Rose", "Red", 19.99,null);
+            // Check if the Flower table is empty
+            Long count = (Long) session.createQuery("select count(f.id) from Flower f").uniqueResult();
+
+            if (count == 0) {
+            Flower flower1 = new Flower("Roses", "Flower", 19.99,"/il/cshaifasweng/OCSFMediatorExample/client/images/roses.png");
             session.save(flower1);session.flush();
-            Flower flower2 = new Flower("Tulip", "Yellow", 14.50,null);
+            Flower flower2 = new Flower("Tulips", "Flower", 14.50, "/il/cshaifasweng/OCSFMediatorExample/client/images/white tulip.png");
             session.save(flower2); session.flush();
-            Flower flower3 = new Flower("Lily", "White", 17.25,null);
+            Flower flower3 = new Flower("Pretty in Pink Lilies", "Flower", 17.25,"/il/cshaifasweng/OCSFMediatorExample/client/images/lilies.png");
             session.save(flower3); session.flush();
-            Flower flower4 = new Flower("Sunflower", "Golden", 12.00,null);
+            Flower flower4 = new Flower("Sunflower Bouquet", "Flower", 12.00,"/il/cshaifasweng/OCSFMediatorExample/client/images/sunflower.png");
             session.save(flower4); session.flush();
-            Flower flower5=new Flower("Orchid","Purple",25.75,null);
+            Flower flower5=new Flower("Orange Carnations Bouquet","Flower",25.75,"/il/cshaifasweng/OCSFMediatorExample/client/images/carnations.png");
             session.save(flower5); session.flush();
-            Flower flowerPot1 = new Flower("Terracotta Pot", "Brown", 9.99, null);
+            Flower flowerPot1 = new Flower("Purple Orchid Pot", "Brown", 9.99, "/il/cshaifasweng/OCSFMediatorExample/client/images/orchids.png");
             session.save(flowerPot1); session.flush();
-            Flower flowerPot2 = new Flower("Ceramic Pot", "White", 14.49, null);
+            Flower flowerPot2 = new Flower("Ceramic Pot", "White", 14.49, "/il/cshaifasweng/OCSFMediatorExample/client/images/ceramic.png");
             session.save(flowerPot2); session.flush();
-            Flower flowerPot3 = new Flower("Plastic Pot", "Green", 4.75, null);
+            Flower flowerPot3 = new Flower("Plastic Pot", "Green", 4.75, "/il/cshaifasweng/OCSFMediatorExample/client/images/plastic.png");
             session.save(flowerPot3); session.flush();
+            } else {
+                System.out.println("Flower table already contains data. Skipping insert.");
+            }
 
             tx.commit();
         } catch (Exception e) {

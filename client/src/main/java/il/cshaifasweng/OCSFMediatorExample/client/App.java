@@ -41,9 +41,6 @@ public class App extends Application {
         FXMLLoader fxmlLoader = new FXMLLoader(App.class.getResource(fxml + ".fxml"));
         return fxmlLoader.load();
     }
-
-
-
     @Override
     public void stop() throws Exception {
         // TODO Auto-generated method stub

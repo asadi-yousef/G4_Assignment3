@@ -46,6 +46,7 @@ public class SimpleServer extends AbstractServer {
 			SubscribersList.add(connection);
 			try {
 				client.sendToClient("client added successfully");
+				System.out.println(catalog.getFlowers().get(1));
 				client.sendToClient(catalog);
 			} catch (IOException e) {
 				throw new RuntimeException(e);
@@ -58,14 +59,48 @@ public class SimpleServer extends AbstractServer {
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
-		} else if (msgString.startsWith("remove client")) {
+		}
+		else if (msgString.startsWith("update_price")) {
+			String[] parts = msgString.split(":");
+			if (parts.length == 3) {
+				try {
+					int flowerId = Integer.parseInt(parts[1]);
+					double newPrice = Double.parseDouble(parts[2]);
+					updateFlowerPrice(flowerId, newPrice);
+					this.catalog.setFlowers(getFlowerListFromDB());
+					sendToAllClients(catalog);
+				} catch (NumberFormatException e) {
+					e.printStackTrace();
+				}
+            }
+		}
+		else if (msgString.startsWith("remove client")) {
 			if (!SubscribersList.isEmpty()) {
 				SubscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
 			}
-		} else if (msgString.contains("price")) {
-			// update the price logic goes here later
 		}
 	}
+
+	public void updateFlowerPrice(int flowerId, double newPrice) {
+		Transaction tx = null;
+		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+			tx = session.beginTransaction();
+
+			Flower flower = session.get(Flower.class, flowerId);
+			if (flower != null) {
+				flower.setPrice(newPrice);
+				session.update(flower); // Optional
+			} else {
+				System.out.println("Flower not found with ID: " + flowerId);
+			}
+
+			tx.commit();
+		} catch (Exception e) {
+			if (tx != null) tx.rollback();
+			e.printStackTrace();
+		}
+	}
+
 
 
 	public void sendToAllClients(String message) {

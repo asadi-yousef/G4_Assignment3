@@ -1,7 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Flower;
-import il.cshaifasweng.OCSFMediatorExample.entities.PriceUpdate;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -55,9 +54,6 @@ public class SecondaryController implements Initializable {
                 }
 
                 selectedFlower.setPrice(newPrice);
-                PriceUpdate update = new PriceUpdate(selectedFlower);
-
-                SimpleClient.getClient().sendToServer(update);
 
                 Main.switchToPrimaryView(); // return to catalog
 

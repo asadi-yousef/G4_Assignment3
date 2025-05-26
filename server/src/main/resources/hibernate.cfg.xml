@@ -9,7 +9,7 @@
         <property name="hibernate.hbm2ddl.auto">update</property>
         <property name="hibernate.connection.url">jdbc:mysql://localhost/MyFirstDataBase?serverTimezone=UTC</property>
         <property name="hibernate.connection.username">root</property>
-        <property name="hibernate.connection.password">Renata123</property>
+        <property name="hibernate.connection.password">password</property>
 
 
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Flower"/>

@@ -2,52 +2,50 @@
 
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<?import javafx.scene.shape.Line?>
-<?import javafx.scene.shape.Rectangle?>
-<?import javafx.scene.text.Font?>
+<?import javafx.scene.shape.*?>
+<?import javafx.scene.text.*?>
 
-<AnchorPane prefHeight="683.0" prefWidth="902.0"
-            xmlns="http://javafx.com/javafx/23.0.1"
-            xmlns:fx="http://javafx.com/fxml/1"
-            fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController">
+<ScrollPane fx:id="mainScrollPane" fitToHeight="true" fitToWidth="true" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController">
 
-   <GridPane fx:id="catalogGrid"
-             hgap="20" vgap="20"
-             prefHeight="464.0" prefWidth="690.0"
-             AnchorPane.topAnchor="110.0"
-             AnchorPane.leftAnchor="106.0"
-             AnchorPane.rightAnchor="106.0"
-             AnchorPane.bottomAnchor="110.0">
-      <columnConstraints>
-         <ColumnConstraints percentWidth="33"/>
-         <ColumnConstraints percentWidth="33"/>
-         <ColumnConstraints percentWidth="33"/>
-      </columnConstraints>
-      <rowConstraints>
-         <RowConstraints percentHeight="33"/>
-         <RowConstraints percentHeight="33"/>
-         <RowConstraints percentHeight="33"/>
-      </rowConstraints>
-      <children>
-         <Button text="Preview 1" GridPane.columnIndex="0" GridPane.rowIndex="0" visible="false"/>
-         <Button text="Preview 2" GridPane.columnIndex="1" GridPane.rowIndex="0" visible="false"/>
-         <Button text="Preview 3" GridPane.columnIndex="2" GridPane.rowIndex="0" visible="false"/>
-      </children>
-   </GridPane>
+   <content>
+      <AnchorPane fx:id="mainAnchorPane" prefHeight="671.0" prefWidth="1200">
+         <children>
 
-   <!-- Everything else stays the same -->
-   <Button fx:id="editPricesButton" layoutX="25.0" layoutY="643.0" onAction="#onEditPricesClicked" text="Edit Prices" />
-   <Label layoutX="382.0" layoutY="59.0" prefHeight="44.0" prefWidth="130.0" text="Catalog">
-      <font>
-         <Font name="Bell MT Bold" size="36.0" />
-      </font>
-   </Label>
-   <Line endX="164.0" endY="0.0" layoutX="744.0" layoutY="58.0" startX="-744.0" startY="0.0" />
-   <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ca83e7" height="60.0" stroke="BLACK" strokeType="INSIDE" width="910.0" />
-   <Label layoutX="19.0" layoutY="8.0" prefHeight="26.0" prefWidth="82.0" text="Lilac">
-      <font>
-         <Font name="Bell MT Italic" size="36.0" />
-      </font>
-   </Label>
-</AnchorPane>
+            <Rectangle fx:id="backgroundRect" arcHeight="5.0" arcWidth="5.0" fill="#ca83e7" height="60.0" stroke="BLACK" strokeType="INSIDE" width="1200" />
 
+
+            <Label layoutX="19.0" layoutY="8.0" prefHeight="26.0" prefWidth="82.0" text="Lilac">
+               <font>
+                  <Font name="Bell MT Italic" size="36.0" />
+               </font>
+            </Label>
+
+            <Line endX="245.00006103515625" endY="2.0000038146972656" layoutX="1200" layoutY="58.0" startX="-1200.0" startY="2.0000076293945312" />
+
+            <Label layoutX="500" layoutY="61.0" prefHeight="44.0" prefWidth="130.0" text="Catalog">
+               <font>
+                  <Font name="Bell MT Bold" size="36.0" />
+               </font>
+            </Label>
+
+            <GridPane fx:id="catalogGrid" hgap="20" layoutX="104.0" layoutY="133.0" prefHeight="464.0" prefWidth="690.0" vgap="20" AnchorPane.bottomAnchor="87.0" AnchorPane.leftAnchor="104.0" AnchorPane.rightAnchor="108.0" AnchorPane.topAnchor="133.0">
+               <columnConstraints>
+                  <ColumnConstraints percentWidth="40" />
+                  <ColumnConstraints percentWidth="40" />
+                  <ColumnConstraints percentWidth="40" />
+               </columnConstraints>
+               <rowConstraints>
+                  <RowConstraints percentHeight="80" />
+                  <RowConstraints percentHeight="80" />
+                  <RowConstraints percentHeight="80" />
+               </rowConstraints>
+               <children>
+                  <Button text="Preview 1" visible="false" GridPane.columnIndex="0" GridPane.rowIndex="0" />
+                  <Button text="Preview 2" visible="false" GridPane.columnIndex="1" GridPane.rowIndex="0" />
+                  <Button text="Preview 3" visible="false" GridPane.columnIndex="2" GridPane.rowIndex="0" />
+               </children>
+            </GridPane>
+         </children>
+      </AnchorPane>
+   </content>
+</ScrollPane>
