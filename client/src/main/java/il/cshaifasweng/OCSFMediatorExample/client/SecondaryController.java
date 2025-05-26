@@ -55,7 +55,7 @@ public class SecondaryController implements Initializable {
 
                 selectedFlower.setPrice(newPrice);
 
-                Main.switchToPrimaryView(); // return to catalog
+                App.switchToPrimaryView(); // return to catalog
 
             } catch (NumberFormatException e) {
                 showAlert("Invalid price format.");

@@ -45,6 +45,6 @@ public class ViewFlowerController {
 
     @FXML
     private void handleBack() throws Exception {
-        Main.switchToPrimaryView();
+        App.switchToPrimaryView();
     }
 }

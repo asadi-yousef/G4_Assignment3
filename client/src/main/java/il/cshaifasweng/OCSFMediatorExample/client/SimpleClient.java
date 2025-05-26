@@ -23,12 +23,14 @@ public class SimpleClient extends AbstractClient {
 
 
 	public static SimpleClient getClient() {
-		//Scanner scanner = new Scanner(System.in);
-
-		//System.out.print("Enter server IP address: ");
-		//String ipAddress = scanner.nextLine();
 		if (client == null) {
 			client = new SimpleClient("localhost", 3000);
+		}
+		return client;
+	}
+	public static SimpleClient getClient(String host, int port) {
+		if (client == null) {
+			client = new SimpleClient(host, port);
 		}
 		return client;
 	}

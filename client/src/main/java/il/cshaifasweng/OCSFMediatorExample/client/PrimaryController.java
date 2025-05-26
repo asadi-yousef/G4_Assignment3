@@ -93,7 +93,7 @@ public class PrimaryController implements Initializable {
 					System.out.println("View flower with ID: " + flowerId);
 					ViewFlowerController.setSelectedFlower(flower);
                     try {
-                        Main.switchToViewFlowerView();
+                        App.switchToViewFlowerView();
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
