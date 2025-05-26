@@ -3,16 +3,17 @@ package il.cshaifasweng.OCSFMediatorExample.client;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
+import javafx.geometry.Insets;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Alert.AlertType;
-import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.*;
+import javafx.scene.layout.GridPane;
 import javafx.stage.Stage;
 
 import java.io.IOException;
 import java.util.Optional;
 
+import javafx.util.Pair;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
@@ -31,27 +32,61 @@ public class App extends Application {
         EventBus.getDefault().register(this);
 
         boolean connected = false;
-        while (!connected) {
-            TextInputDialog dialog = new TextInputDialog("127.0.0.1");
-            dialog.setTitle("Connect to Server");
-            dialog.setHeaderText("Enter Server IP Address");
-            dialog.setContentText("IP:");
 
-            Optional<String> result = dialog.showAndWait();
-            if (result.isPresent()) {
-                String ip = result.get().trim();
-                try {
-                    client = SimpleClient.getClient(ip, 3000); // use provided IP
-                    client.openConnection();
-                    connected = true;
-                } catch (IOException e) {
-                    showErrorDialog("Connection Failed", "Could not connect to " + ip + ":3000");
-                    // Reset client to null to allow another attempt
-                    resetClient();
+        while (!connected) {
+            Dialog<Pair<String, String>> dialog = new Dialog<>();
+            dialog.setTitle("Connect to Server");
+            dialog.setHeaderText("Enter Server IP Address and Port");
+
+            ButtonType connectButtonType = new ButtonType("Connect", ButtonBar.ButtonData.OK_DONE);
+            dialog.getDialogPane().getButtonTypes().addAll(connectButtonType, ButtonType.CANCEL);
+
+            GridPane grid = new GridPane();
+            grid.setHgap(10);
+            grid.setVgap(10);
+            grid.setPadding(new Insets(20, 150, 10, 10));
+
+            TextField ipField = new TextField("127.0.0.1");
+            TextField portField = new TextField("3000");
+
+            grid.add(new Label("IP Address:"), 0, 0);
+            grid.add(ipField, 1, 0);
+            grid.add(new Label("Port:"), 0, 1);
+            grid.add(portField, 1, 1);
+
+            dialog.getDialogPane().setContent(grid);
+
+            Platform.runLater(ipField::requestFocus);
+
+            dialog.setResultConverter(dialogButton -> {
+                if (dialogButton == connectButtonType) {
+                    return new Pair<>(ipField.getText(), portField.getText());
                 }
-            } else {
+                return null;
+            });
+
+            Optional<Pair<String, String>> result = dialog.showAndWait();
+
+            if (result.isEmpty()) {
                 Platform.exit();
                 return;
+            }
+
+            String ip = result.get().getKey().trim();
+            String portInput = result.get().getValue().trim();
+
+            try {
+                int port = Integer.parseInt(portInput);
+                if (port < 1 || port > 65535) throw new NumberFormatException();
+
+                client = SimpleClient.getClient(ip, port);
+                client.openConnection();
+                connected = true;
+            } catch (NumberFormatException e) {
+                showErrorDialog("Invalid Port", "Please enter a valid port number (1-65535).");
+            } catch (IOException e) {
+                showErrorDialog("Connection Failed", "Could not connect to " + ip + ":" + portInput);
+                resetClient();
             }
         }
 
@@ -63,6 +98,7 @@ public class App extends Application {
             Platform.exit();
         }
     }
+
     private void showErrorDialog(String title, String content) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle(title);
@@ -80,7 +116,6 @@ public class App extends Application {
             e.printStackTrace();
         }
     }
-
 
     public static void switchToPrimaryView() throws IOException {
         FXMLLoader loader = new FXMLLoader(App.class.getResource("primary.fxml"));
@@ -125,7 +160,7 @@ public class App extends Application {
     @Subscribe
     public void onWarningEvent(WarningEvent event) {
         Platform.runLater(() -> {
-            Alert alert = new Alert(AlertType.WARNING,
+            Alert alert = new Alert(Alert.AlertType.WARNING,
                     String.format("Message: %s\nTimestamp: %s\n",
                             event.getWarning().getMessage(),
                             event.getWarning().getTime().toString())
