@@ -84,7 +84,7 @@ public class PrimaryController implements Initializable {
 				catalogGrid.add(itemPane, col, row);
 
 				col++;
-				if (col == 4) {
+				if (col == 2) {
 					col = 0;
 					row++;
 				}
