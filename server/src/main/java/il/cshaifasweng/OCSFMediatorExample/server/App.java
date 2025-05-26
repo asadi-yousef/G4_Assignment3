@@ -21,6 +21,8 @@ public class App {
         Scanner scanner = new Scanner(System.in);
         System.out.print("Enter your MySQL password : ");
         String password = scanner.nextLine();
+        configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
+
         configuration.setProperty("hibernate.connection.password", password);
 
         configuration.addAnnotatedClass(Flower.class);
@@ -31,6 +33,13 @@ public class App {
     }
 
     public static void main(String[] args) throws IOException {
+        // Prompt for password and build custom SessionFactory
+        SessionFactory sessionFactory = getSessionFactory();
+
+        // Set it into HibernateUtil
+        HibernateUtil.setSessionFactory(sessionFactory);
+
+        // Start server
         SimpleServer server = new SimpleServer(3000);
         server.listen();
 
@@ -60,6 +69,10 @@ public class App {
             e.printStackTrace();
         }
 
-        Runtime.getRuntime().addShutdownHook(new Thread(HibernateUtil::shutdown));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            HibernateUtil.shutdown();
+            com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
+        }));
+
     }
 }
