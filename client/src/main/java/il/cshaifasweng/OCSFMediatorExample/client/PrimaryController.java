@@ -56,6 +56,7 @@ public class PrimaryController implements Initializable {
 
 	@Subscribe
 	public void onCatalogReceived(Catalog catalog) {
+		System.out.println("Catalog received");
 		this.catalog = catalog;
 		List<Flower> flowers = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
 
@@ -152,11 +153,5 @@ public class PrimaryController implements Initializable {
 			alert.setContentText(message);
 			alert.showAndWait();
 		});
-	}
-
-	public void onClose() {
-		EventBus.getDefault().unregister(this);
-		Platform.exit();
-		System.exit(0);
 	}
 }

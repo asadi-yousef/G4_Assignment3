@@ -151,11 +151,6 @@ public class App extends Application {
     }
 
     @Subscribe
-    public void onMessage(Object message) {
-        // Add handling logic if needed
-    }
-
-    @Subscribe
     public void onWarningEvent(WarningEvent event) {
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.WARNING,

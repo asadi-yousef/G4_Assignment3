@@ -40,18 +40,7 @@ public class SimpleServer extends AbstractServer {
 	protected void handleMessageFromClient(Object msg, ConnectionToClient client) {
 		String msgString = msg.toString();
 
-		System.out.println("Recieved from client : " + msgString);
-		if (msgString.startsWith("add client")) {
-			SubscribedClient connection = new SubscribedClient(client);
-			SubscribersList.add(connection);
-			try {
-				client.sendToClient("client added successfully");
-				System.out.println(catalog.getFlowers().get(1));
-				client.sendToClient(catalog);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-		} else if (msgString.equals("request_catalog")) {
+		if (msgString.equals("request_catalog")) {
 			List<Flower> flowerList = getFlowerListFromDB();
 			catalog = new Catalog(flowerList);
 			try {
