@@ -1,19 +1,19 @@
 package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
-import java.util.Arrays;
+
 import java.io.Serializable;
 import java.util.Objects;
 
 @Entity
-@Table(name ="flowers")
+@Table(name ="Products")
 
-public class Flower implements Serializable {
+public class Product implements Serializable {
     private static final long serialVersionUID = -5912738471623457890L;
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name="ID")
-    private int id;
+    private Long id;
     @Column(name = "name")
     private String name;
     @Column(name = "type")
@@ -24,15 +24,15 @@ public class Flower implements Serializable {
     @Column(name = "ImagePath")
     private String image_path;
 
-    public Flower() { }
+    public Product() { }
 
-    public Flower(String name, String type, double price,String image_path) {
+    public Product(String name, String type, double price, String image_path) {
         this.name = name;
         this.type = type;
         this.price = price;
         this.image_path = image_path;
     }
-    public void setId(int id) {
+    public void setId(Long id) {
         this.id = id;
     }
     public String getName() {
@@ -47,7 +47,7 @@ public class Flower implements Serializable {
     public void setType(String type) {
         this.type = type;
     }
-    public int getId() {
+    public Long getId() {
         return id;
     }
     public double getPrice() {
@@ -67,11 +67,11 @@ public class Flower implements Serializable {
     public boolean equals(Object obj) {
         if (this == obj) return true;
         if (obj == null || getClass() != obj.getClass()) return false;
-        Flower flower = (Flower) obj;
-        return Objects.equals(name, flower.name) &&
-                Objects.equals(type, flower.type) &&
-                Double.compare(flower.price, price) == 0 &&
-                Objects.equals(image_path, flower.image_path);
+        Product product = (Product) obj;
+        return Objects.equals(name, product.name) &&
+                Objects.equals(type, product.type) &&
+                Double.compare(product.price, price) == 0 &&
+                Objects.equals(image_path, product.image_path);
     }
 
     @Override

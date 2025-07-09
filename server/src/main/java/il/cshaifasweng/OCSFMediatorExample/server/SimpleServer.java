@@ -1,14 +1,15 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Catalog;
-import il.cshaifasweng.OCSFMediatorExample.entities.Flower;
+import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
+import il.cshaifasweng.OCSFMediatorExample.entities.Product;
+import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 
 import java.io.IOException;
 import java.util.ArrayList;
 
-import il.cshaifasweng.OCSFMediatorExample.entities.Warning;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
 
 import org.hibernate.Session;
@@ -25,15 +26,15 @@ public class SimpleServer extends AbstractServer {
 		catalog.setFlowers(getFlowerListFromDB());
 	}
 
-	private List<Flower> getFlowerListFromDB() {
-		List<Flower> flowerList;
+	private List<Product> getFlowerListFromDB() {
+		List<Product> productList;
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-			flowerList = session.createQuery("from Flower", Flower.class).list();
+			productList = session.createQuery("from Product", Product.class).list();
 		} catch (Exception e) {
 			e.printStackTrace();
-			flowerList = new ArrayList<>();
+			productList = new ArrayList<>();
 		}
-		return flowerList;
+		return productList;
 	}
 
 	@Override
@@ -41,8 +42,8 @@ public class SimpleServer extends AbstractServer {
 		String msgString = msg.toString();
 
 		if (msgString.equals("request_catalog")) {
-			List<Flower> flowerList = getFlowerListFromDB();
-			catalog = new Catalog(flowerList);
+			List<Product> productList = getFlowerListFromDB();
+			catalog = new Catalog(productList);
 			try {
 				client.sendToClient(catalog);
 			} catch (IOException e) {
@@ -67,6 +68,35 @@ public class SimpleServer extends AbstractServer {
 			if (!SubscribersList.isEmpty()) {
 				SubscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
 			}
+		} else if (msgString.contains("check existence")) {
+			System.out.println("check existence");
+			Transaction tx = null;
+			try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+				String username;
+				String password;
+				String tmp;
+
+				tx = session.beginTransaction();
+				tmp = msgString.substring("check existence: ".length());
+				username = tmp.split(" ")[0];
+				password = tmp.split(" ")[1];
+
+				User user = session.createQuery("FROM User WHERE username = :username", User.class)
+						.setParameter("username", username)
+						.uniqueResult();
+				if(user == null) {
+					System.out.println("Customer not found");
+					client.sendToClient("username or password is incorrect");
+				}
+				else {
+					System.out.println("Customer found");
+					client.sendToClient("both username and password are correct");
+				}
+				tx.commit();
+			} catch (Exception e) {
+				if (tx != null) tx.rollback();
+				e.printStackTrace();
+			}
 		}
 	}
 
@@ -75,10 +105,10 @@ public class SimpleServer extends AbstractServer {
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
 			tx = session.beginTransaction();
 
-			Flower flower = session.get(Flower.class, flowerId);
-			if (flower != null) {
-				flower.setPrice(newPrice);
-				session.update(flower); // Optional
+			Product product = session.get(Product.class, flowerId);
+			if (product != null) {
+				product.setPrice(newPrice);
+				session.update(product); // Optional
 			} else {
 				System.out.println("Flower not found with ID: " + flowerId);
 			}

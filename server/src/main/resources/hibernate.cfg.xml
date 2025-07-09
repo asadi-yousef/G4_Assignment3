@@ -11,7 +11,10 @@
         <property name="hibernate.connection.username">root</property>
         <property name="hibernate.connection.password">password</property>
 
+        <!-- Register all entity classes here -->
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Product"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Customer"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.User"/>
 
-        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Flower"/>
     </session-factory>
 </hibernate-configuration>

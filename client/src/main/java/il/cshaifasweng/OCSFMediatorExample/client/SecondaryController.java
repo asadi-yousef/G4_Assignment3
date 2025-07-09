@@ -1,6 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
-import il.cshaifasweng.OCSFMediatorExample.entities.Flower;
+import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -30,10 +30,10 @@ public class SecondaryController implements Initializable {
     @FXML
     private Button confirmButton;
 
-    private static Flower selectedFlower;
+    private static Product selectedProduct;
 
-    public static void setSelectedFlower(Flower flower) {
-        selectedFlower = flower;
+    public static void setSelectedFlower(Product product) {
+        selectedProduct = product;
     }
 
     @Override
@@ -53,7 +53,7 @@ public class SecondaryController implements Initializable {
                     return;
                 }
 
-                selectedFlower.setPrice(newPrice);
+                selectedProduct.setPrice(newPrice);
 
                 App.switchToPrimaryView(); // return to catalog
 
@@ -70,10 +70,10 @@ public class SecondaryController implements Initializable {
     }
 
     public void loadFlowerDetails() {
-        if (selectedFlower != null) {
-            nameLabel.setText("Name: " + selectedFlower.getName());
-            typeLabel.setText("Type: " + selectedFlower.getType());
-            priceLabel.setText(String.format("Current Price: $%.2f", selectedFlower.getPrice()));
+        if (selectedProduct != null) {
+            nameLabel.setText("Name: " + selectedProduct.getName());
+            typeLabel.setText("Type: " + selectedProduct.getType());
+            priceLabel.setText(String.format("Current Price: $%.2f", selectedProduct.getPrice()));
         }
     }
 

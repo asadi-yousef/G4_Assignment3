@@ -1,5 +1,5 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
-import il.cshaifasweng.OCSFMediatorExample.entities.Flower;
+import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
 import javafx.scene.image.Image;
@@ -15,13 +15,13 @@ public class ViewFlowerController {
     @FXML
     private Label priceLabel;
 
-    private static Flower selectedFlower;
+    private static Product selectedProduct;
 
-    public static void setSelectedFlower(Flower flower) {
-        selectedFlower = flower;
+    public static void setSelectedFlower(Product product) {
+        selectedProduct = product;
     }
     public void loadFlowerDetails(){
-        Image image = new Image(String.valueOf(PrimaryController.class.getResource(selectedFlower.getImagePath()))); // Load from URL or file
+        Image image = new Image(String.valueOf(PrimaryController.class.getResource(selectedProduct.getImagePath()))); // Load from URL or file
         flowerImage.setImage(image);
         flowerImage.setFitWidth(400);
         flowerImage.setFitHeight(400);
@@ -29,16 +29,16 @@ public class ViewFlowerController {
     }
     @FXML
     public void initialize() {
-        if (selectedFlower != null) {
-            nameLabel.setText("Name: " + selectedFlower.getName());
-            typeLabel.setText("Type: " + selectedFlower.getType());
-            priceLabel.setText(String.format("Price: $%.2f", selectedFlower.getPrice()));
+        if (selectedProduct != null) {
+            nameLabel.setText("Name: " + selectedProduct.getName());
+            typeLabel.setText("Type: " + selectedProduct.getType());
+            priceLabel.setText(String.format("Price: $%.2f", selectedProduct.getPrice()));
 
             try {
-                Image image = new Image(String.valueOf(SecondaryController.class.getResource(selectedFlower.getImagePath())));
+                Image image = new Image(String.valueOf(SecondaryController.class.getResource(selectedProduct.getImagePath())));
                 flowerImage.setImage(image);
             } catch (Exception e) {
-                System.out.println("Could not load image for " + selectedFlower.getName());
+                System.out.println("Could not load image for " + selectedProduct.getName());
             }
         }
     }

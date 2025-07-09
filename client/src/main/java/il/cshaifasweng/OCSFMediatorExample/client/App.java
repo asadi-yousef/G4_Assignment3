@@ -122,6 +122,13 @@ public class App extends Application {
         primaryStage.setScene(new Scene(root));
     }
 
+    public static void switchToLogIn() throws IOException {
+        FXMLLoader loader = new FXMLLoader(App.class.getResource("logInView.fxml"));
+        Parent root = loader.load();
+        primaryStage.setTitle("Log In");
+        primaryStage.setScene(new Scene(root));
+    }
+
     public static void switchToSecondaryView() throws IOException {
         FXMLLoader loader = new FXMLLoader(App.class.getResource("secondary.fxml"));
         Parent root = loader.load();

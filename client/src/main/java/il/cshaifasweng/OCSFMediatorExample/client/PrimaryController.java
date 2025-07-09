@@ -1,14 +1,16 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Catalog;
-import il.cshaifasweng.OCSFMediatorExample.entities.Flower;
+import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextInputDialog;
+import javafx.scene.Scene;
+import javafx.scene.Node;
+import javafx.scene.Parent;
+import javafx.stage.Stage;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
@@ -22,7 +24,7 @@ import java.util.ResourceBundle;
 import javafx.event.ActionEvent;
 import java.util.LinkedHashSet;
 import java.util.ArrayList;
-import javafx.fxml.FXML;
+
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.shape.Rectangle;
 
@@ -56,15 +58,14 @@ public class PrimaryController implements Initializable {
 
 	@Subscribe
 	public void onCatalogReceived(Catalog catalog) {
-		System.out.println("Catalog received");
 		this.catalog = catalog;
-		List<Flower> flowers = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
+		List<Product> products = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
 
 		Platform.runLater(() -> {
 			catalogGrid.getChildren().clear();
 			int col = 0, row = 0;
 
-			for (Flower flower : flowers) {
+			for (Product product : products) {
 				GridPane itemPane = new GridPane();
 				itemPane.setHgap(10);
 				itemPane.setVgap(5);
@@ -72,27 +73,27 @@ public class PrimaryController implements Initializable {
 				// Image setup
 				ImageView imageView = new ImageView();
 				try {
-					System.out.println(flower.getImagePath());
-					Image image = new Image(String.valueOf(PrimaryController.class.getResource(flower.getImagePath()))); // Load from URL or file
+					System.out.println(product.getImagePath());
+					Image image = new Image(String.valueOf(PrimaryController.class.getResource(product.getImagePath()))); // Load from URL or file
 					imageView.setImage(image);
 					imageView.setFitWidth(120);
 					imageView.setFitHeight(120);
 					imageView.setPreserveRatio(true);
 				} catch (Exception e) {
-					System.out.println("Failed to load image for " + flower.getName());
+					System.out.println("Failed to load image for " + product.getName());
 				}
 
-				Label name = new Label("Name: " + flower.getName());
-				Label type = new Label("Type: " + flower.getType());
-				Label price = new Label(String.format("Price: $%.2f", flower.getPrice()));
+				Label name = new Label("Name: " + product.getName());
+				Label type = new Label("Type: " + product.getType());
+				Label price = new Label(String.format("Price: $%.2f", product.getPrice()));
 				Button viewEdit = new Button("View");
 				Button editPrice = new Button("Edit Price");
 
-				int flowerId = flower.getId();
+				Long flowerId = product.getId();
 
 				viewEdit.setOnAction((ActionEvent event) -> {
 					System.out.println("View flower with ID: " + flowerId);
-					ViewFlowerController.setSelectedFlower(flower);
+					ViewFlowerController.setSelectedFlower(product);
                     try {
                         App.switchToViewFlowerView();
                     } catch (IOException e) {
@@ -101,9 +102,9 @@ public class PrimaryController implements Initializable {
                 });
 
 				editPrice.setOnAction((ActionEvent event) -> {
-					TextInputDialog dialog = new TextInputDialog(String.format("%.2f", flower.getPrice()));
+					TextInputDialog dialog = new TextInputDialog(String.format("%.2f", product.getPrice()));
 					dialog.setTitle("Edit Flower Price");
-					dialog.setHeaderText("Edit price for: " + flower.getName());
+					dialog.setHeaderText("Edit price for: " + product.getName());
 					dialog.setContentText("Enter new price:");
 
 					dialog.showAndWait().ifPresent(input -> {
@@ -113,10 +114,10 @@ public class PrimaryController implements Initializable {
 								showAlert("Invalid Input", "Price cannot be negative.");
 								return;
 							}
-							flower.setPrice(newPrice);
+							product.setPrice(newPrice);
 							price.setText(String.format("Price: $%.2f", newPrice));
 
-							SimpleClient.getClient().sendToServer("update_price:" + flower.getId() + ":" + newPrice);
+							SimpleClient.getClient().sendToServer("update_price:" + product.getId() + ":" + newPrice);
 						} catch (NumberFormatException e) {
 							showAlert("Invalid Input", "Please enter a valid number.");
 						} catch (IOException e) {
@@ -153,5 +154,9 @@ public class PrimaryController implements Initializable {
 			alert.setContentText(message);
 			alert.showAndWait();
 		});
+	}
+
+	public void handleLogin(ActionEvent actionEvent) throws IOException {
+		App.switchToLogIn();
 	}
 }
