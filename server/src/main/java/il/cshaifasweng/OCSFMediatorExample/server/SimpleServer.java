@@ -86,11 +86,11 @@ public class SimpleServer extends AbstractServer {
 						.uniqueResult();
 				if(user == null) {
 					System.out.println("Customer not found");
-					client.sendToClient("username or password is incorrect");
+					client.sendToClient("incorrect");
 				}
 				else {
 					System.out.println("Customer found");
-					client.sendToClient("both username and password are correct");
+					client.sendToClient("correct");
 				}
 				tx.commit();
 			} catch (Exception e) {

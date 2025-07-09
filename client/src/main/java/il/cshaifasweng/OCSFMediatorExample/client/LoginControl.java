@@ -53,15 +53,14 @@ public class LoginControl implements Initializable {
     }
     @Subscribe
     public void onMessage(String message) {
-        String msg = message;
         System.out.println(message);
-        if(msg.contains("correct")) {
+        if(message.equals("correct")) {
             Platform.runLater(() -> {
                 errorLabel.setText("correct");
                 errorLabel.setVisible(true);
             });
         }
-        else if(msg.contains("incorrect")) {
+        else if(message.equals("incorrect")) {
             Platform.runLater(() -> {
                 errorLabel.setText("incorrect");
                 errorLabel.setVisible(true);

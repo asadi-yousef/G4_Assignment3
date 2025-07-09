@@ -75,7 +75,8 @@ public class App {
             } else {
                 System.out.println("Flower table already contains data. Skipping insert.");
             }
-            count = (Long) session.createQuery("select count(f.id) from Product f").uniqueResult();
+            count = (Long) session.createQuery("select count(f.id) from User f").uniqueResult();
+            System.out.println(count);
             if (count == 0) {
                 Customer customer = new Customer("Yosef","yosef","yosef2005",true,
                         false,"111111111","assdiyousef@gmail.com",

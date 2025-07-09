@@ -17,6 +17,15 @@ public class Employee extends User implements Serializable {
         super(name, username, password);
     }
 
+    public Employee(String name, String username, String password, String role) {
+        super(name, username, password);
+        this.role = role;
+    }
+
+    public Employee() {
+        super();
+    }
+
     public String getRole() {return role;}
     public void setRole(String role) {this.role = role;}
 }
