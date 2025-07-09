@@ -1,6 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
+import il.cshaifasweng.OCSFMediatorExample.entities.Employee;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import org.hibernate.HibernateException;
@@ -30,6 +31,7 @@ public class App {
         configuration.addAnnotatedClass(Product.class);
         configuration.addAnnotatedClass(Customer.class);
         configuration.addAnnotatedClass(User.class);
+        configuration.addAnnotatedClass(Employee.class);
 
         ServiceRegistry serviceRegistry = new StandardServiceRegistryBuilder().applySettings(configuration.getProperties()).build();
 
@@ -85,7 +87,19 @@ public class App {
             }else {
                 System.out.println("Customer table already contains data. Skipping insert.");
             }
+
+            count = (Long) session.createQuery("select count(f.id) from User f").uniqueResult();
+            System.out.println(count);
+            if(count == 0) {
+                Employee employee = new Employee("Renata","Manager_R","renata123", "System Manager");
+                session.save(employee); session.flush();
+            }else{
+                System.out.println("Employee table already contains data. Skipping insert.");
+            }
+
             tx.commit();
+
+
         } catch (Exception e) {
             e.printStackTrace();
         }

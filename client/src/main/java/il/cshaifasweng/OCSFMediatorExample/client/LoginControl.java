@@ -56,13 +56,19 @@ public class LoginControl implements Initializable {
         System.out.println(message);
         if(message.equals("correct")) {
             Platform.runLater(() -> {
-                errorLabel.setText("correct");
+                errorLabel.setText("Login successful!");
                 errorLabel.setVisible(true);
             });
         }
         else if(message.equals("incorrect")) {
             Platform.runLater(() -> {
-                errorLabel.setText("incorrect");
+                errorLabel.setText("User not found");
+                errorLabel.setVisible(true);
+            });
+        }
+        else if(message.equals("incorrect password")){
+            Platform.runLater(() -> {
+                errorLabel.setText("incorrect password");
                 errorLabel.setVisible(true);
             });
         }

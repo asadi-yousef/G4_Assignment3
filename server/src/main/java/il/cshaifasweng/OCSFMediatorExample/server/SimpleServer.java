@@ -81,17 +81,26 @@ public class SimpleServer extends AbstractServer {
 				username = tmp.split(" ")[0];
 				password = tmp.split(" ")[1];
 
-				User user = session.createQuery("FROM User WHERE username = :username", User.class)
+				List<User> users = session.createQuery("FROM User WHERE username = :username", User.class)
 						.setParameter("username", username)
-						.uniqueResult();
-				if(user == null) {
-					System.out.println("Customer not found");
+						.getResultList();
+
+				System.out.println("Query result: " + users);  // debug line
+
+				if (users.isEmpty()) {
+					System.out.println("User not found");
 					client.sendToClient("incorrect");
+				} else {
+					User user = users.get(0);
+					System.out.println("User found: " + user.getClass().getSimpleName()); // will print "Employee" or "Customer"
+
+					if (user.getPassword().equals(password)) {
+						client.sendToClient("correct");
+					} else {
+						client.sendToClient("incorrect password");
+					}
 				}
-				else {
-					System.out.println("Customer found");
-					client.sendToClient("correct");
-				}
+
 				tx.commit();
 			} catch (Exception e) {
 				if (tx != null) tx.rollback();
