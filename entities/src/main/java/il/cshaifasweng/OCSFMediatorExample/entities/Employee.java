@@ -13,9 +13,9 @@ public class Employee extends User implements Serializable {
     @Column
     private String role;
 
-    public Employee(String name, String username, String password) {
-        super(name, username, password);
-    }
+   // public Employee(String name, String username, String password) {
+   //     super(name, username, password);
+    //}
 
     public Employee(String name, String username, String password, String role) {
         super(name, username, password);
