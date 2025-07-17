@@ -4,10 +4,12 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.geometry.Insets;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 
 import java.io.IOException;
@@ -29,7 +31,15 @@ public class App extends Application {
     @Override
     public void start(Stage stage) throws IOException {
         primaryStage = stage;
+        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+        primaryStage.setX(screenBounds.getMinX());
+        primaryStage.setY(screenBounds.getMinY());
+        primaryStage.setWidth(screenBounds.getWidth());
+        primaryStage.setHeight(screenBounds.getHeight());
+
+        //primaryStage.setMaximized(true);
         EventBus.getDefault().register(this);
+        SessionManager sessionManager = SessionManager.getInstance();
 
         boolean connected = false;
 
@@ -115,17 +125,32 @@ public class App extends Application {
         }
     }
 
+    public static void switchToHomeView() throws IOException {
+
+    }
     public static void switchToPrimaryView() throws IOException {
         FXMLLoader loader = new FXMLLoader(App.class.getResource("primary.fxml"));
+        //primaryStage.setMaximized(true);
         Parent root = loader.load();
         primaryStage.setTitle("Flower Catalog");
         primaryStage.setScene(new Scene(root));
+
     }
 
     public static void switchToLogIn() throws IOException {
         FXMLLoader loader = new FXMLLoader(App.class.getResource("logInView.fxml"));
+
         Parent root = loader.load();
         primaryStage.setTitle("Log In");
+        primaryStage.setScene(new Scene(root));
+        //primaryStage.setMaximized(true);
+
+    }
+
+    public static void switchToRegister() throws IOException {
+        FXMLLoader loader = new FXMLLoader(App.class.getResource("registerView.fxml"));
+        Parent root = loader.load();
+        primaryStage.setTitle("Register");
         primaryStage.setScene(new Scene(root));
     }
 

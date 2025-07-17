@@ -1,6 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
+import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 
@@ -52,15 +53,21 @@ public class LoginControl implements Initializable {
         SimpleClient.getClient().sendToServer("check existence: " + usernameField.getText() + " " + passwordField.getText());
     }
     @Subscribe
-    public void onMessage(String message) {
-        System.out.println(message);
-        if(message.equals("correct")) {
+    public void onMessage(Object message) {
+        Message tmp = (Message) message;
+        String msg = tmp.getMessage();
+        if(msg.equals("correct")) {
+            User user = (User)(tmp.getObject());
+            SessionManager.getInstance().setCurrentUser(user);
             Platform.runLater(() -> {
-                errorLabel.setText("correct");
-                errorLabel.setVisible(true);
+                try {
+                    App.switchToPrimaryView();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             });
         }
-        else if(message.equals("incorrect")) {
+        else if(msg.equals("incorrect")) {
             Platform.runLater(() -> {
                 errorLabel.setText("incorrect");
                 errorLabel.setVisible(true);
@@ -68,6 +75,7 @@ public class LoginControl implements Initializable {
         }
     }
 
-    public void handleRegister(ActionEvent actionEvent) {
+    public void handleRegister(ActionEvent actionEvent) throws IOException {
+        App.switchToRegister();
     }
 }

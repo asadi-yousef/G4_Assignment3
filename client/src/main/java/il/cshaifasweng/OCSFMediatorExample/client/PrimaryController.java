@@ -31,6 +31,8 @@ import javafx.scene.shape.Rectangle;
 
 public class PrimaryController implements Initializable {
 
+	public Button loginButton;
+	public Label userStatusLabel;
 	@FXML
 	private GridPane catalogGrid;
 	@FXML
@@ -53,6 +55,16 @@ public class PrimaryController implements Initializable {
 		} catch (IOException e) {
 			e.printStackTrace();
 			showAlert("Connection Error", "Failed to connect to server.");
+		}
+		if(SessionManager.getInstance().getCurrentUser() != null) {
+			loginButton.setVisible(false);
+			loginButton.setDisable(true);
+			userStatusLabel.setVisible(true);
+			userStatusLabel.setText("Hi "+SessionManager.getInstance().getCurrentUser().getUsername());
+		}
+		else {
+			loginButton.setVisible(true);
+			userStatusLabel.setVisible(false);
 		}
 	}
 

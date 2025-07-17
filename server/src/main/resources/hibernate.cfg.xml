@@ -15,6 +15,7 @@
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Product"/>
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Customer"/>
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.User"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Employee"/>
 
     </session-factory>
 </hibernate-configuration>

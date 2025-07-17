@@ -1,6 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
+import il.cshaifasweng.OCSFMediatorExample.entities.Employee;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import org.hibernate.HibernateException;
@@ -12,6 +13,7 @@ import org.hibernate.cfg.Configuration;
 import org.hibernate.service.ServiceRegistry;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Scanner;
 
 
@@ -19,9 +21,7 @@ public class App {
 
     private static SessionFactory getSessionFactory() throws HibernateException {
         Configuration configuration = new Configuration();
-        Scanner scanner = new Scanner(System.in);
-        System.out.print("Enter your MySQL password : ");
-        String password = scanner.nextLine();
+        String password = "1@2@3@4_5Tuf";
         configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
 
         configuration.setProperty("hibernate.connection.password", password);
@@ -30,6 +30,7 @@ public class App {
         configuration.addAnnotatedClass(Product.class);
         configuration.addAnnotatedClass(Customer.class);
         configuration.addAnnotatedClass(User.class);
+        configuration.addAnnotatedClass(Employee.class);
 
         ServiceRegistry serviceRegistry = new StandardServiceRegistryBuilder().applySettings(configuration.getProperties()).build();
 
@@ -86,10 +87,21 @@ public class App {
                 System.out.println("Customer table already contains data. Skipping insert.");
             }
             tx.commit();
+            List<User> users = server.getListFromDB(User.class);
+            for (User user : users) {
+                if (user instanceof Employee) {
+                    System.out.println("Employee: " + ((Employee) user).getRole());
+                } else if (user instanceof Customer) {
+                    System.out.println("Customer: " + user.getUsername());
+                } else {
+                    System.out.println("Base User: " + user.getUsername());
+                }
+            }
+
         } catch (Exception e) {
             e.printStackTrace();
         }
-
+        server.initCaches();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             HibernateUtil.shutdown();
             com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
