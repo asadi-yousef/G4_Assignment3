@@ -37,7 +37,6 @@ public class App extends Application {
         primaryStage.setWidth(screenBounds.getWidth());
         primaryStage.setHeight(screenBounds.getHeight());
 
-        //primaryStage.setMaximized(true);
         EventBus.getDefault().register(this);
         SessionManager sessionManager = SessionManager.getInstance();
 
@@ -99,7 +98,7 @@ public class App extends Application {
         }
 
         try {
-            switchToPrimaryView();
+            switchView("primary.fxml");
             primaryStage.show();
         } catch (IOException e) {
             showErrorDialog("Error", "Could not load the main view.");
@@ -124,52 +123,13 @@ public class App extends Application {
             e.printStackTrace();
         }
     }
-
-    public static void switchToPrimaryView() throws IOException {
-        FXMLLoader loader = new FXMLLoader(App.class.getResource("primary.fxml"));
-        //primaryStage.setMaximized(true);
+    public static void switchView(String view) throws IOException {
+        FXMLLoader loader = new FXMLLoader(App.class.getResource(view));
         Parent root = loader.load();
         primaryStage.setTitle("Flower Catalog");
         primaryStage.setScene(new Scene(root));
-
     }
 
-    public static void switchToLogIn() throws IOException {
-        FXMLLoader loader = new FXMLLoader(App.class.getResource("logInView.fxml"));
-
-        Parent root = loader.load();
-        primaryStage.setTitle("Log In");
-        primaryStage.setScene(new Scene(root));
-        //primaryStage.setMaximized(true);
-
-    }
-
-    public static void switchToRegister() throws IOException {
-        FXMLLoader loader = new FXMLLoader(App.class.getResource("registerView.fxml"));
-        Parent root = loader.load();
-        primaryStage.setTitle("Register");
-        primaryStage.setScene(new Scene(root));
-    }
-
-    public static void switchToSecondaryView() throws IOException {
-        FXMLLoader loader = new FXMLLoader(App.class.getResource("secondary.fxml"));
-        Parent root = loader.load();
-
-        SecondaryController controller = loader.getController();
-        controller.loadFlowerDetails();
-
-        primaryStage.setScene(new Scene(root));
-    }
-
-    public static void switchToViewFlowerView() throws IOException {
-        FXMLLoader loader = new FXMLLoader(App.class.getResource("viewFlower.fxml"));
-        Parent root = loader.load();
-
-        ViewFlowerController controller = loader.getController();
-        controller.loadFlowerDetails();
-
-        primaryStage.setScene(new Scene(root));
-    }
 
     @Override
     public void stop() throws Exception {

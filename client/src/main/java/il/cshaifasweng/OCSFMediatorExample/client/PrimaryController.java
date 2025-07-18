@@ -100,7 +100,7 @@ public class PrimaryController implements Initializable {
 					System.out.println("View flower with ID: " + flowerId);
 					ViewFlowerController.setSelectedFlower(product);
 					try {
-						App.switchToViewFlowerView();
+						App.switchView("viewFlower.fxml");
 					} catch (IOException e) {
 						throw new RuntimeException(e);
 					}
@@ -180,6 +180,6 @@ public class PrimaryController implements Initializable {
 	}
 
 	public void handleLogin(ActionEvent actionEvent) throws IOException {
-		App.switchToLogIn();
+		App.switchView("logInView.fxml");
 	}
 }
