@@ -1,15 +1,11 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Catalog;
+import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
-import javafx.scene.Scene;
-import javafx.scene.Node;
-import javafx.scene.Parent;
-import javafx.stage.Stage;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -67,10 +63,7 @@ public class PrimaryController implements Initializable {
 			userStatusLabel.setVisible(false);
 		}
 	}
-
-	@Subscribe
-	public void onCatalogReceived(Catalog catalog) {
-		this.catalog = catalog;
+	private void renderCatalog() {
 		List<Product> products = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
 
 		Platform.runLater(() -> {
@@ -106,12 +99,12 @@ public class PrimaryController implements Initializable {
 				viewEdit.setOnAction((ActionEvent event) -> {
 					System.out.println("View flower with ID: " + flowerId);
 					ViewFlowerController.setSelectedFlower(product);
-                    try {
-                        App.switchToViewFlowerView();
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
+					try {
+						App.switchToViewFlowerView();
+					} catch (IOException e) {
+						throw new RuntimeException(e);
+					}
+				});
 
 				editPrice.setOnAction((ActionEvent event) -> {
 					TextInputDialog dialog = new TextInputDialog(String.format("%.2f", product.getPrice()));
@@ -144,7 +137,9 @@ public class PrimaryController implements Initializable {
 				itemPane.add(type, 0, 2);
 				itemPane.add(price, 0, 3);
 				itemPane.add(viewEdit, 0, 4);
-				itemPane.add(editPrice, 0, 5);
+				if(SessionManager.getInstance().isEmployee()) {
+					itemPane.add(editPrice, 0, 5);
+				}
 
 				catalogGrid.add(itemPane, col, row);
 
@@ -157,7 +152,23 @@ public class PrimaryController implements Initializable {
 		});
 	}
 
-
+	@Subscribe
+	public void onMessageFromServer(Message msg) {
+		System.out.println(msg.getMessage());
+		if (msg.getMessage().startsWith("updatePrice")) {
+			try {
+				SimpleClient.getClient().sendToServer("request_catalog");
+			} catch (Exception e) {
+				e.printStackTrace();
+				showAlert("Error", "Failed to update product price.");
+			}
+		}
+		else if(msg.getMessage().startsWith("catalog")) {
+			System.out.println("Received updated catalog from server");
+			this.catalog = (Catalog) msg.getObject();
+			renderCatalog();
+		}
+	}
 	private void showAlert(String title, String message) {
 		Platform.runLater(() -> {
 			Alert alert = new Alert(Alert.AlertType.INFORMATION);

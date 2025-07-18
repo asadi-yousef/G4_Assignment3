@@ -21,4 +21,13 @@ public class Catalog implements Serializable {
     public void setFlowers(List<Product> products) {
         this.products = products;
     }
+    public Product getProductById(int id) {
+        for (Product product : products) {
+            if (product.getId() == id) {
+                return product;
+            }
+        }
+        return null; // or throw an exception if not found
+    }
+
 }

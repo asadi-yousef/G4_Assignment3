@@ -125,9 +125,6 @@ public class App extends Application {
         }
     }
 
-    public static void switchToHomeView() throws IOException {
-
-    }
     public static void switchToPrimaryView() throws IOException {
         FXMLLoader loader = new FXMLLoader(App.class.getResource("primary.fxml"));
         //primaryStage.setMaximized(true);

@@ -110,7 +110,8 @@ public class SimpleServer extends AbstractServer {
 		try {
 			List<Product> productList = getListFromDB(Product.class);
 			Catalog currentCatalog = new Catalog(productList);
-			client.sendToClient(currentCatalog);
+			Message message = new Message("catalog", currentCatalog, null);
+			client.sendToClient(message);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
@@ -130,7 +131,8 @@ public class SimpleServer extends AbstractServer {
 				catalogLock.writeLock().lock();
 				try {
 					this.catalog.setFlowers(getListFromDB(Product.class));
-					sendToAllClients(catalog);
+					Message message = new Message("updatePrice :"+flowerId+":"+newPrice, null, null);
+					sendToAllClients(message);
 				} finally {
 					catalogLock.writeLock().unlock();
 				}
