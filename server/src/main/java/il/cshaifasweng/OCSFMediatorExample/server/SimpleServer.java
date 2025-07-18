@@ -24,7 +24,7 @@ import java.util.function.Function;
 public class SimpleServer extends AbstractServer {
 	private static final Object subscribersLock = new Object();
 	private static ArrayList<SubscribedClient> SubscribersList = new ArrayList<>();
-	private static volatile Catalog catalog = new Catalog(new ArrayList<>());
+	private static  Catalog catalog = new Catalog(new ArrayList<>());
 	private static final ReentrantReadWriteLock catalogLock = new ReentrantReadWriteLock();
 
 	// Use ConcurrentHashMap for thread-safe cache
@@ -35,7 +35,13 @@ public class SimpleServer extends AbstractServer {
 		super(port);
 		catalog.setFlowers(getListFromDB(Product.class));
 	}
-
+	@Override
+	protected void clientConnected(ConnectionToClient client) {
+		super.clientConnected(client);
+		synchronized (subscribersLock) {
+			SubscribersList.add(new SubscribedClient(client));
+		}
+	}
 	public <T> List<T> getListFromDB(Class<T> entityClass) {
 		List<T> resultList;
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
@@ -79,6 +85,7 @@ public class SimpleServer extends AbstractServer {
 			}
 			else if (msgString.startsWith("remove client")) {
 				handleClientRemoval(client);
+				System.out.println("removed subscribed client");
 			}
 			else if (msgString.contains("check existence")) {
 				handleUserAuthentication(msgString, client, session);
@@ -108,9 +115,7 @@ public class SimpleServer extends AbstractServer {
 	private void handleCatalogRequest(ConnectionToClient client) {
 		catalogLock.readLock().lock();
 		try {
-			List<Product> productList = getListFromDB(Product.class);
-			Catalog currentCatalog = new Catalog(productList);
-			Message message = new Message("catalog", currentCatalog, null);
+			Message message = new Message("catalog", catalog, null);
 			client.sendToClient(message);
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -131,7 +136,7 @@ public class SimpleServer extends AbstractServer {
 				catalogLock.writeLock().lock();
 				try {
 					this.catalog.setFlowers(getListFromDB(Product.class));
-					Message message = new Message("updatePrice :"+flowerId+":"+newPrice, null, null);
+					Message message = new Message(msgString, null, null);
 					sendToAllClients(message);
 				} finally {
 					catalogLock.writeLock().unlock();
@@ -188,6 +193,7 @@ public class SimpleServer extends AbstractServer {
 			if (product != null) {
 				product.setPrice(newPrice);
 				session.update(product);
+				catalog.setFlowers(getListFromDB(Product.class));
 			} else {
 				System.out.println("Flower not found with ID: " + flowerId);
 			}
@@ -199,7 +205,7 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-	public void sendToAllClients(Object message) {
+	public void sendToAllClients(Message message) {
 		synchronized (subscribersLock) {
 			try {
 				for (SubscribedClient subscribedClient : SubscribersList) {

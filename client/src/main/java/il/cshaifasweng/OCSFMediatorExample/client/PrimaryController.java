@@ -155,7 +155,8 @@ public class PrimaryController implements Initializable {
 	@Subscribe
 	public void onMessageFromServer(Message msg) {
 		System.out.println(msg.getMessage());
-		if (msg.getMessage().startsWith("updatePrice")) {
+		if (msg.getMessage().startsWith("update_price")) {
+			System.out.println("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww");
 			try {
 				SimpleClient.getClient().sendToServer("request_catalog");
 			} catch (Exception e) {
