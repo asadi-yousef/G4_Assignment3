@@ -24,7 +24,7 @@ import java.util.function.Function;
 public class SimpleServer extends AbstractServer {
 	private static final Object subscribersLock = new Object();
 	private static ArrayList<SubscribedClient> SubscribersList = new ArrayList<>();
-	private static  Catalog catalog = new Catalog(new ArrayList<>());
+	private static Catalog catalog = new Catalog(new ArrayList<>());
 	private static final ReentrantReadWriteLock catalogLock = new ReentrantReadWriteLock();
 
 	// Use ConcurrentHashMap for thread-safe cache
@@ -35,6 +35,7 @@ public class SimpleServer extends AbstractServer {
 		super(port);
 		catalog.setFlowers(getListFromDB(Product.class));
 	}
+
 	@Override
 	protected void clientConnected(ConnectionToClient client) {
 		super.clientConnected(client);
@@ -42,6 +43,7 @@ public class SimpleServer extends AbstractServer {
 			SubscribersList.add(new SubscribedClient(client));
 		}
 	}
+
 	public <T> List<T> getListFromDB(Class<T> entityClass) {
 		List<T> resultList;
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
@@ -99,15 +101,26 @@ public class SimpleServer extends AbstractServer {
 		Transaction tx = session.beginTransaction();
 		try {
 			User user = (User) msg.getObject();
-			userCache.put(user.getUsername(), user);
+
+			// First save to database
 			session.save(user);
 			session.flush();
 			tx.commit();
+
+			// Only update cache after successful database save
+			userCache.put(user.getUsername(), user);
 
 			Message message = new Message("registered", null, null);
 			client.sendToClient(message);
 		} catch (Exception e) {
 			tx.rollback();
+			// Don't update cache if database save failed
+			try {
+				Message errorMessage = new Message("registration_failed", null, null);
+				client.sendToClient(errorMessage);
+			} catch (IOException ioException) {
+				ioException.printStackTrace();
+			}
 			e.printStackTrace();
 		}
 	}
@@ -130,16 +143,20 @@ public class SimpleServer extends AbstractServer {
 			try {
 				int flowerId = Integer.parseInt(parts[1]);
 				double newPrice = Double.parseDouble(parts[2]);
-				updateFlowerPrice(flowerId, newPrice);
 
-				// Update catalog with write lock
-				catalogLock.writeLock().lock();
-				try {
-					this.catalog.setFlowers(getListFromDB(Product.class));
-					Message message = new Message(msgString, null, null);
-					sendToAllClients(message);
-				} finally {
-					catalogLock.writeLock().unlock();
+				// Update database first
+				boolean updateSuccess = updateFlowerPrice(flowerId, newPrice);
+
+				if (updateSuccess) {
+					// Update catalog with write lock only if database update succeeded
+					catalogLock.writeLock().lock();
+					try {
+						this.catalog.setFlowers(getListFromDB(Product.class));
+						Message message = new Message(msgString, null, null);
+						sendToAllClients(message);
+					} finally {
+						catalogLock.writeLock().unlock();
+					}
 				}
 			} catch (NumberFormatException e) {
 				e.printStackTrace();
@@ -154,10 +171,7 @@ public class SimpleServer extends AbstractServer {
 	}
 
 	private void handleUserAuthentication(String msgString, ConnectionToClient client, Session session) {
-		Transaction tx = null;
 		try {
-			tx = session.beginTransaction();
-
 			String tmp = msgString.substring("check existence: ".length());
 			String username = tmp.split(" ")[0];
 			String password = tmp.split(" ")[1];
@@ -174,17 +188,23 @@ public class SimpleServer extends AbstractServer {
 					client.sendToClient(message);
 				} else {
 					System.out.println("Incorrect password");
-					client.sendToClient("incorrect");
+					// Fixed: Use consistent Message object instead of raw string
+					Message message = new Message("incorrect", null, null);
+					client.sendToClient(message);
 				}
 			}
-			tx.commit();
 		} catch (Exception e) {
-			if (tx != null) tx.rollback();
 			e.printStackTrace();
+			try {
+				Message errorMessage = new Message("authentication_error", null, null);
+				client.sendToClient(errorMessage);
+			} catch (IOException ioException) {
+				ioException.printStackTrace();
+			}
 		}
 	}
 
-	public void updateFlowerPrice(int flowerId, double newPrice) {
+	public boolean updateFlowerPrice(int flowerId, double newPrice) {
 		Transaction tx = null;
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
 			tx = session.beginTransaction();
@@ -193,15 +213,17 @@ public class SimpleServer extends AbstractServer {
 			if (product != null) {
 				product.setPrice(newPrice);
 				session.update(product);
-				catalog.setFlowers(getListFromDB(Product.class));
+				tx.commit();
+				return true; // Return success status
 			} else {
 				System.out.println("Flower not found with ID: " + flowerId);
+				tx.rollback();
+				return false;
 			}
-
-			tx.commit();
 		} catch (Exception e) {
 			if (tx != null) tx.rollback();
 			e.printStackTrace();
+			return false;
 		}
 	}
 
