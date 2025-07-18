@@ -38,7 +38,7 @@ public class ViewFlowerController {
                 Image image = new Image(String.valueOf(SecondaryController.class.getResource(selectedProduct.getImagePath())));
                 flowerImage.setImage(image);
             } catch (Exception e) {
-                System.out.println("Could not load image for " + selectedProduct.getName());
+                e.printStackTrace();
             }
         }
     }

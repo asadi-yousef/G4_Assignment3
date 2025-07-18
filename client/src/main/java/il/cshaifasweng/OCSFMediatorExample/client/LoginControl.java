@@ -48,8 +48,6 @@ public class LoginControl implements Initializable {
     }
 
     public void handleLogin(ActionEvent actionEvent) throws IOException {
-        System.out.println(usernameField.getText());
-        System.out.println(passwordField.getText());
         SimpleClient.getClient().sendToServer("check existence: " + usernameField.getText() + " " + passwordField.getText());
     }
     @Subscribe

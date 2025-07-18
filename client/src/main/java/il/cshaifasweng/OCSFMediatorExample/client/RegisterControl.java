@@ -79,8 +79,6 @@ public class RegisterControl implements Initializable {
                     }
                 });
             }
-        } else {
-            System.err.println("Received unexpected message type: " + msg.getClass().getName());
         }
     }
     // Handle Register button click
