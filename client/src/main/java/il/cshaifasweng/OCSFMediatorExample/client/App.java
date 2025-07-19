@@ -18,6 +18,8 @@ import java.util.Optional;
 import javafx.util.Pair;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
+import javafx.geometry.Rectangle2D;  // Rectangle2D class
+import javafx.stage.Screen;
 
 /**
  * JavaFX App
@@ -30,80 +32,23 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) throws IOException {
-        primaryStage = stage;
-        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
-        primaryStage.setX(screenBounds.getMinX());
-        primaryStage.setY(screenBounds.getMinY());
-        primaryStage.setWidth(screenBounds.getWidth());
-        primaryStage.setHeight(screenBounds.getHeight());
-
         EventBus.getDefault().register(this);
-        SessionManager sessionManager = SessionManager.getInstance();
+        client = SimpleClient.getClient();
+        client.openConnection();
+        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+        scene = new Scene(loadFXML("primary"),screenBounds.getWidth(),screenBounds.getHeight());
+        stage.setTitle("Lilac");
+        stage.setScene(scene);
+        stage.show();
+    }
 
-        boolean connected = false;
+    public static void setRoot(String fxml) throws IOException {
+        scene.setRoot(loadFXML(fxml));
+    }
 
-        while (!connected) {
-            Dialog<Pair<String, String>> dialog = new Dialog<>();
-            dialog.setTitle("Connect to Server");
-            dialog.setHeaderText("Enter Server IP Address and Port");
-
-            ButtonType connectButtonType = new ButtonType("Connect", ButtonBar.ButtonData.OK_DONE);
-            dialog.getDialogPane().getButtonTypes().addAll(connectButtonType, ButtonType.CANCEL);
-
-            GridPane grid = new GridPane();
-            grid.setHgap(10);
-            grid.setVgap(10);
-            grid.setPadding(new Insets(20, 150, 10, 10));
-
-            TextField ipField = new TextField("127.0.0.1");
-            TextField portField = new TextField("3000");
-
-            grid.add(new Label("IP Address:"), 0, 0);
-            grid.add(ipField, 1, 0);
-            grid.add(new Label("Port:"), 0, 1);
-            grid.add(portField, 1, 1);
-
-            dialog.getDialogPane().setContent(grid);
-
-            dialog.setResultConverter(dialogButton -> {
-                if (dialogButton == connectButtonType) {
-                    return new Pair<>(ipField.getText(), portField.getText());
-                }
-                return null;
-            });
-
-            Optional<Pair<String, String>> result = dialog.showAndWait();
-
-            if (result.isEmpty()) {
-                Platform.exit();
-                return;
-            }
-
-            String ip = result.get().getKey().trim();
-            String portInput = result.get().getValue().trim();
-
-            try {
-                int port = Integer.parseInt(portInput);
-                if (port < 1 || port > 65535) throw new NumberFormatException();
-
-                client = SimpleClient.getClient(ip, port);
-                client.openConnection();
-                connected = true;
-            } catch (NumberFormatException e) {
-                showErrorDialog("Invalid Port", "Please enter a valid port number (1-65535).");
-            } catch (IOException e) {
-                showErrorDialog("Connection Failed", "Could not connect to " + ip + ":" + portInput);
-                resetClient();
-            }
-        }
-
-        try {
-            switchView("primary.fxml");
-            primaryStage.show();
-        } catch (IOException e) {
-            showErrorDialog("Error", "Could not load the main view.");
-            Platform.exit();
-        }
+    private static Parent loadFXML(String fxml) throws IOException {
+        FXMLLoader fxmlLoader = new FXMLLoader(App.class.getResource(fxml + ".fxml"));
+        return fxmlLoader.load();
     }
 
     private void showErrorDialog(String title, String content) {
@@ -123,13 +68,6 @@ public class App extends Application {
             e.printStackTrace();
         }
     }
-    public static void switchView(String view) throws IOException {
-        FXMLLoader loader = new FXMLLoader(App.class.getResource(view));
-        Parent root = loader.load();
-        primaryStage.setTitle("Flower Catalog");
-        primaryStage.setScene(new Scene(root));
-    }
-
 
     @Override
     public void stop() throws Exception {

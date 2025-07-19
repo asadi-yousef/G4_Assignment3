@@ -55,7 +55,7 @@ public class SecondaryController implements Initializable {
 
                 selectedProduct.setPrice(newPrice);
 
-                App.switchView("primary.fxml"); // return to catalog
+                App.setRoot("primary"); // return to catalog
 
             } catch (NumberFormatException e) {
                 showAlert("Invalid price format.");

@@ -59,7 +59,7 @@ public class LoginControl implements Initializable {
             SessionManager.getInstance().setCurrentUser(user);
             Platform.runLater(() -> {
                 try {
-                    App.switchView("primary.fxml");
+                    App.setRoot("primary");
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -74,6 +74,6 @@ public class LoginControl implements Initializable {
     }
 
     public void handleRegister(ActionEvent actionEvent) throws IOException {
-        App.switchView("register.fxml");
+        App.setRoot("register");
     }
 }

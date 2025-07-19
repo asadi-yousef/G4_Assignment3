@@ -1,9 +1,12 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
+import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import javafx.fxml.FXML;
 import javafx.scene.control.Label;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
 
 public class ViewFlowerController {
     @FXML
@@ -27,8 +30,16 @@ public class ViewFlowerController {
         flowerImage.setFitHeight(400);
         flowerImage.setPreserveRatio(true);
     }
+    @Subscribe
+    public void onMessageFromServer(Message message){
+        String price = message.getMessage().split(":")[2];
+        if(message.getMessage().startsWith("update_price")) {
+            priceLabel.setText(price);
+        }
+    }
     @FXML
     public void initialize() {
+        EventBus.getDefault().register(this);
         if (selectedProduct != null) {
             nameLabel.setText("Name: " + selectedProduct.getName());
             typeLabel.setText("Type: " + selectedProduct.getType());
@@ -45,6 +56,7 @@ public class ViewFlowerController {
 
     @FXML
     private void handleBack() throws Exception {
-        App.switchView("primary.fxml");
+        App.setRoot("primary");
+        EventBus.getDefault().unregister(this);
     }
 }

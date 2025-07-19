@@ -73,7 +73,7 @@ public class RegisterControl implements Initializable {
             if ("registered".equals(message.getMessage())) {
                 javafx.application.Platform.runLater(() -> {
                     try {
-                        App.switchView("logInView.fxml");
+                        App.setRoot("logInView");
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -131,7 +131,7 @@ public class RegisterControl implements Initializable {
     private void handleCancel(ActionEvent event) throws IOException {
         // Clear all fields
         clearForm();
-        App.switchView("logInView.fxml");
+        App.setRoot("logInView");
         // Optionally close the window
         // closeWindow();
     }
