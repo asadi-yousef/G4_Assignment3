@@ -32,4 +32,8 @@ public class Message implements Serializable {
     public void setObjectList(List<Object> objectList) {
         this.objectList = objectList;
     }
+    @Override
+    public String toString() {
+        return this.message;
+    }
 }

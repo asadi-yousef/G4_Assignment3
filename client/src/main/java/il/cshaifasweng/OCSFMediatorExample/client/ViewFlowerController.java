@@ -1,4 +1,5 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
+
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import javafx.fxml.FXML;

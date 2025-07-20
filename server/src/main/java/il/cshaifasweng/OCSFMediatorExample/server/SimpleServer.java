@@ -11,7 +11,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
 
-import jakarta.persistence.criteria.Order;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
@@ -82,8 +81,8 @@ public class SimpleServer extends AbstractServer {
 			if (msgString.equals("request_catalog")) {
 				handleCatalogRequest(client);
 			}
-			else if (msgString.startsWith("update_price")) {
-				handlePriceUpdate(msgString);
+			else if (msgString.startsWith("editProduct")) {
+				handleProductEdit((Message) msg);
 			}
 			else if (msgString.startsWith("remove client")) {
 				handleClientRemoval(client);
@@ -137,15 +136,20 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-	private void handlePriceUpdate(String msgString) {
+	private void handleProductEdit(Message msg) {
+		String msgString = msg.getMessage();
 		String[] parts = msgString.split(":");
 		if (parts.length == 3) {
 			try {
-				int flowerId = Integer.parseInt(parts[1]);
-				double newPrice = Double.parseDouble(parts[2]);
+				Product product = (Product)(msg.getObject());
+				int productId = Integer.parseInt(parts[2]);
+				double newPrice = product.getPrice();
+				String newProductName = product.getName();
+				String newType = product.getType();
+				String newImagePath = product.getImagePath();
 
 				// Update database first
-				boolean updateSuccess = updateFlowerPrice(flowerId, newPrice);
+				boolean updateSuccess = updateProduct(productId,newProductName,newPrice,newType,newImagePath);
 
 				if (updateSuccess) {
 					// Update catalog with write lock only if database update succeeded
@@ -204,19 +208,22 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-	public boolean updateFlowerPrice(int flowerId, double newPrice) {
+	public boolean updateProduct(int productId,String newProductName, double newPrice,String newType, String newImagePath) {
 		Transaction tx = null;
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
 			tx = session.beginTransaction();
 
-			Product product = session.get(Product.class, flowerId);
+			Product product = session.get(Product.class, productId);
 			if (product != null) {
 				product.setPrice(newPrice);
+				product.setName(newProductName);
+				product.setType(newType);
+				product.setImagePath(newImagePath);
 				session.update(product);
 				tx.commit();
 				return true; // Return success status
 			} else {
-				System.out.println("Flower not found with ID: " + flowerId);
+				System.out.println("Flower not found with ID: " + productId);
 				tx.rollback();
 				return false;
 			}

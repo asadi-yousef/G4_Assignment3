@@ -155,8 +155,8 @@ public class PrimaryController implements Initializable {
 	@Subscribe
 	public void onMessageFromServer(Message msg) {
 		System.out.println(msg.getMessage());
-		if (msg.getMessage().startsWith("update_price")) {
-			System.out.println("wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww");
+		if (msg.getMessage().startsWith("editProduct")) {
+			System.out.println("wwww2");
 			try {
 				SimpleClient.getClient().sendToServer("request_catalog");
 			} catch (Exception e) {
@@ -182,5 +182,6 @@ public class PrimaryController implements Initializable {
 
 	public void handleLogin(ActionEvent actionEvent) throws IOException {
 		App.setRoot("logInView");
+		EventBus.getDefault().unregister(this);
 	}
 }
