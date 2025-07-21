@@ -78,7 +78,7 @@ public class PrimaryController implements Initializable {
 				ImageView imageView = new ImageView();
 				try {
 					System.out.println(product.getImagePath());
-					Image image = new Image(String.valueOf(PrimaryController.class.getResource(product.getImagePath()))); // Load from URL or file
+					Image image = new Image(String.valueOf(PrimaryController.class.getResource(product.getImagePath())));
 					imageView.setImage(image);
 					imageView.setFitWidth(120);
 					imageView.setFitHeight(120);

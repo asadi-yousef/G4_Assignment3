@@ -405,7 +405,45 @@ public class ManagerView implements Initializable {
         product.setName(productNameField.getText().trim());
         product.setPrice(Double.parseDouble(productPriceField.getText()));
         product.setType(categoryComboBox.getValue());
-        product.setImagePath(imagePathField.getText().trim().isEmpty() ? null : imagePathField.getText().trim());
+        String originalPath = imagePathField.getText().trim();
+        if (!originalPath.isEmpty()) {
+            File sourceFile = new File(originalPath);
+            if (sourceFile.exists()) {
+                try {
+                    // Destination directory in resources
+                    File destDir = new File("src/main/resources/il/cshaifasweng/OCSFMediatorExample/client/images");
+                    if (!destDir.exists()) destDir.mkdirs();
+
+                    // Use original filename or a unique one to avoid conflicts
+                    String fileName = sourceFile.getName();
+                    File destFile = new File(destDir, fileName);
+
+                    // Copy file
+                    try (InputStream in = new FileInputStream(sourceFile);
+                         OutputStream out = new FileOutputStream(destFile)) {
+                        byte[] buffer = new byte[1024];
+                        int length;
+                        while ((length = in.read(buffer)) > 0) {
+                            out.write(buffer, 0, length);
+                        }
+                    }
+
+                    // Save only the relative path
+                    product.setImagePath("/il/cshaifasweng/OCSFMediatorExample/client/images/" + fileName);
+                    updateStatus("Image copied successfully");
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    updateStatus("Failed to copy image file");
+                    product.setImagePath(null);
+                }
+            } else {
+                updateStatus("Image file does not exist");
+                product.setImagePath(null);
+            }
+        } else {
+            product.setImagePath(null);
+        }
+
         return product;
     }
 
