@@ -33,7 +33,6 @@ public class PrimaryController implements Initializable {
 	private GridPane catalogGrid;
 	@FXML
 	private AnchorPane mainAnchorPane;
-
 	@FXML
 	private Rectangle backgroundRect;
 	private Catalog catalog;
@@ -167,6 +166,16 @@ public class PrimaryController implements Initializable {
 		else if(msg.getMessage().startsWith("catalog")) {
 			System.out.println("Received updated catalog from server");
 			this.catalog = (Catalog) msg.getObject();
+			renderCatalog();
+		}
+		else if(msg.getMessage().startsWith("add_product")) {
+			System.out.println("Received added product from server");
+			this.catalog.getFlowers().add((Product) msg.getObject());
+			renderCatalog();
+		}
+		else if(msg.getMessage().startsWith("delete_product")) {
+			System.out.println("Received deleted product from server");
+			catalog.getFlowers().removeIf(p->p.getId().equals(msg.getObject()));
 			renderCatalog();
 		}
 	}

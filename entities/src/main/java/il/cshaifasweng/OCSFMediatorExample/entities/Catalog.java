@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import java.io.Serializable;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Objects;
 
 public class Catalog implements Serializable {
     private List<Product> products = new ArrayList<>();
@@ -21,9 +22,9 @@ public class Catalog implements Serializable {
     public void setFlowers(List<Product> products) {
         this.products = products;
     }
-    public Product getProductById(int id) {
+    public Product getProductById(Long id) {
         for (Product product : products) {
-            if (product.getId() == id) {
+            if (Objects.equals(product.getId(), id)) {
                 return product;
             }
         }

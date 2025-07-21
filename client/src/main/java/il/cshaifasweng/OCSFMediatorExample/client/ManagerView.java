@@ -158,25 +158,24 @@ public class ManagerView implements Initializable {
 
     private void setupCategoryComboBox() {
         categoryComboBox.setItems(FXCollections.observableArrayList(
-                "Electronics", "Clothing", "Books", "Home & Garden",
-                "Sports", "Toys", "Food", "Health", "Other"
+                "Flower", "Pot"
         ));
     }
 
     @Subscribe
     public void onMessage(Message message) {
         Platform.runLater(() -> {
-            if (message.getMessage().equals("catalog")) {
+            if (message.getMessage().startsWith("catalog")) {
                 catalog = (Catalog) message.getObject();
                 renderCatalog();
                 updateStatus("Catalog loaded successfully");
-            } else if (message.getMessage().equals("product_added")) {
+            } else if (message.getMessage().equals("add_product")) {
                 updateStatus("Product added successfully");
                 refreshCatalog();
             } else if (message.getMessage().equals("product_updated")) {
                 updateStatus("Product updated successfully");
                 refreshCatalog();
-            } else if (message.getMessage().equals("product_deleted")) {
+            } else if (message.getMessage().equals("delete_product")) {
                 updateStatus("Product deleted successfully");
                 refreshCatalog();
             } else if (message.getMessage().equals("error")) {
@@ -306,7 +305,6 @@ public class ManagerView implements Initializable {
                 try {
                     Message message = new Message("delete_product", selectedProduct.getId(), null);
                     SimpleClient.getClient().sendToServer(message);
-
                     clearForm();
                     updateStatus("Deleting product...");
                 } catch (IOException e) {

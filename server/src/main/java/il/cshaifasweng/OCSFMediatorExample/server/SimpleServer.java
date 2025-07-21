@@ -33,6 +33,7 @@ public class SimpleServer extends AbstractServer {
 	public SimpleServer(int port) {
 		super(port);
 		catalog.setFlowers(getListFromDB(Product.class));
+		System.out.println("number of products in catalog: " + catalog.getFlowers().size());
 	}
 
 	@Override
@@ -81,6 +82,9 @@ public class SimpleServer extends AbstractServer {
 			if (msgString.equals("request_catalog")) {
 				handleCatalogRequest(client);
 			}
+			else if(msgString.startsWith("add_product")) {
+				handleAddProduct((Message) msg, client, session);
+			}
 			else if (msgString.startsWith("editProduct")) {
 				handleProductEdit((Message) msg);
 			}
@@ -91,11 +95,43 @@ public class SimpleServer extends AbstractServer {
 			else if (msgString.contains("check existence")) {
 				handleUserAuthentication(msgString, client, session);
 			}
+			else if(msgString.startsWith("delete_product")) {
+				handleDeleteProduct((Message) msg, client, session);
+			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
-
+	private void handleDeleteProduct(Message msg, ConnectionToClient client, Session session) {
+		Transaction tx = session.beginTransaction();
+		try{
+			Long id = (Long) msg.getObject();
+			Product product = session.get(Product.class, id);
+			session.delete(product);
+			session.flush();
+			tx.commit();
+			catalog.getFlowers().remove(catalog.getProductById(id));
+			sendToAllClients(msg);
+		} catch (Exception e) {
+			tx.rollback();
+			e.printStackTrace();
+		}
+	}
+	private void handleAddProduct(Message msg, ConnectionToClient client, Session session) {
+		Transaction tx = session.beginTransaction();
+		try {
+			Product product = (Product) msg.getObject();
+			session.save(product);
+			session.flush();
+			tx.commit();
+			Message message = new Message("add_product",product,null);
+			catalog.getFlowers().add((Product) message.getObject());
+			sendToAllClients(message);
+		}catch (Exception e) {
+			tx.rollback();
+			e.printStackTrace();
+		}
+	}
 	private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) {
 		Transaction tx = session.beginTransaction();
 		try {
