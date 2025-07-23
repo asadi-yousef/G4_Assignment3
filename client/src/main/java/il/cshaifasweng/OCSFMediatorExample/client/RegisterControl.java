@@ -2,6 +2,7 @@ package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
+import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -71,12 +72,23 @@ public class RegisterControl implements Initializable {
         if (msg instanceof Message) {
             Message message = (Message) msg;
             if ("registered".equals(message.getMessage())) {
+                Platform.runLater(() -> {
+                    showAlert(Alert.AlertType.INFORMATION, "Registration Successful",
+                            "Customer registered successfully!");
+                });
                 javafx.application.Platform.runLater(() -> {
                     try {
                         App.setRoot("logInView");
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
+                });
+            }
+            else if("user already exists".equals(message.getMessage())){
+                System.out.println("user already exists");
+                Platform.runLater(() -> {
+                    showAlert(Alert.AlertType.INFORMATION, "Registration failed",
+                            "another user with this username already exists");
                 });
             }
         }
@@ -109,9 +121,6 @@ public class RegisterControl implements Initializable {
                 Message msg = new Message("register",newCustomer,null);
                 SimpleClient.getClient().sendToServer(msg);
 
-                // Show success message
-                showAlert(Alert.AlertType.INFORMATION, "Registration Successful",
-                        "Customer registered successfully!");
 
                 // Clear form after successful registration
                 clearForm();
@@ -120,8 +129,10 @@ public class RegisterControl implements Initializable {
                 // closeWindow();
 
             } catch (Exception e) {
-                showAlert(Alert.AlertType.ERROR, "Registration Error",
-                        "An error occurred during registration: " + e.getMessage());
+                Platform.runLater(() -> {
+                    showAlert(Alert.AlertType.ERROR, "Registration Error",
+                            "An error occurred during registration: " + e.getMessage());
+                });
             }
         }
     }

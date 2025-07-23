@@ -155,7 +155,6 @@ public class PrimaryController implements Initializable {
 	public void onMessageFromServer(Message msg) {
 		System.out.println(msg.getMessage());
 		if (msg.getMessage().startsWith("editProduct")) {
-			System.out.println("wwww2");
 			try {
 				SimpleClient.getClient().sendToServer("request_catalog");
 			} catch (Exception e) {
@@ -164,17 +163,14 @@ public class PrimaryController implements Initializable {
 			}
 		}
 		else if(msg.getMessage().startsWith("catalog")) {
-			System.out.println("Received updated catalog from server");
 			this.catalog = (Catalog) msg.getObject();
 			renderCatalog();
 		}
 		else if(msg.getMessage().startsWith("add_product")) {
-			System.out.println("Received added product from server");
 			this.catalog.getFlowers().add((Product) msg.getObject());
 			renderCatalog();
 		}
 		else if(msg.getMessage().startsWith("delete_product")) {
-			System.out.println("Received deleted product from server");
 			catalog.getFlowers().removeIf(p->p.getId().equals(msg.getObject()));
 			renderCatalog();
 		}

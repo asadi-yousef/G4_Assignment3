@@ -74,6 +74,6 @@ public class LoginControl implements Initializable {
     }
 
     public void handleRegister(ActionEvent actionEvent) throws IOException {
-        App.setRoot("register");
+        App.setRoot("registerView");
     }
 }

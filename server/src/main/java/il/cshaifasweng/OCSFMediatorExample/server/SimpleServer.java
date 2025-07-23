@@ -195,35 +195,47 @@ public class SimpleServer extends AbstractServer {
 			}
 		}
 	}
-
-	private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) {
-		Transaction tx = null;
-		try {
-			tx = session.beginTransaction();
-			User user = (User) msg.getObject();
-
-			// First save to database
-			session.save(user);
-			session.flush();
-			tx.commit();
-
-			// Only update cache after successful database save
-			userCache.put(user.getUsername(), user);
-
-			Message message = new Message("registered", null, null);
-			client.sendToClient(message);
-		} catch (Exception e) {
-			if (tx != null) {
-				tx.rollback();
-			}
-			// Don't update cache if database save failed
+	private boolean checkExistence(String username) {
+		if(userCache.containsKey(username)) {
+			return true;
+		}
+		return false;
+	}
+	private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
+		String username = ((User)(msg.getObject())).getUsername();
+		if(checkExistence(username)) {
+			Message errorMsg = new Message("user already exists", msg.getObject(), null);
+			client.sendToClient(errorMsg);
+		}
+		else {
+			Transaction tx = null;
 			try {
-				Message errorMessage = new Message("registration_failed", null, null);
-				client.sendToClient(errorMessage);
-			} catch (IOException ioException) {
-				ioException.printStackTrace();
+				tx = session.beginTransaction();
+				User user = (User) msg.getObject();
+
+				// First save to database
+				session.save(user);
+				session.flush();
+				tx.commit();
+
+				// Only update cache after successful database save
+				userCache.put(user.getUsername(), user);
+
+				Message message = new Message("registered", null, null);
+				client.sendToClient(message);
+			} catch (Exception e) {
+				if (tx != null) {
+					tx.rollback();
+				}
+				// Don't update cache if database save failed
+				try {
+					Message errorMessage = new Message("registration_failed", null, null);
+					client.sendToClient(errorMessage);
+				} catch (IOException ioException) {
+					ioException.printStackTrace();
+				}
+				e.printStackTrace();
 			}
-			e.printStackTrace();
 		}
 	}
 
