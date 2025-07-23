@@ -62,7 +62,9 @@ public class PrimaryController implements Initializable {
 	public void initialize(URL location, ResourceBundle resources) {
 		backgroundRect.widthProperty().bind(mainAnchorPane.widthProperty());
 		backgroundRect.heightProperty().bind(mainAnchorPane.heightProperty());
-		EventBus.getDefault().register(this);
+		if (!EventBus.getDefault().isRegistered(this)) {
+			EventBus.getDefault().register(this);
+		}
 
 		try {
 			if (!SimpleClient.getClient().isConnected()) {
@@ -129,7 +131,6 @@ public class PrimaryController implements Initializable {
 				Label type = new Label("Type: " + product.getType());
 				Label price = new Label(String.format("Price: $%.2f", product.getPrice()));
 				Button viewEdit = new Button("View");
-				Button editPrice = new Button("Edit Price");
 				Button addToCart = new Button("Add to Cart");
 
 				Long flowerId = product.getId();
@@ -142,31 +143,6 @@ public class PrimaryController implements Initializable {
 					} catch (IOException e) {
 						throw new RuntimeException(e);
 					}
-				});
-
-				editPrice.setOnAction((ActionEvent event) -> {
-					TextInputDialog dialog = new TextInputDialog(String.format("%.2f", product.getPrice()));
-					dialog.setTitle("Edit Flower Price");
-					dialog.setHeaderText("Edit price for: " + product.getName());
-					dialog.setContentText("Enter new price:");
-
-					dialog.showAndWait().ifPresent(input -> {
-						try {
-							double newPrice = Double.parseDouble(input);
-							if (newPrice < 0) {
-								showAlert("Invalid Input", "Price cannot be negative.");
-								return;
-							}
-							product.setPrice(newPrice);
-							price.setText(String.format("Price: $%.2f", newPrice));
-
-							SimpleClient.getClient().sendToServer("update_price:" + product.getId() + ":" + newPrice);
-						} catch (NumberFormatException e) {
-							showAlert("Invalid Input", "Please enter a valid number.");
-						} catch (IOException e) {
-							showAlert("Server Error", "Failed to send new price to server.");
-						}
-					});
 				});
 
 				addToCart.setOnAction((ActionEvent event) -> {
@@ -188,12 +164,7 @@ public class PrimaryController implements Initializable {
 				itemPane.add(type, 0, 2);
 				itemPane.add(price, 0, 3);
 				itemPane.add(viewEdit, 0, 4);
-
-				if(SessionManager.getInstance().isEmployee()) {
-					itemPane.add(editPrice, 0, 5);
-				} else if(SessionManager.getInstance().getCurrentUser() != null) {
-					itemPane.add(addToCart, 0, 5);
-				}
+				itemPane.add(addToCart, 0, 5);
 
 				catalogGrid.add(itemPane, col, row);
 

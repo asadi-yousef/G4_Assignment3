@@ -49,6 +49,7 @@ public class LoginControl implements Initializable {
             if(user instanceof Employee) {
                 Platform.runLater(() -> {
                     try {
+                        EventBus.getDefault().unregister(this);
                         App.setRoot("managerView");
                     } catch (IOException e) {
                         throw new RuntimeException(e);
@@ -58,6 +59,7 @@ public class LoginControl implements Initializable {
             else{
                 Platform.runLater(() -> {
                     try {
+                        EventBus.getDefault().unregister(this);
                         App.setRoot("primary");
                     } catch (IOException e) {
                         throw new RuntimeException(e);
@@ -74,6 +76,7 @@ public class LoginControl implements Initializable {
     }
 
     public void handleRegister(ActionEvent actionEvent) throws IOException {
+        EventBus.getDefault().unregister(this);
         App.setRoot("registerView");
     }
 }
