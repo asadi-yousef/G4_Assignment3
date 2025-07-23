@@ -34,12 +34,49 @@
 
             <Line endX="245.00006103515625" endY="2.0000038146972656" layoutX="1200" layoutY="58.0" startX="-1200.0" startY="2.0000076293945312" />
 
-            <Label layoutX="500" layoutY="61.0" prefHeight="44.0" prefWidth="130.0" text="Catalog">
+            <!-- Customer Menu Bar -->
+            <HBox fx:id="customerMenuBar" layoutX="200.0" layoutY="70.0" prefHeight="40.0" prefWidth="600.0" spacing="20.0" visible="false" AnchorPane.leftAnchor="200.0" AnchorPane.rightAnchor="200.0" AnchorPane.topAnchor="70.0">
+               <children>
+                  <Button fx:id="catalogButton" mnemonicParsing="false" onAction="#handleCatalog" prefHeight="35.0" prefWidth="100.0" styleClass="menu-button" text="Catalog">
+                     <font>
+                        <Font name="Bell MT" size="14.0" />
+                     </font>
+                  </Button>
+                  <Button fx:id="cartButton" mnemonicParsing="false" onAction="#handleCart" prefHeight="35.0" prefWidth="100.0" styleClass="menu-button" text="My Cart">
+                     <font>
+                        <Font name="Bell MT" size="14.0" />
+                     </font>
+                  </Button>
+                  <Button fx:id="ordersButton" mnemonicParsing="false" onAction="#handleOrders" prefHeight="35.0" prefWidth="100.0" styleClass="menu-button" text="My Orders">
+                     <font>
+                        <Font name="Bell MT" size="14.0" />
+                     </font>
+                  </Button>
+                  <Button fx:id="complaintsButton" mnemonicParsing="false" onAction="#handleComplaints" prefHeight="35.0" prefWidth="120.0" styleClass="menu-button" text="Complaints">
+                     <font>
+                        <Font name="Bell MT" size="14.0" />
+                     </font>
+                  </Button>
+                  <Button fx:id="profileButton" mnemonicParsing="false" onAction="#handleProfile" prefHeight="35.0" prefWidth="100.0" styleClass="menu-button" text="Profile">
+                     <font>
+                        <Font name="Bell MT" size="14.0" />
+                     </font>
+                  </Button>
+                  <Button fx:id="logoutButton" mnemonicParsing="false" onAction="#handleLogout" prefHeight="35.0" prefWidth="80.0" styleClass="logout-button" text="Logout" visible="false">
+                     <font>
+                        <Font name="Bell MT" size="14.0" />
+                     </font>
+                  </Button>
+               </children>
+            </HBox>
+
+            <Label fx:id="catalogLabel" layoutX="500" layoutY="120.0" prefHeight="44.0" prefWidth="130.0" text="Catalog">
                <font>
                   <Font name="Bell MT Bold" size="36.0" />
                </font>
             </Label>
-            <GridPane fx:id="catalogGrid" hgap="20" layoutX="104.0" layoutY="133.0" prefHeight="464.0" prefWidth="690.0" vgap="20" AnchorPane.bottomAnchor="87.0" AnchorPane.leftAnchor="104.0" AnchorPane.rightAnchor="108.0" AnchorPane.topAnchor="133.0">
+
+            <GridPane fx:id="catalogGrid" hgap="20" layoutX="104.0" layoutY="180.0" prefHeight="464.0" prefWidth="690.0" vgap="20" AnchorPane.bottomAnchor="87.0" AnchorPane.leftAnchor="104.0" AnchorPane.rightAnchor="108.0" AnchorPane.topAnchor="180.0">
                <columnConstraints>
                   <ColumnConstraints percentWidth="40" />
                   <ColumnConstraints percentWidth="40" />

@@ -55,4 +55,8 @@ public class SessionManager {
     public void clearCart() {
         cart.clear();
     }
+
+    public void logout() {
+        this.currentUser = null;
+    }
 }

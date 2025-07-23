@@ -10,6 +10,7 @@ import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
@@ -29,12 +30,32 @@ public class PrimaryController implements Initializable {
 
 	public Button loginButton;
 	public Label userStatusLabel;
+
+	// Menu bar components
+	@FXML
+	private HBox customerMenuBar;
+	@FXML
+	private Button catalogButton;
+	@FXML
+	private Button cartButton;
+	@FXML
+	private Button ordersButton;
+	@FXML
+	private Button complaintsButton;
+	@FXML
+	private Button profileButton;
+	@FXML
+	private Button logoutButton;
+
 	@FXML
 	private GridPane catalogGrid;
 	@FXML
 	private AnchorPane mainAnchorPane;
 	@FXML
 	private Rectangle backgroundRect;
+	@FXML
+	private Label catalogLabel;
+
 	private Catalog catalog;
 
 	@Override
@@ -42,6 +63,7 @@ public class PrimaryController implements Initializable {
 		backgroundRect.widthProperty().bind(mainAnchorPane.widthProperty());
 		backgroundRect.heightProperty().bind(mainAnchorPane.heightProperty());
 		EventBus.getDefault().register(this);
+
 		try {
 			if (!SimpleClient.getClient().isConnected()) {
 				SimpleClient.getClient().openConnection();
@@ -51,17 +73,33 @@ public class PrimaryController implements Initializable {
 			e.printStackTrace();
 			showAlert("Connection Error", "Failed to connect to server.");
 		}
+
+		updateUIBasedOnUserStatus();
+	}
+
+	private void updateUIBasedOnUserStatus() {
 		if(SessionManager.getInstance().getCurrentUser() != null) {
+			// User is logged in
 			loginButton.setVisible(false);
 			loginButton.setDisable(true);
 			userStatusLabel.setVisible(true);
-			userStatusLabel.setText("Hi "+SessionManager.getInstance().getCurrentUser().getUsername());
-		}
-		else {
+			userStatusLabel.setText("Hi " + SessionManager.getInstance().getCurrentUser().getUsername());
+
+			// Show customer menu bar for customers only
+			if(!SessionManager.getInstance().isEmployee()) {
+				customerMenuBar.setVisible(true);
+				logoutButton.setVisible(true);
+			}
+		} else {
+			// User is not logged in
 			loginButton.setVisible(true);
+			loginButton.setDisable(false);
 			userStatusLabel.setVisible(false);
+			customerMenuBar.setVisible(false);
+			logoutButton.setVisible(false);
 		}
 	}
+
 	private void renderCatalog() {
 		List<Product> products = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
 
@@ -92,6 +130,7 @@ public class PrimaryController implements Initializable {
 				Label price = new Label(String.format("Price: $%.2f", product.getPrice()));
 				Button viewEdit = new Button("View");
 				Button editPrice = new Button("Edit Price");
+				Button addToCart = new Button("Add to Cart");
 
 				Long flowerId = product.getId();
 
@@ -130,14 +169,30 @@ public class PrimaryController implements Initializable {
 					});
 				});
 
+				addToCart.setOnAction((ActionEvent event) -> {
+					if(SessionManager.getInstance().getCurrentUser() != null && !SessionManager.getInstance().isEmployee()) {
+						try {
+							SimpleClient.getClient().sendToServer("add_to_cart:" + product.getId());
+							showAlert("Success", product.getName() + " added to cart!");
+						} catch (IOException e) {
+							showAlert("Error", "Failed to add item to cart.");
+						}
+					} else {
+						showAlert("Login Required", "Please login to add items to cart.");
+					}
+				});
+
 				// Add elements to itemPane
-				itemPane.add(imageView, 0, 0, 2, 1); // Image at the top, spanning two columns if needed
+				itemPane.add(imageView, 0, 0, 2, 1);
 				itemPane.add(name, 0, 1);
 				itemPane.add(type, 0, 2);
 				itemPane.add(price, 0, 3);
 				itemPane.add(viewEdit, 0, 4);
+
 				if(SessionManager.getInstance().isEmployee()) {
 					itemPane.add(editPrice, 0, 5);
+				} else if(SessionManager.getInstance().getCurrentUser() != null) {
+					itemPane.add(addToCart, 0, 5);
 				}
 
 				catalogGrid.add(itemPane, col, row);
@@ -174,7 +229,11 @@ public class PrimaryController implements Initializable {
 			catalog.getFlowers().removeIf(p->p.getId().equals(msg.getObject()));
 			renderCatalog();
 		}
+		else if(msg.getMessage().startsWith("cart_updated")) {
+			showAlert("Success", "Cart updated successfully!");
+		}
 	}
+
 	private void showAlert(String title, String message) {
 		Platform.runLater(() -> {
 			Alert alert = new Alert(Alert.AlertType.INFORMATION);
@@ -185,6 +244,65 @@ public class PrimaryController implements Initializable {
 		});
 	}
 
+	// Menu navigation handlers
+	@FXML
+	public void handleCatalog(ActionEvent actionEvent) {
+		// Already on catalog page, maybe refresh
+		try {
+			SimpleClient.getClient().sendToServer("request_catalog");
+		} catch (IOException e) {
+			showAlert("Error", "Failed to refresh catalog.");
+		}
+	}
+
+	@FXML
+	public void handleCart(ActionEvent actionEvent) {
+		try {
+			App.setRoot("cartView");
+			EventBus.getDefault().unregister(this);
+		} catch (IOException e) {
+			showAlert("Error", "Failed to open cart page.");
+		}
+	}
+
+	@FXML
+	public void handleOrders(ActionEvent actionEvent) {
+		try {
+			App.setRoot("ordersView");
+			EventBus.getDefault().unregister(this);
+		} catch (IOException e) {
+			showAlert("Error", "Failed to open orders page.");
+		}
+	}
+
+	@FXML
+	public void handleComplaints(ActionEvent actionEvent) {
+		try {
+			App.setRoot("complaintsView");
+			EventBus.getDefault().unregister(this);
+		} catch (IOException e) {
+			showAlert("Error", "Failed to open complaints page.");
+		}
+	}
+
+	@FXML
+	public void handleProfile(ActionEvent actionEvent) {
+		try {
+			App.setRoot("profileView");
+			EventBus.getDefault().unregister(this);
+		} catch (IOException e) {
+			showAlert("Error", "Failed to open profile page.");
+		}
+	}
+
+	@FXML
+	public void handleLogout(ActionEvent actionEvent) {
+		SessionManager.getInstance().logout();
+		updateUIBasedOnUserStatus();
+		showAlert("Success", "Logged out successfully!");
+	}
+
+	@FXML
 	public void handleLogin(ActionEvent actionEvent) throws IOException {
 		App.setRoot("logInView");
 		EventBus.getDefault().unregister(this);
