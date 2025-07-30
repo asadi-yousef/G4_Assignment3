@@ -146,6 +146,7 @@ public class PrimaryController implements Initializable {
 					System.out.println("View flower with ID: " + flowerId);
 					ViewFlowerController.setSelectedFlower(product);
 					try {
+						EventBus.getDefault().unregister(this);
 						App.setRoot("viewFlower");
 					} catch (IOException e) {
 						throw new RuntimeException(e);
