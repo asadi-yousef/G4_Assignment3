@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import java.util.*?>
+<?import javafx.scene.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.text.Font?>
+
+<VBox xmlns="http://javafx.com/javafx/11.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.CartController">
+    <children>
+        <Label text="Shopping Cart">
+            <font>
+                <Font name="System Bold" size="24.0" />
+            </font>
+            <VBox.margin>
+                <Insets bottom="20.0" left="10.0" right="10.0" top="10.0" />
+            </VBox.margin>
+        </Label>
+
+        <ListView fx:id="cartListView" prefHeight="400.0" prefWidth="600.0">
+            <VBox.margin>
+                <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+            </VBox.margin>
+        </ListView>
+
+        <Label fx:id="totalLabel" text="Total: $0.00">
+            <font>
+                <Font name="System Bold" size="18.0" />
+            </font>
+            <VBox.margin>
+                <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+            </VBox.margin>
+        </Label>
+    </children>
+</VBox>

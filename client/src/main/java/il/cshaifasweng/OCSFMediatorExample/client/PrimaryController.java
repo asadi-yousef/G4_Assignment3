@@ -3,6 +3,8 @@ package il.cshaifasweng.OCSFMediatorExample.client;
 import il.cshaifasweng.OCSFMediatorExample.entities.Catalog;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
+import il.cshaifasweng.OCSFMediatorExample.entities.User;
+import il.cshaifasweng.OCSFMediatorExample.entities.Cart;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -13,6 +15,11 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.stage.Stage;
+import javafx.scene.Node;
 
 import java.io.IOException;
 import java.net.URL;
@@ -146,9 +153,16 @@ public class PrimaryController implements Initializable {
 				});
 
 				addToCart.setOnAction((ActionEvent event) -> {
-					if(SessionManager.getInstance().getCurrentUser() != null && !SessionManager.getInstance().isEmployee()) {
+					if (SessionManager.getInstance().getCurrentUser() != null && !SessionManager.getInstance().isEmployee()) {
 						try {
-							SimpleClient.getClient().sendToServer("add_to_cart:" + product.getId());
+							User currentUser = SessionManager.getInstance().getCurrentUser();
+
+							List<Object> payload = new ArrayList<>();
+							payload.add(currentUser);
+
+							Message message = new Message("add_to_cart", product.getId(), payload);
+							SimpleClient.getClient().sendToServer(message);
+
 							showAlert("Success", product.getName() + " added to cart!");
 						} catch (IOException e) {
 							showAlert("Error", "Failed to add item to cart.");
@@ -157,6 +171,7 @@ public class PrimaryController implements Initializable {
 						showAlert("Login Required", "Please login to add items to cart.");
 					}
 				});
+
 
 				// Add elements to itemPane
 				itemPane.add(imageView, 0, 0, 2, 1);
@@ -203,6 +218,29 @@ public class PrimaryController implements Initializable {
 		else if(msg.getMessage().startsWith("cart_updated")) {
 			showAlert("Success", "Cart updated successfully!");
 		}
+		else if (msg.getMessage().startsWith("cart_data")) {
+			Cart cart = (Cart) msg.getObject();
+			Platform.runLater(() -> {
+				try {
+					FXMLLoader loader = new FXMLLoader(getClass().getResource("cartView.fxml"));
+					Parent root = loader.load();
+
+					CartController cartController = loader.getController();
+					cartController.setCart(cart); // Pass the cart to the controller
+
+					Stage stage = (Stage) catalogGrid.getScene().getWindow();
+					stage.setScene(new Scene(root));
+					stage.show();
+
+					EventBus.getDefault().unregister(this);
+
+				} catch (IOException e) {
+					showAlert("Error", "Failed to open cart page.");
+				}
+			}); // pass to the cart controller
+		}
+
+
 	}
 
 	private void showAlert(String title, String message) {
@@ -229,12 +267,25 @@ public class PrimaryController implements Initializable {
 	@FXML
 	public void handleCart(ActionEvent actionEvent) {
 		try {
-			App.setRoot("cartView");
-			EventBus.getDefault().unregister(this);
+			User currentUser = SessionManager.getInstance().getCurrentUser();
+			if (currentUser == null) {
+				showAlert("Login Required", "Please login to view your cart.");
+				return;
+			}
+
+			// Ask server for the cart
+			List<Object> payload = new ArrayList<>();
+			payload.add(currentUser);
+			Message message = new Message("request_cart", null, payload);
+			SimpleClient.getClient().sendToServer(message);
+
+			// We'll wait for the response before switching view
 		} catch (IOException e) {
-			showAlert("Error", "Failed to open cart page.");
+			showAlert("Error", "Failed to request cart.");
 		}
 	}
+
+
 
 	@FXML
 	public void handleOrders(ActionEvent actionEvent) {

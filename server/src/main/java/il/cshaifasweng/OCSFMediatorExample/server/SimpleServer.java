@@ -19,6 +19,9 @@ import org.hibernate.Transaction;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.Persistence;
 
 
 public class SimpleServer extends AbstractServer {
@@ -30,6 +33,8 @@ public class SimpleServer extends AbstractServer {
 
 	// Use ConcurrentHashMap for thread-safe cache
 	private static final ConcurrentHashMap<String, User> userCache = new ConcurrentHashMap<>();
+
+	private static EntityManagerFactory emf = Persistence.createEntityManagerFactory("my-persistence-unit");
 
 	public SimpleServer(int port) {
 		super(port);
@@ -98,6 +103,15 @@ public class SimpleServer extends AbstractServer {
 				else if(msgString.startsWith("delete_product")) {
 					handleDeleteProduct(message, client, session);
 				}
+
+				else if(msgString.startsWith("add_to_cart")) {
+					handleAddToCart(message, client);
+				}
+				else if(msgString.startsWith("request_cart")) {
+					handleCartRequest(message, client);
+				}
+
+
 			}
 
 			if (msgString.equals("request_catalog")) {
@@ -359,6 +373,169 @@ public class SimpleServer extends AbstractServer {
 			return false;
 		}
 	}
+
+	private void handleAddToCart(Message message, ConnectionToClient client) {
+		EntityManager em = emf.createEntityManager();
+
+		try {
+			em.getTransaction().begin();
+
+			Long productId = (Long) message.getObject();
+			User user = (User) message.getObjectList().get(0);
+
+			Product product = em.find(Product.class, productId);
+
+			Cart cart = em.createQuery(
+							"SELECT c FROM Cart c WHERE c.user.id = :uid", Cart.class)
+					.setParameter("uid", user.getId())
+					.getResultStream()
+					.findFirst()
+					.orElse(null);
+
+			if (cart == null) {
+				cart = new Cart(user);
+				em.persist(cart);
+			}
+
+			CartItem item = cart.getItems().stream()
+					.filter(ci -> ci.getProduct().getId().equals(productId))
+					.findFirst()
+					.orElse(null);
+
+			if (item != null) {
+				item.setQuantity(item.getQuantity() + 1);
+			} else {
+				item = new CartItem(product, cart, 1);
+				em.persist(item);
+				cart.getItems().add(item);
+			}
+
+			em.getTransaction().commit();
+
+			client.sendToClient(new Message("cart_updated", null, null));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			try {
+				client.sendToClient(new Message("error", "Failed to add to cart", null));
+			} catch (IOException ex) {
+				ex.printStackTrace();
+			}
+		} finally {
+			em.close();
+		}
+	}
+
+
+
+	private void handleCartRequest(Message message, ConnectionToClient client) {
+		EntityManager em = emf.createEntityManager();
+
+		try {
+			User user = (User) message.getObjectList().get(0);
+
+			Cart cart = em.createQuery(
+							"SELECT c FROM Cart c LEFT JOIN FETCH c.items i LEFT JOIN FETCH i.product WHERE c.user.id = :uid",
+							Cart.class)
+					.setParameter("uid", user.getId())
+					.getResultStream()
+					.findFirst()
+					.orElse(null);
+
+			if (cart == null) {
+				cart = new Cart(user);
+				em.getTransaction().begin();
+				em.persist(cart);
+				em.getTransaction().commit();
+			}
+
+			client.sendToClient(new Message("cart_data", cart, null));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			try {
+				client.sendToClient(new Message("error", "Failed to load cart", null));
+			} catch (IOException ex) {
+				ex.printStackTrace();
+			}
+		} finally {
+			em.close();
+		}
+	}
+
+
+
+
+
+	private Cart getOrCreateCartForUser(User user) {
+		EntityManager em = emf.createEntityManager();
+		Cart cart;
+
+		try {
+			em.getTransaction().begin();
+
+			cart = em.createQuery(
+							"SELECT c FROM Cart c WHERE c.user.id = :userId", Cart.class)
+					.setParameter("userId", user.getId())
+					.getResultStream()
+					.findFirst()
+					.orElse(null);
+
+			if (cart == null) {
+				cart = new Cart(user);
+				em.persist(cart);
+			}
+
+			em.getTransaction().commit();
+		} finally {
+			em.close();
+		}
+		return cart;
+	}
+
+	private void addProductToCart(Cart cart, Long productId) {
+		EntityManager em = emf.createEntityManager();
+
+		try {
+			em.getTransaction().begin();
+
+			Product product = em.find(Product.class, productId);
+			Cart managedCart = em.find(Cart.class, cart.getId());
+
+			CartItem item = managedCart.getItems().stream()
+					.filter(ci -> ci.getProduct().getId().equals(productId))
+					.findFirst()
+					.orElse(null);
+
+			if (item != null) {
+				item.setQuantity(item.getQuantity() + 1);
+			} else {
+				item = new CartItem(product, managedCart, 1);
+				em.persist(item);
+				managedCart.getItems().add(item);
+			}
+
+			em.getTransaction().commit();
+		} finally {
+			em.close();
+		}
+	}
+
+	private Cart getCartByUserId(Long userId) {
+		EntityManager em = emf.createEntityManager();
+		Cart cart;
+
+		try {
+			cart = em.createQuery(
+							"SELECT c FROM Cart c WHERE c.user.id = :userId", Cart.class)
+					.setParameter("userId", userId)
+					.getSingleResult();
+		} finally {
+			em.close();
+		}
+		return cart;
+	}
+
 
 	public void sendToAllClients(Message message) {
 		// CopyOnWriteArrayList provides thread-safe iteration

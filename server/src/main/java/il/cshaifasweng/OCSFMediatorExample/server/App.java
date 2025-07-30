@@ -21,7 +21,7 @@ public class App {
 
     private static SessionFactory getSessionFactory() throws HibernateException {
         Configuration configuration = new Configuration();
-        String password = "1@2@3@4_5Tuf";
+        String password = "Renata123";
         configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
 
         configuration.setProperty("hibernate.connection.password", password);
