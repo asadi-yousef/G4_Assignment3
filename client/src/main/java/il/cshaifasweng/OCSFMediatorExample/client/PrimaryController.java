@@ -6,31 +6,30 @@ import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import il.cshaifasweng.OCSFMediatorExample.entities.Cart;
 import javafx.application.Platform;
+import javafx.event.ActionEvent; // Move this up and keep only one
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
+import javafx.scene.Node;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.shape.Rectangle;
+import javafx.stage.Stage;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Parent;
-import javafx.scene.Scene;
-import javafx.stage.Stage;
-import javafx.scene.Node;
 
 import java.io.IOException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ResourceBundle;
-import javafx.event.ActionEvent;
-import java.util.LinkedHashSet;
-import java.util.ArrayList;
-
-import javafx.scene.layout.AnchorPane;
-import javafx.scene.shape.Rectangle;
 
 
 public class PrimaryController implements Initializable {
@@ -309,12 +308,18 @@ public class PrimaryController implements Initializable {
 	}
 
 	@FXML
-	public void handleProfile(ActionEvent actionEvent) {
+	public void handleProfile(ActionEvent event) {
 		try {
-			App.setRoot("profileView");
+			FXMLLoader loader = new FXMLLoader(getClass().getResource("Profile.fxml"));
+			Parent root = loader.load();
+
+			Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
+			stage.setScene(new Scene(root));
+			stage.show();
+
 			EventBus.getDefault().unregister(this);
 		} catch (IOException e) {
-			showAlert("Error", "Failed to open profile page.");
+			showAlert("Error", "Failed to load profile page.");
 		}
 	}
 

@@ -103,15 +103,19 @@ public class SimpleServer extends AbstractServer {
 				else if(msgString.startsWith("delete_product")) {
 					handleDeleteProduct(message, client, session);
 				}
-
 				else if(msgString.startsWith("add_to_cart")) {
 					handleAddToCart(message, client);
 				}
 				else if(msgString.startsWith("request_cart")) {
 					handleCartRequest(message, client);
 				}
-
-
+				// ADD THE NEW PROFILE HANDLERS HERE
+				else if(msgString.equals("request_customer_data")) {
+					handleCustomerDataRequest(message, client, session);
+				}
+				else if(msgString.equals("update_profile")) {
+					handleProfileUpdate(message, client, session);
+				}
 			}
 
 			if (msgString.equals("request_catalog")) {
@@ -135,6 +139,114 @@ public class SimpleServer extends AbstractServer {
 			}
 		}
 	}
+
+// ADD THESE TWO NEW METHODS TO YOUR CLASS:
+
+	private void handleCustomerDataRequest(Message message, ConnectionToClient client, Session session) {
+		try {
+			// Check if the message has a payload - it should be the User object
+			Object payload = message.getObject();
+			User user = null;
+
+			// Handle different payload types
+			if (payload instanceof User) {
+				user = (User) payload;
+			} else if (payload instanceof java.util.List) {
+				java.util.List<?> list = (java.util.List<?>) payload;
+				if (!list.isEmpty() && list.get(0) instanceof User) {
+					user = (User) list.get(0);
+				}
+			}
+
+			if (user == null) {
+				client.sendToClient(new Message("error", "Invalid user data", null));
+				return;
+			}
+
+			// Since Customer extends User, we need to get the Customer by the same ID
+			Customer customer = null;
+
+			if (user instanceof Customer) {
+				// User is already a Customer, just cast it
+				customer = (Customer) user;
+			} else {
+				// User is not a Customer, try to find Customer with same ID
+				customer = session.get(Customer.class, user.getId());
+			}
+
+			Message response = new Message("customer_data_response", customer, null);
+			client.sendToClient(response);
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			try {
+				client.sendToClient(new Message("error", "Failed to get customer data: " + e.getMessage(), null));
+			} catch (IOException ioException) {
+				ioException.printStackTrace();
+			}
+		}
+	}
+
+	private void handleProfileUpdate(Message message, ConnectionToClient client, Session session) {
+		try {
+			Object payload = message.getObject();
+			User user = null;
+			Customer customer = null;
+
+			// Handle different payload types
+			if (payload instanceof User) {
+				user = (User) payload;
+				if (user instanceof Customer) {
+					customer = (Customer) user;
+				}
+			} else if (payload instanceof java.util.List) {
+				java.util.List<?> list = (java.util.List<?>) payload;
+				if (!list.isEmpty()) {
+					if (list.get(0) instanceof User) {
+						user = (User) list.get(0);
+					}
+					if (list.size() > 1 && list.get(1) instanceof Customer) {
+						customer = (Customer) list.get(1);
+					}
+				}
+			}
+
+			if (user == null) {
+				client.sendToClient(new Message("profile_update_failed", "Invalid user data", null));
+				return;
+			}
+
+			// Start transaction
+			session.beginTransaction();
+
+			// Update user
+			session.merge(user);
+
+			// Update customer if exists
+			if (customer != null) {
+				session.merge(customer);
+			}
+
+			// Commit transaction
+			session.getTransaction().commit();
+
+			Message response = new Message("profile_updated_success", null, null);
+			client.sendToClient(response);
+
+		} catch (Exception e) {
+			// Rollback transaction on error
+			if (session.getTransaction() != null && session.getTransaction().isActive()) {
+				session.getTransaction().rollback();
+			}
+			e.printStackTrace();
+			try {
+				client.sendToClient(new Message("profile_update_failed", "Database update failed: " + e.getMessage(), null));
+			} catch (IOException ioException) {
+				ioException.printStackTrace();
+			}
+		}
+	}
+
 
 	private void handleDeleteProduct(Message msg, ConnectionToClient client, Session session) {
 		Transaction tx = null;
