@@ -5,6 +5,7 @@
 <?import javafx.scene.shape.*?>
 <?import javafx.scene.text.*?>
 
+
 <ScrollPane fx:id="mainScrollPane" fitToHeight="true" fitToWidth="true" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController">
 
    <content>
@@ -57,9 +58,9 @@
                         <Font name="Bell MT" size="14.0" />
                      </font>
                   </Button>
-                  <Button fx:id="profileButton" mnemonicParsing="false" onAction="#handleProfile" prefHeight="35.0" prefWidth="100.0" styleClass="menu-button" text="Profile">
+                  <Button fx:id="profileButton" onAction="#handleProfile" text="👤 Profile" style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 10 20 10 20; -fx-cursor: hand;" textFill="WHITE">
                      <font>
-                        <Font name="Bell MT" size="14.0" />
+                        <Font name="System Bold" size="14.0" />
                      </font>
                   </Button>
                   <Button fx:id="logoutButton" mnemonicParsing="false" onAction="#handleLogout" prefHeight="35.0" prefWidth="80.0" styleClass="logout-button" text="Logout" visible="false">

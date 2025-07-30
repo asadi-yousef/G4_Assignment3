@@ -40,7 +40,57 @@ public class Customer extends User implements Serializable {
         this.country = country;
     }
 
+    public boolean isSigned() {
+        return isSigned;
+    }
+    public void setSigned(boolean signed) {
+        isSigned = signed;
+    }
+    public boolean isSubbed() {
+        return isSubbed;
+    }
+    public void setSubbed(boolean subbed) {
+        isSubbed = subbed;
+    }
+    public String getCreditNumber() {
+        return creditNumber;
+    }
+    public void setCreditNumber(String creditNumber) {
+        this.creditNumber = creditNumber;
+    }
+    public String getEmail() {
+        return email;
+    }
+    public void setEmail(String email) {
+        this.email = email;
+    }
+    public String getPhone() {
+        return phone;
+    }
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+    public String getAddress() {
+        return address;
+    }
+    public void setAddress(String address) {
+        this.address = address;
+    }
+    public String getCity() {
+        return city;
+    }
+    public void setCity(String city) {
+        this.city = city;
+    }
+    public String getCountry() {
+        return country;
+    }
+    public void setCountry(String country) {
+        this.country = country;
+    }
+
     public Customer() {
         super();
     }
 }
+

@@ -11,6 +11,14 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListView;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.stage.Stage;
+import javafx.event.ActionEvent;
+import javafx.scene.Node;
+import java.io.IOException;
+import javafx.scene.control.Button;
 
 import java.net.URL;
 import java.util.ResourceBundle;
@@ -21,6 +29,9 @@ public class CartController implements Initializable {
     private ListView<String> cartListView;
     @FXML
     private Label totalLabel;
+
+    @FXML
+    private Button backToCatalogButton;
 
     private Cart cart;
 
@@ -83,6 +94,42 @@ public class CartController implements Initializable {
             totalLabel.setText("Total: $" + String.format("%.2f", total));
         });
     }
+
+    @FXML
+    public void handleBackToCatalog(ActionEvent event) {
+        try {
+            System.out.println("Attempting to load primaryView.fxml..."); // Debug line
+
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("primary.fxml"));
+
+            if (loader.getLocation() == null) {
+                System.out.println("Could not find primary.fxml, trying different paths...");
+                // Try without the leading slash
+                loader = new FXMLLoader(getClass().getResource("primary.fxml"));
+            }
+
+            Parent root = loader.load();
+            System.out.println("Successfully loaded FXML");
+
+            Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
+            Scene scene = new Scene(root);
+            stage.setScene(scene);
+            stage.show();
+
+            EventBus.getDefault().unregister(this);
+            System.out.println("Navigation completed successfully");
+
+        } catch (IOException e) {
+            System.err.println("IOException: " + e.getMessage());
+            e.printStackTrace();
+            showAlert("Error", "Failed to load catalog view: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("Unexpected error: " + e.getMessage());
+            e.printStackTrace();
+            showAlert("Error", "Unexpected error occurred: " + e.getMessage());
+        }
+    }
+
 
     private void showAlert(String title, String content) {
         Platform.runLater(() -> {

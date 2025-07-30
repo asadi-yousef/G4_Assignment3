@@ -11,30 +11,95 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.text.Font?>
 
-<VBox xmlns="http://javafx.com/javafx/11.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.CartController">
+<VBox xmlns="http://javafx.com/javafx/11.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.CartController" style="-fx-background-color: #f8f9fa; -fx-spacing: 20;" prefWidth="900.0" prefHeight="700.0">
     <children>
-        <Label text="Shopping Cart">
-            <font>
-                <Font name="System Bold" size="24.0" />
-            </font>
+        <!-- Header Section -->
+        <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
+            <children>
+                <HBox alignment="CENTER_LEFT">
+                    <children>
+                        <Label text="🛒">
+                            <font>
+                                <Font size="28.0" />
+                            </font>
+                            <HBox.margin>
+                                <Insets right="10.0" />
+                            </HBox.margin>
+                        </Label>
+                        <Label text="Shopping Cart" textFill="#2c3e50">
+                            <font>
+                                <Font name="System Bold" size="28.0" />
+                            </font>
+                        </Label>
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Button fx:id="backToCatalogButton" onAction="#handleBackToCatalog" text="← Back to Catalog" style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 10 20 10 20; -fx-cursor: hand;" textFill="WHITE">
+                            <font>
+                                <Font name="System Bold" size="14.0" />
+                            </font>
+                        </Button>
+                    </children>
+                    <padding>
+                        <Insets bottom="20.0" left="25.0" right="25.0" top="25.0" />
+                    </padding>
+                </HBox>
+            </children>
             <VBox.margin>
-                <Insets bottom="20.0" left="10.0" right="10.0" top="10.0" />
+                <Insets left="30.0" right="30.0" top="25.0" />
             </VBox.margin>
-        </Label>
+        </VBox>
 
-        <ListView fx:id="cartListView" prefHeight="400.0" prefWidth="600.0">
-            <VBox.margin>
-                <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
-            </VBox.margin>
-        </ListView>
+        <!-- Cart Items Section -->
+        <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
+            <children>
+                <Label text="Items in Cart" textFill="#34495e">
+                    <font>
+                        <Font name="System Bold" size="16.0" />
+                    </font>
+                    <VBox.margin>
+                        <Insets bottom="15.0" left="25.0" right="25.0" top="20.0" />
+                    </VBox.margin>
+                </Label>
 
-        <Label fx:id="totalLabel" text="Total: $0.00">
-            <font>
-                <Font name="System Bold" size="18.0" />
-            </font>
+                <ListView fx:id="cartListView" prefHeight="450.0" prefWidth="800.0" style="-fx-background-color: transparent; -fx-border-color: #e9ecef; -fx-border-radius: 8; -fx-border-width: 1; -fx-cell-size: 50;">
+                    <VBox.margin>
+                        <Insets bottom="25.0" left="30.0" right="30.0" />
+                    </VBox.margin>
+                </ListView>
+            </children>
             <VBox.margin>
-                <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
+                <Insets left="30.0" right="30.0" top="15.0" />
             </VBox.margin>
-        </Label>
+        </VBox>
+
+        <!-- Total Section -->
+        <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
+            <children>
+                <Separator style="-fx-background-color: #e9ecef;">
+                    <VBox.margin>
+                        <Insets bottom="15.0" left="25.0" right="25.0" top="20.0" />
+                    </VBox.margin>
+                </Separator>
+
+                <HBox alignment="CENTER_RIGHT">
+                    <children>
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Label fx:id="totalLabel" text="Total: $0.00" textFill="#27ae60" style="-fx-background-color: #f8f9fa; -fx-background-radius: 8; -fx-padding: 12 20 12 20;">
+                            <font>
+                                <Font name="System Bold" size="20.0" />
+                            </font>
+                        </Label>
+                    </children>
+                    <VBox.margin>
+                        <Insets bottom="25.0" left="25.0" right="25.0" />
+                    </VBox.margin>
+                </HBox>
+            </children>
+            <VBox.margin>
+                <Insets bottom="20.0" left="20.0" right="20.0" top="10.0" />
+            </VBox.margin>
+        </VBox>
     </children>
+    <padding>
+        <Insets bottom="20.0" left="20.0" right="20.0" top="20.0" />
+    </padding>
 </VBox>
