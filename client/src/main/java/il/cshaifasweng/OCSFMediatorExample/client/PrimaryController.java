@@ -222,16 +222,7 @@ public class PrimaryController implements Initializable {
 			Cart cart = (Cart) msg.getObject();
 			Platform.runLater(() -> {
 				try {
-					FXMLLoader loader = new FXMLLoader(getClass().getResource("cartView.fxml"));
-					Parent root = loader.load();
-
-					CartController cartController = loader.getController();
-					cartController.setCart(cart); // Pass the cart to the controller
-
-					Stage stage = (Stage) catalogGrid.getScene().getWindow();
-					stage.setScene(new Scene(root));
-					stage.show();
-
+					App.setRoot("cartView");
 					EventBus.getDefault().unregister(this);
 
 				} catch (IOException e) {

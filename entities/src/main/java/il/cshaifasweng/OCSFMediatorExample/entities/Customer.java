@@ -7,7 +7,6 @@ import java.io.Serializable;
 
 @Entity
 @Inheritance(strategy = InheritanceType.JOINED)
-@Table(name = "Customers")
 public class Customer extends User implements Serializable {
     private static final long serialVersionUID = 1L;
     @Column

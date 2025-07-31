@@ -1,9 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
 
-import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
-import il.cshaifasweng.OCSFMediatorExample.entities.Employee;
-import il.cshaifasweng.OCSFMediatorExample.entities.Product;
-import il.cshaifasweng.OCSFMediatorExample.entities.User;
+import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
@@ -21,7 +18,7 @@ public class App {
 
     private static SessionFactory getSessionFactory() throws HibernateException {
         Configuration configuration = new Configuration();
-        String password = "Renata123";
+        String password = "1@2@3@4_5Tuf";
         configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
 
         configuration.setProperty("hibernate.connection.password", password);
@@ -31,6 +28,8 @@ public class App {
         configuration.addAnnotatedClass(Customer.class);
         configuration.addAnnotatedClass(User.class);
         configuration.addAnnotatedClass(Employee.class);
+        configuration.addAnnotatedClass(Cart.class);
+        configuration.addAnnotatedClass(CartItem.class);
 
         ServiceRegistry serviceRegistry = new StandardServiceRegistryBuilder().applySettings(configuration.getProperties()).build();
 

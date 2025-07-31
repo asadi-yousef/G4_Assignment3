@@ -97,37 +97,17 @@ public class CartController implements Initializable {
 
     @FXML
     public void handleBackToCatalog(ActionEvent event) {
-        try {
-            System.out.println("Attempting to load primaryView.fxml..."); // Debug line
-
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("primary.fxml"));
-
-            if (loader.getLocation() == null) {
-                System.out.println("Could not find primary.fxml, trying different paths...");
-                // Try without the leading slash
-                loader = new FXMLLoader(getClass().getResource("primary.fxml"));
+        System.out.println("Attempting to load primaryView.fxml..."); // Debug line
+        EventBus.getDefault().unregister(this);
+        Platform.runLater(() -> {
+            try {
+                App.setRoot("primary");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
             }
+        });
+        System.out.println("Navigation completed successfully");
 
-            Parent root = loader.load();
-            System.out.println("Successfully loaded FXML");
-
-            Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
-            Scene scene = new Scene(root);
-            stage.setScene(scene);
-            stage.show();
-
-            EventBus.getDefault().unregister(this);
-            System.out.println("Navigation completed successfully");
-
-        } catch (IOException e) {
-            System.err.println("IOException: " + e.getMessage());
-            e.printStackTrace();
-            showAlert("Error", "Failed to load catalog view: " + e.getMessage());
-        } catch (Exception e) {
-            System.err.println("Unexpected error: " + e.getMessage());
-            e.printStackTrace();
-            showAlert("Error", "Unexpected error occurred: " + e.getMessage());
-        }
     }
 
 
