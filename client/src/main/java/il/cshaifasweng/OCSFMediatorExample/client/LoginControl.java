@@ -46,26 +46,15 @@ public class LoginControl implements Initializable {
         if(msg.equals("correct")) {
             User user = (User)(tmp.getObject());
             SessionManager.getInstance().setCurrentUser(user);
-            if(user instanceof Employee) {
-                Platform.runLater(() -> {
-                    try {
-                        EventBus.getDefault().unregister(this);
-                        App.setRoot("managerView");
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-            }
-            else{
-                Platform.runLater(() -> {
-                    try {
-                        EventBus.getDefault().unregister(this);
-                        App.setRoot("primary");
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-            }
+
+            Platform.runLater(() -> {
+                try {
+                    EventBus.getDefault().unregister(this);
+                    App.setRoot("primary");
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
         else if(msg.equals("incorrect")) {
             Platform.runLater(() -> {
