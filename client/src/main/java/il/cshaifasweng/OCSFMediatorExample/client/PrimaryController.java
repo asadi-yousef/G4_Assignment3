@@ -31,7 +31,6 @@ import java.util.*;
 
 public class PrimaryController implements Initializable {
 
-	// FXML Components
 	@FXML private Button loginButton;
 	@FXML private Label userStatusLabel;
 	@FXML private HBox customerMenuBar;
@@ -106,7 +105,6 @@ public class PrimaryController implements Initializable {
 				return;
 			}
 
-			// ✨ SEARCH LOGIC: Filter the products before rendering
 			List<Product> allProducts = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
 			String searchQuery = searchTextField.getText().toLowerCase().trim();
 
@@ -119,7 +117,6 @@ public class PrimaryController implements Initializable {
 						.collect(Collectors.toList());
 			}
 
-			// The rest of the method now uses the filtered 'productsToRender' list
 			int col = 0;
 			int row = 0;
 
@@ -131,6 +128,7 @@ public class PrimaryController implements Initializable {
 
 				ImageView imageView = new ImageView();
 				try {
+					System.out.println(Objects.requireNonNull(PrimaryController.class.getResource(product.getImagePath())).toExternalForm());
 					Image image = new Image(Objects.requireNonNull(PrimaryController.class.getResource(product.getImagePath())).toExternalForm());
 					imageView.setImage(image);
 				} catch (Exception e) {
@@ -144,8 +142,10 @@ public class PrimaryController implements Initializable {
 				name.setFont(new Font("Bell MT Bold", 18));
 				Label price = new Label(String.format("$%.2f", product.getPrice()));
 				price.setFont(new Font("Bell MT", 16));
+				Label category = new Label("Category: "+product.getType());
+				category.setFont(new Font("Bell MT", 16));
 
-				productCard.getChildren().addAll(imageView, name, price);
+				productCard.getChildren().addAll(imageView, name, category ,price);
 
 				if (isEmployee) {
 					HBox buttonBox = new HBox(10, createEditButton(product), createDeleteButton(product));
@@ -163,7 +163,6 @@ public class PrimaryController implements Initializable {
 							payload.add(currentUser);
 							Message message = new Message("add_to_cart", product.getId(), payload);
 							SimpleClient.getClient().sendToServer(message);
-							showAlert("Success", product.getName() + " added to cart!");
 						} catch (IOException e) {
 							showAlert("Error", "Failed to add item to cart.");
 						}
