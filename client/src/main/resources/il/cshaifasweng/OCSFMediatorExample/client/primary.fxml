@@ -1,98 +1,78 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<?import javafx.scene.shape.*?>
+<?import javafx.scene.shape.Rectangle?>
 <?import javafx.scene.text.*?>
 
-
-<ScrollPane fx:id="mainScrollPane" fitToHeight="true" fitToWidth="true" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController">
-
+<ScrollPane fitToHeight="true" fitToWidth="true" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController">
    <content>
-      <AnchorPane fx:id="mainAnchorPane" prefHeight="671.0" prefWidth="1200">
+      <AnchorPane fx:id="mainAnchorPane" minHeight="670.0" minWidth="1200.0">
          <children>
-            <Rectangle fx:id="backgroundRect" arcHeight="5.0" arcWidth="5.0" fill="#ca83e7" height="60.0" stroke="BLACK" strokeType="INSIDE" width="1200" />
-
-            <Label layoutX="19.0" layoutY="8.0" prefHeight="26.0" prefWidth="82.0" text="Lilac">
-               <font>
-                  <Font name="Bell MT Italic" size="36.0" />
-               </font>
+            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffc0cb" height="60.0" stroke="BLACK" strokeType="INSIDE" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0" />
+            <Label layoutX="19.0" layoutY="8.0" text="Lilac">
+               <font><Font name="Bell MT Italic" size="36.0" /></font>
             </Label>
-
-            <!-- Login Button -->
-            <Button fx:id="loginButton" layoutX="1050.0" layoutY="15.0" mnemonicParsing="false" onAction="#handleLogin" prefHeight="30.0" prefWidth="80.0" styleClass="login-button" text="Login">
-               <font>
-                  <Font name="Bell MT" size="14.0" />
-               </font>
+            <Button fx:id="loginButton" onAction="#handleLogin" text="Login" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="15.0">
+               <font><Font name="Bell MT" size="14.0" /></font>
             </Button>
-
-            <!-- User Status Label (shows when logged in) -->
-            <Label fx:id="userStatusLabel" layoutX="900.0" layoutY="20.0" prefHeight="20.0" prefWidth="140.0" text="" visible="false">
-               <font>
-                  <Font name="Bell MT" size="12.0" />
-               </font>
+            <Label fx:id="userStatusLabel" text="Hi, username" visible="false" AnchorPane.rightAnchor="110.0" AnchorPane.topAnchor="20.0">
+               <font><Font name="Bell MT" size="12.0" /></font>
             </Label>
+            <Separator layoutY="60.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" />
 
-            <Line endX="245.00006103515625" endY="2.0000038146972656" layoutX="1200" layoutY="58.0" startX="-1200.0" startY="2.0000076293945312" />
-
-            <!-- Customer Menu Bar -->
-            <HBox fx:id="customerMenuBar" layoutX="200.0" layoutY="70.0" prefHeight="40.0" prefWidth="600.0" spacing="20.0" visible="false" AnchorPane.leftAnchor="200.0" AnchorPane.rightAnchor="200.0" AnchorPane.topAnchor="70.0">
+            <HBox fx:id="customerMenuBar" alignment="CENTER" spacing="10.0" visible="false" AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0">
                <children>
-                  <Button fx:id="catalogButton" mnemonicParsing="false" onAction="#handleCatalog" prefHeight="35.0" prefWidth="100.0" styleClass="menu-button" text="Catalog">
-                     <font>
-                        <Font name="Bell MT" size="14.0" />
-                     </font>
+                  <Button onAction="#handleCatalog" text="Catalog" />
+                  <Button onAction="#handleCart" text="My Cart" />
+                  <Button onAction="#handleOrders" text="My Orders" />
+                  <Button onAction="#handleComplaints" text="Complaints" />
+                  <Pane HBox.hgrow="ALWAYS" />
+                  <Button onAction="#handleProfile" style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-background-radius: 8;" text="👤 Profile">
+                     <font><Font name="System Bold" size="14.0" /></font>
                   </Button>
-                  <Button fx:id="cartButton" mnemonicParsing="false" onAction="#handleCart" prefHeight="35.0" prefWidth="100.0" styleClass="menu-button" text="My Cart">
-                     <font>
-                        <Font name="Bell MT" size="14.0" />
-                     </font>
+                  <Button fx:id="logoutButton" mnemonicParsing="false" onAction="#handleLogout" style="-fx-background-color: #c0392b; -fx-text-fill: white; -fx-background-radius: 8;" text="Logout" visible="false">
+                     <font><Font name="System Bold" size="14.0" /></font>
                   </Button>
-                  <Button fx:id="ordersButton" mnemonicParsing="false" onAction="#handleOrders" prefHeight="35.0" prefWidth="100.0" styleClass="menu-button" text="My Orders">
-                     <font>
-                        <Font name="Bell MT" size="14.0" />
-                     </font>
-                  </Button>
-                  <Button fx:id="complaintsButton" mnemonicParsing="false" onAction="#handleComplaints" prefHeight="35.0" prefWidth="120.0" styleClass="menu-button" text="Complaints">
-                     <font>
-                        <Font name="Bell MT" size="14.0" />
-                     </font>
-                  </Button>
-                  <Button fx:id="profileButton" onAction="#handleProfile" text="👤 Profile" style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 10 20 10 20; -fx-cursor: hand;" textFill="WHITE">
-                     <font>
-                        <Font name="System Bold" size="14.0" />
-                     </font>
-                  </Button>
-                  <Button fx:id="logoutButton" mnemonicParsing="false" onAction="#handleLogout" prefHeight="35.0" prefWidth="80.0" styleClass="logout-button" text="Logout" visible="false">
-                     <font>
-                        <Font name="Bell MT" size="14.0" />
-                     </font>
+               </children>
+            </HBox>
+            <HBox fx:id="employeeMenuBar" alignment="CENTER" spacing="10.0" visible="false" AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0">
+               <children>
+                  <Button onAction="#handleManageCatalog" text="Manage Catalog" />
+                  <Button onAction="#handleViewReports" text="View Reports" />
+                  <Button onAction="#handleManageComplaints" text="Manage Complaints" />
+                  <Pane HBox.hgrow="ALWAYS" />
+                  <Button fx:id="employeeLogoutButton" mnemonicParsing="false" onAction="#handleLogout" style="-fx-background-color: #c0392b; -fx-text-fill: white; -fx-background-radius: 8;" text="Logout">
+                     <font><Font name="System Bold" size="14.0" /></font>
                   </Button>
                </children>
             </HBox>
 
-            <Label fx:id="catalogLabel" layoutX="500" layoutY="120.0" prefHeight="44.0" prefWidth="130.0" text="Catalog">
-               <font>
-                  <Font name="Bell MT Bold" size="36.0" />
-               </font>
-            </Label>
-
-            <GridPane fx:id="catalogGrid" hgap="20" layoutX="104.0" layoutY="180.0" prefHeight="464.0" prefWidth="690.0" vgap="20" AnchorPane.bottomAnchor="87.0" AnchorPane.leftAnchor="104.0" AnchorPane.rightAnchor="108.0" AnchorPane.topAnchor="180.0">
-               <columnConstraints>
-                  <ColumnConstraints percentWidth="40" />
-                  <ColumnConstraints percentWidth="40" />
-                  <ColumnConstraints percentWidth="40" />
-               </columnConstraints>
-               <rowConstraints>
-                  <RowConstraints percentHeight="80" />
-                  <RowConstraints percentHeight="80" />
-                  <RowConstraints percentHeight="80" />
-               </rowConstraints>
+            <HBox alignment="CENTER" layoutY="120.0" spacing="20.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
                <children>
-                  <Button text="Preview 1" visible="false" GridPane.columnIndex="0" GridPane.rowIndex="0" />
-                  <Button text="Preview 2" visible="false" GridPane.columnIndex="1" GridPane.rowIndex="0" />
-                  <Button text="Preview 3" visible="false" GridPane.columnIndex="2" GridPane.rowIndex="0" />
+                  <Label fx:id="catalogLabel" text="Catalog">
+                     <font><Font name="Bell MT Bold" size="36.0" /></font>
+                  </Label>
+                  <HBox alignment="CENTER" style="-fx-background-color: white; -fx-border-color: #cccccc; -fx-border-radius: 20; -fx-background-radius: 20;">
+                     <padding><Insets left="10" right="5" top="5" bottom="5" /></padding>
+                     <children>
+                        <Label text="🔍">
+                           <font><Font size="16.0" /></font>
+                        </Label>
+                        <TextField fx:id="searchTextField" promptText="Search by name..." style="-fx-background-color: transparent; -fx-border-color: transparent;" />
+                     </children>
+                  </HBox>
                </children>
+            </HBox>
+
+            <ProgressIndicator fx:id="loadingIndicator" visible="false" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="350.0" />
+            <GridPane fx:id="catalogGrid" hgap="20" vgap="20" AnchorPane.bottomAnchor="20.0" AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="180.0">
+               <columnConstraints>
+                  <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3" />
+                  <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3" />
+                  <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3" />
+               </columnConstraints>
             </GridPane>
          </children>
       </AnchorPane>

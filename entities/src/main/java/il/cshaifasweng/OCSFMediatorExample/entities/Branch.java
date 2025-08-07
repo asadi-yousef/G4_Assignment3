@@ -16,8 +16,6 @@ public class Branch implements Serializable {
     private Long id;
     @Column
     private String name;
-    @Column
-    private Catalog catalog;
     @OneToMany(mappedBy = "branch", cascade = CascadeType.ALL)
     private List<Employee> employees;
 
@@ -27,12 +25,6 @@ public class Branch implements Serializable {
     }
     public void setName(String name){
         this.name = name;
-    }
-    public Catalog getCatalog(){
-        return catalog;
-    }
-    public void setCatalog(Catalog catalog){
-        this.catalog = catalog;
     }
     public List<Employee> getEmployees(){
         return employees;
