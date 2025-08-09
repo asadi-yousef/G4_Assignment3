@@ -116,6 +116,9 @@ public class SimpleServer extends AbstractServer {
 				else if(msgString.equals("update_profile")) {
 					handleProfileUpdate(message, client, session);
 				}
+
+
+
 			}
 
 			if (msgString.equals("request_catalog")) {
@@ -140,7 +143,6 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-// ADD THESE TWO NEW METHODS TO YOUR CLASS:
 
 	private void handleCustomerDataRequest(Message message, ConnectionToClient client, Session session) {
 		try {
