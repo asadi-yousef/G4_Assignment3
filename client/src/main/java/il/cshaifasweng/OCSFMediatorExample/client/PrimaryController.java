@@ -17,9 +17,11 @@ import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
+
 import java.io.IOException;
 import java.net.URL;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class PrimaryController implements Initializable {
@@ -46,51 +48,6 @@ public class PrimaryController implements Initializable {
 		searchTextField.textProperty().addListener((observable, oldValue, newValue) -> renderCatalog());
 	}
 
-	private void loadCatalogData() {
-		loadingIndicator.setVisible(true);
-		catalogGrid.getChildren().clear();
-		System.out.println("DEBUG: loadCatalogData() called");
-
-		Task<Void> loadTask = new Task<>() {
-			@Override
-			protected Void call() throws Exception {
-				if (!SimpleClient.getClient().isConnected()) {
-					System.out.println("DEBUG: Client not connected, opening connection");
-					SimpleClient.getClient().openConnection();
-				}
-				System.out.println("DEBUG: Sending request_catalog to server");
-				SimpleClient.getClient().sendToServer("request_catalog");
-				return null;
-			}
-		};
-
-		loadTask.setOnFailed(e -> {
-			loadingIndicator.setVisible(false);
-			System.out.println("DEBUG: Load task failed: ");
-			showAlert("Connection Error", "Failed to connect to the server. Please check your connection.");
-		});
-
-		new Thread(loadTask).start();
-	}
-
-	private void updateUIBasedOnUserStatus() {
-		boolean isLoggedIn = SessionManager.getInstance().getCurrentUser() != null;
-		boolean isEmployee = SessionManager.getInstance().isEmployee();
-
-		// Toggle visibility: show EITHER login OR logout/user info
-		loginButton.setVisible(!isLoggedIn);
-		logoutButton.setVisible(isLoggedIn);
-		userStatusLabel.setVisible(isLoggedIn);
-
-		// Show the correct menu bar based on the user's role
-		customerMenuBar.setVisible(isLoggedIn && !isEmployee);
-		employeeMenuBar.setVisible(isLoggedIn && isEmployee);
-
-		if (isLoggedIn) {
-			userStatusLabel.setText("Hi, " + SessionManager.getInstance().getCurrentUser().getUsername());
-		}
-	}
-
 	private void renderCatalog() {
 		boolean isEmployee = SessionManager.getInstance().isEmployee();
 		Platform.runLater(() -> {
@@ -112,87 +69,41 @@ public class PrimaryController implements Initializable {
 			int row = 0;
 			for (Product product : productsToRender) {
 				try {
-
 					FXMLLoader loader = new FXMLLoader(getClass().getResource("/il/cshaifasweng/OCSFMediatorExample/client/productCard.fxml"));
 					StackPane cardNode = loader.load();
 					ProductCardController cardController = loader.getController();
 
-					Runnable primaryAction;
-					Runnable secondaryAction;
-
 					if (isEmployee) {
-						primaryAction = () -> handleViewProduct(product);
-						secondaryAction = () -> handleDeleteProduct(product);
+						// EMPLOYEES get "Edit" and "Delete" buttons
+						cardController.setData(
+								product,
+								updatedProduct -> { // The saveAction (Consumer)
+									try {
+										Message message = new Message("editProduct", updatedProduct, null);
+										SimpleClient.getClient().sendToServer(message);
+									} catch (IOException e) { e.printStackTrace(); }
+								},
+								() -> handleDeleteProduct(product) // The deleteAction (Runnable)
+						);
 					} else {
-						primaryAction = () -> handleViewProduct(product);
-						secondaryAction = () -> handleAddToCart(product);
+						// CUSTOMERS get "View" and "Add to Cart" buttons
+						cardController.setData(
+								product,
+								() -> handleViewProduct(product),    // The viewAction (Runnable)
+								() -> handleAddToCart(product)     // The addToCartAction (Runnable)
+						);
 					}
 
-					cardController.setData(product, isEmployee, primaryAction, secondaryAction);
 					catalogGrid.add(cardNode, col, row);
+					col = (col + 1) % 3;
+					if (col == 0) row++;
 
-					col++;
-					if (col == 3) {
-						col = 0;
-						row++;
-					}
 				} catch (IOException e) {
-					// This error will now clearly show if the file path is wrong
 					System.err.println("CRITICAL ERROR: Could not load productCard.fxml.");
 					e.printStackTrace();
 				}
 			}
 		});
-	}
-
-	private void handleAddToCart(Product product) {
-		User currentUser = SessionManager.getInstance().getCurrentUser();
-		if (currentUser == null) {
-			showAlert("Login Required", "Please login to add items to your cart.");
-			return;
-		}
-		try {
-			List<Object> payload = new ArrayList<>();
-			payload.add(currentUser);
-			Message message = new Message("add_to_cart", product.getId(), payload);
-			SimpleClient.getClient().sendToServer(message);
-			showAlert("Success", product.getName() + " was added to your cart!");
-		} catch (IOException e) {
-			showAlert("Error", "Failed to add item to cart.");
-		}
-	}
-
-	private void handleViewProduct(Product product) {
-		ViewFlowerController.setSelectedFlower(product);
-		try {
-			EventBus.getDefault().unregister(this);
-			App.setRoot("viewFlower");
-		} catch (IOException e) {
-			e.printStackTrace();
-			showAlert("Error", "Could not open the product page.");
-		}
-	}
-
-	private void handleEditProduct(Product product) {
-		showAlert("Action", "Navigating to edit: " + product.getName());
-	}
-
-	private void handleDeleteProduct(Product product) {
-		Alert confirmationAlert = new Alert(Alert.AlertType.CONFIRMATION);
-		confirmationAlert.setTitle("Confirm Deletion");
-		confirmationAlert.setHeaderText("Are you sure you want to delete '" + product.getName() + "'?");
-		confirmationAlert.setContentText("This action cannot be undone.");
-
-		Optional<ButtonType> result = confirmationAlert.showAndWait();
-		if (result.isPresent() && result.get() == ButtonType.OK) {
-			try {
-				Message message = new Message("delete_product_by_id", product.getId(), null);
-				SimpleClient.getClient().sendToServer(message);
-				showAlert("Success", "Delete request for " + product.getName() + " has been sent.");
-			} catch (IOException e) {
-				showAlert("Error", "Failed to send delete request to server.");
-			}
-		}
 	}
 
 	@Subscribe
@@ -227,6 +138,84 @@ public class PrimaryController implements Initializable {
 		});
 	}
 
+	private void loadCatalogData() {
+		loadingIndicator.setVisible(true);
+		catalogGrid.getChildren().clear();
+		Task<Void> loadTask = new Task<>() {
+			@Override
+			protected Void call() throws Exception {
+				if (!SimpleClient.getClient().isConnected()) {
+					SimpleClient.getClient().openConnection();
+				}
+				SimpleClient.getClient().sendToServer("request_catalog");
+				return null;
+			}
+		};
+		loadTask.setOnFailed(e -> {
+			loadingIndicator.setVisible(false);
+			showAlert("Connection Error", "Failed to connect to the server.");
+		});
+		new Thread(loadTask).start();
+	}
+
+	private void updateUIBasedOnUserStatus() {
+		boolean isLoggedIn = SessionManager.getInstance().getCurrentUser() != null;
+		boolean isEmployee = SessionManager.getInstance().isEmployee();
+		loginButton.setVisible(!isLoggedIn);
+		logoutButton.setVisible(isLoggedIn);
+		userStatusLabel.setVisible(isLoggedIn);
+		customerMenuBar.setVisible(isLoggedIn && !isEmployee);
+		employeeMenuBar.setVisible(isLoggedIn && isEmployee);
+		if (isLoggedIn) {
+			userStatusLabel.setText("Hi, " + SessionManager.getInstance().getCurrentUser().getUsername());
+		}
+	}
+
+	private void handleAddToCart(Product product) {
+		User currentUser = SessionManager.getInstance().getCurrentUser();
+		if (currentUser == null) {
+			showAlert("Login Required", "Please login to add items to your cart.");
+			return;
+		}
+		try {
+			List<Object> payload = new ArrayList<>();
+			payload.add(currentUser);
+			Message message = new Message("add_to_cart", product.getId(), payload);
+			SimpleClient.getClient().sendToServer(message);
+			showAlert("Success", product.getName() + " was added to your cart!");
+		} catch (IOException e) {
+			showAlert("Error", "Failed to add item to cart.");
+		}
+	}
+
+	private void handleViewProduct(Product product) {
+		ViewFlowerController.setSelectedFlower(product);
+		try {
+			EventBus.getDefault().unregister(this);
+			App.setRoot("viewFlower");
+		} catch (IOException e) {
+			e.printStackTrace();
+			showAlert("Error", "Could not open the product page.");
+		}
+	}
+
+	private void handleDeleteProduct(Product product) {
+		Alert confirmationAlert = new Alert(Alert.AlertType.CONFIRMATION);
+		confirmationAlert.setTitle("Confirm Deletion");
+		confirmationAlert.setHeaderText("Are you sure you want to delete '" + product.getName() + "'?");
+		confirmationAlert.setContentText("This action cannot be undone.");
+		Optional<ButtonType> result = confirmationAlert.showAndWait();
+		if (result.isPresent() && result.get() == ButtonType.OK) {
+			try {
+				Message message = new Message("delete_product_by_id", product.getId(), null);
+				SimpleClient.getClient().sendToServer(message);
+				showAlert("Success", "Delete request for " + product.getName() + " has been sent.");
+			} catch (IOException e) {
+				showAlert("Error", "Failed to send delete request to server.");
+			}
+		}
+	}
+
 	private void showAlert(String title, String message) {
 		Platform.runLater(() -> {
 			Alert alert = new Alert(Alert.AlertType.INFORMATION);
@@ -236,8 +225,6 @@ public class PrimaryController implements Initializable {
 			alert.showAndWait();
 		});
 	}
-
-	// --- Navigation Handlers ---
 
 	@FXML
 	public void handleCatalog(ActionEvent actionEvent) {

@@ -14,9 +14,9 @@ import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
 import javafx.scene.text.Text;
 import javafx.stage.FileChooser;
-import javafx.stage.Stage; // Make sure this import is present
+import javafx.stage.Stage;
 
-import java.io.*; // Import for file operations
+import java.io.*;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -44,6 +44,7 @@ public class ProductCardController {
     }
 
     private void populateDisplayData() {
+        // This method remains the same.
         nameLabel.setText(currentProduct.getName());
         typeLabel.setText("Type: " + currentProduct.getType());
         try {
@@ -52,13 +53,11 @@ public class ProductCardController {
         } catch (Exception e) {
             System.err.println("Failed to load image: " + currentProduct.getImagePath());
         }
-
         try {
             colorDisplayRect.setFill(Color.web(currentProduct.getColor()));
         } catch (Exception e) {
             colorDisplayRect.setFill(Color.GRAY);
         }
-
         priceBox.getChildren().clear();
         if (currentProduct.getDiscountPercentage() > 0) {
             Text oldPriceText = new Text(String.format("$%.2f", currentProduct.getPrice()));
@@ -77,73 +76,81 @@ public class ProductCardController {
         }
     }
 
-    public void setData(Product product, boolean isEmployee, Runnable primaryAction, Runnable secondaryAction) {
+    /**
+     * setData method for an Employee.
+     * @param product The product to display.
+     * @param saveAction The logic to execute when the Save button is clicked.
+     * @param deleteAction The logic to execute when the Delete button is clicked.
+     */
+    public void setData(Product product, Consumer<Product> saveAction, Runnable deleteAction) {
         this.currentProduct = product;
         populateDisplayData();
         buttonBox.getChildren().clear();
 
-        if (isEmployee) {
-            Button editButton = new Button("Edit");
-            editButton.setOnAction(e -> switchToEditMode(updatedProduct -> {
-                // This is a dummy save action for this simple setData method.
-                // It just prints a message. The controller that uses this card
-                // would provide the actual server communication logic.
-                System.out.println("Product " + updatedProduct.getName() + " updated via simple card.");
-            }));
+        Button editButton = new Button("Edit");
+        editButton.setOnAction(e -> switchToEditMode(saveAction));
 
-            Button deleteButton = new Button("Delete");
-            deleteButton.setStyle("-fx-background-color: #c0392b; -fx-text-fill: white;");
-            deleteButton.setOnAction(e -> secondaryAction.run());
-            buttonBox.getChildren().addAll(editButton, deleteButton);
-        } else {
-            Button viewButton = new Button("View");
-            viewButton.setOnAction(e -> primaryAction.run());
-            Button addToCartButton = new Button("Add to Cart");
-            addToCartButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
-            addToCartButton.setOnAction(e -> secondaryAction.run());
-            buttonBox.getChildren().addAll(viewButton, addToCartButton);
-        }
+        Button deleteButton = new Button("Delete");
+        deleteButton.setStyle("-fx-background-color: #c0392b; -fx-text-fill: white;");
+        deleteButton.setOnAction(e -> deleteAction.run());
+
+        buttonBox.getChildren().addAll(editButton, deleteButton);
     }
+
+    /**
+     * setData method for a Customer.
+     * @param product The product to display.
+     * @param viewAction The logic for the "View" button.
+     * @param addToCartAction The logic for the "Add to Cart" button.
+     */
+    public void setData(Product product, Runnable viewAction, Runnable addToCartAction) {
+        this.currentProduct = product;
+        populateDisplayData();
+        buttonBox.getChildren().clear();
+
+        Button viewButton = new Button("View");
+        viewButton.setOnAction(e -> viewAction.run());
+
+        Button addToCartButton = new Button("Add to Cart");
+        addToCartButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
+        addToCartButton.setOnAction(e -> addToCartAction.run());
+
+        buttonBox.getChildren().addAll(viewButton, addToCartButton);
+    }
+
+    // The rest of the file (switchToEditMode, switchToDisplayMode, etc.) remains exactly the same.
+    // The saveButton's logic correctly calls saveAction.accept(currentProduct), which now triggers the real server logic.
 
     private void switchToEditMode(Consumer<Product> saveAction) {
         displayVBox.setVisible(false);
         displayVBox.setManaged(false);
         editVBox.setVisible(true);
         editVBox.setManaged(true);
-
         editVBox.getChildren().clear();
         editVBox.setPadding(new Insets(10));
         editVBox.setSpacing(10);
-
         TextField nameField = new TextField(currentProduct.getName());
         TextField typeField = new TextField(currentProduct.getType());
         TextField priceField = new TextField(String.format("%.2f", currentProduct.getPrice()));
         TextField discountField = new TextField(String.valueOf(currentProduct.getDiscountPercentage()));
         ColorPicker colorPicker = new ColorPicker(Color.web(currentProduct.getColor()));
         TextField imagePathField = new TextField(currentProduct.getImagePath());
-
         Button browseButton = new Button("Browse...");
         browseButton.setOnAction(e -> {
             FileChooser fileChooser = new FileChooser();
             fileChooser.setTitle("Select Product Image");
             fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.png", "*.jpg", "*.jpeg"));
-
-            // **CHANGE HERE: Get the stage from the button itself**
             Stage stage = (Stage) browseButton.getScene().getWindow();
-
             File file = fileChooser.showOpenDialog(stage);
             if (file != null) {
-                // Set the text field to the absolute path. The save logic will handle copying.
                 imagePathField.setText(file.getAbsolutePath());
             }
         });
         HBox imagePathBox = new HBox(5, imagePathField, browseButton);
-
         Button saveButton = new Button("Save");
         saveButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
         Button cancelButton = new Button("Cancel");
         HBox actionButtons = new HBox(10, saveButton, cancelButton);
-
         GridPane grid = new GridPane();
         grid.setVgap(8);
         grid.setHgap(10);
@@ -154,40 +161,30 @@ public class ProductCardController {
         grid.add(new Label("Price:"), 0, 4);      grid.add(priceField, 1, 4);
         grid.add(new Label("Discount %:"), 0, 5); grid.add(discountField, 1, 5);
         editVBox.getChildren().addAll(grid, actionButtons);
-
         cancelButton.setOnAction(e -> switchToDisplayMode());
         saveButton.setOnAction(e -> {
             try {
-                // Update basic properties
                 currentProduct.setName(nameField.getText());
                 currentProduct.setType(typeField.getText());
                 currentProduct.setPrice(Double.parseDouble(priceField.getText()));
-                currentProduct.setDiscountPercentage(Integer.parseInt(discountField.getText()));
+                currentProduct.setDiscountPercentage(Double.parseDouble(discountField.getText()));
                 currentProduct.setColor(toHexString(colorPicker.getValue()));
-
-                // **NEW: Handle image file copying, same as in your ManagerView**
                 String pathFromField = imagePathField.getText().trim();
-                // Check if the path is an absolute path (from file chooser) and not an existing relative path
                 if (!pathFromField.isEmpty() && !pathFromField.startsWith("/")) {
                     File sourceFile = new File(pathFromField);
                     if (sourceFile.exists()) {
                         File destDir = new File("src/main/resources/il/cshaifasweng/OCSFMediatorExample/client/images");
                         if (!destDir.exists()) destDir.mkdirs();
-
                         String fileName = sourceFile.getName();
                         File destFile = new File(destDir, fileName);
-
                         try (InputStream in = new FileInputStream(sourceFile); OutputStream out = new FileOutputStream(destFile)) {
                             in.transferTo(out);
                         }
-                        // Set the correct relative path for the product
                         currentProduct.setImagePath("/il/cshaifasweng/OCSFMediatorExample/client/images/" + fileName);
                     }
                 } else {
-                    // It's either an existing relative path or empty, so just set it
                     currentProduct.setImagePath(pathFromField);
                 }
-
                 saveAction.accept(currentProduct);
                 switchToDisplayMode();
             } catch (NumberFormatException ex) {
