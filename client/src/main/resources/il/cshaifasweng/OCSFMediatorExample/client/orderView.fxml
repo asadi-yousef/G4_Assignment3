@@ -107,19 +107,8 @@
             </VBox.margin>
         </VBox>
 
-        <!-- Delivery Details Section -->
-        <!-- Delivery Date -->
-        <HBox alignment="CENTER_LEFT" spacing="15.0">
-            <children>
-                <Label text="Delivery Date:" textFill="#2c3e50" minWidth="120.0">
-                    <font>
-                        <Font name="System Bold" size="14.0" />
-                    </font>
-                </Label>
-                <DatePicker fx:id="deliveryDatePicker" prefWidth="200.0" style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8;" />
-            </children>
-        </HBox>
-        <VBox fx:id="deliveryDetailsSection" style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);" visible="false" managed="false">
+        <!-- Main Delivery Details Section -->
+        <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
             <children>
                 <Label text="Delivery Details" textFill="#34495e">
                     <font>
@@ -130,10 +119,24 @@
                     </VBox.margin>
                 </Label>
 
-                <VBox spacing="15.0">
+                <!-- Delivery Date -->
+                <HBox alignment="CENTER_LEFT" spacing="15.0">
                     <children>
+                        <Label text="📅 Delivery Date:" textFill="#2c3e50" minWidth="140.0">
+                            <font>
+                                <Font name="System Bold" size="14.0" />
+                            </font>
+                        </Label>
+                        <DatePicker fx:id="deliveryDatePicker" prefWidth="200.0" style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8;" />
+                    </children>
+                    <VBox.margin>
+                        <Insets bottom="15.0" left="30.0" right="30.0" />
+                    </VBox.margin>
+                </HBox>
 
-
+                <!-- Recipient Details Section -->
+                <VBox fx:id="deliveryDetailsSection" spacing="15.0" visible="false" managed="false">
+                    <children>
                         <!-- Different Recipient Option -->
                         <VBox spacing="10.0">
                             <children>
@@ -145,7 +148,7 @@
 
                                 <HBox alignment="CENTER_LEFT" spacing="15.0">
                                     <children>
-                                        <Label text="Recipient Phone:" textFill="#2c3e50" minWidth="120.0">
+                                        <Label text="📱 Recipient Phone:" textFill="#2c3e50" minWidth="140.0">
                                             <font>
                                                 <Font name="System Bold" size="14.0" />
                                             </font>
@@ -157,12 +160,12 @@
                         </VBox>
                     </children>
                     <VBox.margin>
-                        <Insets bottom="25.0" left="30.0" right="30.0" />
+                        <Insets left="30.0" right="30.0" />
                     </VBox.margin>
                 </VBox>
             </children>
             <VBox.margin>
-                <Insets left="30.0" right="30.0" top="15.0" />
+                <Insets bottom="20.0" left="30.0" right="30.0" top="15.0" />
             </VBox.margin>
         </VBox>
 
