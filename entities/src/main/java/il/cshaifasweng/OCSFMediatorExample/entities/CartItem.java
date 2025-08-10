@@ -13,6 +13,7 @@ public class CartItem implements Serializable {
     private Product product;
 
     @ManyToOne
+    @JoinColumn(name = "cart_id")
     private Cart cart;
 
     private int quantity;

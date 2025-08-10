@@ -2,6 +2,7 @@ package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Cart;
 import il.cshaifasweng.OCSFMediatorExample.entities.CartItem;
+import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -45,9 +46,15 @@ public class CartController implements Initializable {
                 return;
             }
 
-            // Wrap the user in the object list
+            if (!(SessionManager.getInstance().getCurrentUser() instanceof Customer)) {
+                showAlert("Error", "Current user is not a customer.");
+                return;
+            }
+
+            Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
+
             var payload = new java.util.ArrayList<Object>();
-            payload.add(SessionManager.getInstance().getCurrentUser());
+            payload.add(customer);
 
             Message message = new Message("request_cart", null, payload);
             SimpleClient.getClient().sendToServer(message);
@@ -59,7 +66,17 @@ public class CartController implements Initializable {
 
     @Subscribe
     public void onMessageFromServer(Message msg) {
-        if (msg.getMessage().startsWith("cart_data")) {
+        ///
+        System.out.println("Message received on EventBus: " + msg.getMessage());
+
+        if (msg.getMessage().equals("cart_data")) {
+            Cart cart = (Cart) msg.getObject();
+            System.out.println("Received cart id: " + cart.getId());
+            System.out.println("Cart items count: " + cart.getItems().size());
+            for (CartItem ci : cart.getItems()) {
+                System.out.println("Product: " + ci.getProduct().getName() + ", qty: " + ci.getQuantity());
+            }
+
             this.cart = (Cart) msg.getObject();
             if (this.cart != null) {
                 renderCart();
@@ -67,10 +84,14 @@ public class CartController implements Initializable {
                 showAlert("Info", "Your cart is empty.");
             }
         } else if (msg.getMessage().startsWith("item_removed")) {
-            // Refresh cart after item removal
             try {
+                if (!(SessionManager.getInstance().getCurrentUser() instanceof Customer)) {
+                    showAlert("Error", "Current user is not a customer.");
+                    return;
+                }
+                Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
                 var payload = new java.util.ArrayList<Object>();
-                payload.add(SessionManager.getInstance().getCurrentUser());
+                payload.add(customer);
                 Message message = new Message("request_cart", null, payload);
                 SimpleClient.getClient().sendToServer(message);
             } catch (Exception e) {
@@ -86,6 +107,10 @@ public class CartController implements Initializable {
 
     private void renderCart() {
         Platform.runLater(() -> {
+            ///
+            System.out.println("Rendering cart with " + (cart == null ? 0 : cart.getItems().size()) + " items");
+
+            ///
             cartListView.getItems().clear();
             double total = 0;
 
@@ -113,18 +138,15 @@ public class CartController implements Initializable {
         itemBox.setPadding(new Insets(10));
         itemBox.setStyle("-fx-background-color: #f8f9fa; -fx-background-radius: 5;");
 
-        // Product info label
         Label itemLabel = new Label(item.getProduct().getName() +
                 " - $" + String.format("%.2f", item.getProduct().getPrice()) +
                 " x " + item.getQuantity() +
                 " = $" + String.format("%.2f", item.getProduct().getPrice() * item.getQuantity()));
         itemLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #2c3e50;");
 
-        // Spacer
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        // Remove button
         Button removeButton = new Button("🗑️ Remove");
         removeButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; " +
                 "-fx-background-radius: 5; -fx-padding: 5 10 5 10; " +
@@ -137,8 +159,13 @@ public class CartController implements Initializable {
 
     private void removeItemFromCart(CartItem item) {
         try {
+            if (!(SessionManager.getInstance().getCurrentUser() instanceof Customer)) {
+                showAlert("Error", "Current user is not a customer.");
+                return;
+            }
+            Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
             var payload = new java.util.ArrayList<Object>();
-            payload.add(SessionManager.getInstance().getCurrentUser());
+            payload.add(customer);
             payload.add(item);
 
             Message message = new Message("remove_cart_item", null, payload);
@@ -150,7 +177,6 @@ public class CartController implements Initializable {
 
     @FXML
     public void handleBackToCatalog(ActionEvent event) {
-        System.out.println("Attempting to load primaryView.fxml...");
         EventBus.getDefault().unregister(this);
         Platform.runLater(() -> {
             try {
@@ -159,7 +185,6 @@ public class CartController implements Initializable {
                 throw new RuntimeException(e);
             }
         });
-        System.out.println("Navigation completed successfully");
     }
 
     @FXML
@@ -168,8 +193,6 @@ public class CartController implements Initializable {
             showAlert("Empty Cart", "Your cart is empty. Add items before proceeding to order.");
             return;
         }
-
-        System.out.println("Proceeding to order view...");
         EventBus.getDefault().unregister(this);
         Platform.runLater(() -> {
             try {

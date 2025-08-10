@@ -22,6 +22,7 @@ import java.util.function.Function;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
+import java.time.LocalDateTime;
 
 
 public class SimpleServer extends AbstractServer {
@@ -109,12 +110,14 @@ public class SimpleServer extends AbstractServer {
 				else if(msgString.startsWith("request_cart")) {
 					handleCartRequest(message, client);
 				}
-				// ADD THE NEW PROFILE HANDLERS HERE
 				else if(msgString.equals("request_customer_data")) {
 					handleCustomerDataRequest(message, client, session);
 				}
 				else if(msgString.equals("update_profile")) {
 					handleProfileUpdate(message, client, session);
+				}
+				else if(msgString.startsWith("place_order")){
+					handlePlaceOrder(message, client);
 				}
 
 
@@ -496,18 +499,24 @@ public class SimpleServer extends AbstractServer {
 
 			Long productId = (Long) message.getObject();
 			User user = (User) message.getObjectList().get(0);
+			if (!(user instanceof Customer)) {
+				client.sendToClient(new Message("error", "User is not a customer", null));
+				return;
+			}
+
+			Customer customer = (Customer) user;
 
 			Product product = em.find(Product.class, productId);
 
 			Cart cart = em.createQuery(
-							"SELECT c FROM Cart c WHERE c.user.id = :uid", Cart.class)
-					.setParameter("uid", user.getId())
+							"SELECT c FROM Cart c LEFT JOIN FETCH c.items i LEFT JOIN FETCH i.product WHERE c.customer.id = :uid", Cart.class)
+					.setParameter("uid", customer.getId())
 					.getResultStream()
 					.findFirst()
 					.orElse(null);
 
 			if (cart == null) {
-				cart = new Cart(user);
+				cart = new Cart(customer);
 				em.persist(cart);
 			}
 
@@ -526,7 +535,16 @@ public class SimpleServer extends AbstractServer {
 
 			em.getTransaction().commit();
 
-			client.sendToClient(new Message("cart_updated", null, null));
+			// Print cart details for debugging before sending
+			System.out.println("Sending updated cart:");
+			System.out.println("Cart ID: " + cart.getId());
+			System.out.println("Items count: " + cart.getItems().size());
+			for (CartItem ci : cart.getItems()) {
+				System.out.println("Product: " + ci.getProduct().getName() + ", qty: " + ci.getQuantity());
+			}
+
+			// Send the updated cart back to client
+			client.sendToClient(new Message("cart_data", cart, null));
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -542,28 +560,43 @@ public class SimpleServer extends AbstractServer {
 
 
 
+
 	private void handleCartRequest(Message message, ConnectionToClient client) {
 		EntityManager em = emf.createEntityManager();
 
 		try {
 			User user = (User) message.getObjectList().get(0);
 
-			Cart cart = em.createQuery(
-							"SELECT c FROM Cart c LEFT JOIN FETCH c.items i LEFT JOIN FETCH i.product WHERE c.user.id = :uid",
-							Cart.class)
-					.setParameter("uid", user.getId())
+			if(!(user instanceof Customer)) {
+				client.sendToClient(new Message("error", "User is not a customer", null));
+				return;
+			}
+
+			Customer customer = (Customer) user;
+			Cart cart = em.createQuery("SELECT c FROM Cart c LEFT JOIN FETCH c.items i LEFT JOIN FETCH i.product WHERE c.customer.id = :uid", Cart.class)
+					.setParameter("uid", customer.getId())
 					.getResultStream()
 					.findFirst()
 					.orElse(null);
 
 			if (cart == null) {
-				cart = new Cart(user);
+				cart = new Cart(customer);
 				em.getTransaction().begin();
 				em.persist(cart);
 				em.getTransaction().commit();
 			}
-
+///
 			client.sendToClient(new Message("cart_data", cart, null));
+			if(cart != null) {
+				System.out.println("Cart found with id: " + cart.getId());
+				System.out.println("Items count: " + cart.getItems().size());
+				for(CartItem ci : cart.getItems()) {
+					System.out.println("Item product id: " + ci.getProduct().getId() + ", quantity: " + ci.getQuantity());
+				}
+			} else {
+				System.out.println("No cart found for user id " + user.getId());
+			}
+///
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -577,11 +610,119 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
+	private void handlePlaceOrder(Message message, ConnectionToClient client) {
+		EntityManager em = emf.createEntityManager();
+
+		try {
+			// Expect the client to send the Order as the Message.object
+			Order clientOrder = (Order) message.getObject();
+
+			// Determine customer id (try from clientOrder.customer first)
+			Long customerId = null;
+			if (clientOrder != null && clientOrder.getCustomer() != null) {
+				customerId = clientOrder.getCustomer().getId();
+			} else if (message.getObjectList() != null && !message.getObjectList().isEmpty()
+					&& message.getObjectList().get(0) instanceof User) {
+				customerId = ((User) message.getObjectList().get(0)).getId();
+			}
+
+			if (customerId == null) {
+				client.sendToClient(new Message("order_error", "Missing customer id in request", null));
+				return;
+			}
+
+			em.getTransaction().begin();
+
+			// Load managed customer
+			Customer managedCustomer = em.find(Customer.class, customerId);
+			if (managedCustomer == null) {
+				em.getTransaction().rollback();
+				client.sendToClient(new Message("order_error", "Customer not found", null));
+				return;
+			}
+
+			// Load cart (with items and product info) for the customer
+			Cart cart = em.createQuery(
+							"SELECT c FROM Cart c LEFT JOIN FETCH c.items i LEFT JOIN FETCH i.product WHERE c.customer.id = :uid",
+							Cart.class)
+					.setParameter("uid", managedCustomer.getId())
+					.getResultStream()
+					.findFirst()
+					.orElse(null);
+
+			if (cart == null || cart.getItems().isEmpty()) {
+				em.getTransaction().rollback();
+				client.sendToClient(new Message("order_error", "Cart is empty", null));
+				return;
+			}
+
+			// Build managed Order (do not persist clientOrder directly to avoid mixing detached objects)
+			Order order = new Order();
+			order.setCustomer(managedCustomer);
+			order.setStoreLocation(clientOrder.getStoreLocation());
+			order.setDelivery(clientOrder.getDelivery());
+			// server authoritative order time
+			order.setOrderDate(LocalDateTime.now());
+			// client's requested delivery date/time (may be null for pickup)
+			order.setDeliveryDateTime(clientOrder.getDeliveryDateTime());
+			order.setRecipientPhone(clientOrder.getRecipientPhone());
+			order.setDeliveryAddress(clientOrder.getDeliveryAddress());
+			order.setNote(clientOrder.getNote());
+			order.setPaymentMethod(clientOrder.getPaymentMethod());
+			order.setPaymentDetails(clientOrder.getPaymentDetails());
+
+			// Create OrderItem for each CartItem (use managed Product)
+			for (CartItem ci : new ArrayList<>(cart.getItems())) {
+				Product prod = em.find(Product.class, ci.getProduct().getId());
+				if (prod == null) {
+					// product missing -> rollback and inform client
+					em.getTransaction().rollback();
+					client.sendToClient(new Message("order_error", "Product not found (id=" + ci.getProduct().getId() + ")", null));
+					return;
+				}
+				OrderItem oi = new OrderItem();
+				oi.setProduct(prod);
+				oi.setQuantity(ci.getQuantity());
+				oi.setOrder(order);          // important: set bidirectional owner
+				order.getItems().add(oi);
+			}
+
+			// Persist order (cascade will persist the OrderItems)
+			em.persist(order);
+
+			// Remove cart items (clear user's cart)
+			for (CartItem ci : new ArrayList<>(cart.getItems())) {
+				CartItem managedCi = em.find(CartItem.class, ci.getId());
+				if (managedCi != null) {
+					em.remove(managedCi);
+				}
+			}
+			// keep the Cart entity itself (empty) so the user has a cart object on next request
+			em.flush();
+			em.getTransaction().commit();
+
+			// Send success + the persisted order back to client
+			client.sendToClient(new Message("order_placed_successfully", order, null));
+
+		} catch (Exception e) {
+			if (em.getTransaction() != null && em.getTransaction().isActive()) {
+				em.getTransaction().rollback();
+			}
+			e.printStackTrace();
+			try {
+				client.sendToClient(new Message("order_error", "Failed to place order: " + e.getMessage(), null));
+			} catch (IOException ioException) {
+				ioException.printStackTrace();
+			}
+		} finally {
+			em.close();
+		}
+	}
 
 
 
 
-	private Cart getOrCreateCartForUser(User user) {
+	private Cart getOrCreateCartForCustomer(Customer customer) {
 		EntityManager em = emf.createEntityManager();
 		Cart cart;
 
@@ -589,14 +730,14 @@ public class SimpleServer extends AbstractServer {
 			em.getTransaction().begin();
 
 			cart = em.createQuery(
-							"SELECT c FROM Cart c WHERE c.user.id = :userId", Cart.class)
-					.setParameter("userId", user.getId())
+							"SELECT c FROM Cart c WHERE c.customer.id = :uid", Cart.class)
+					.setParameter("uid", customer.getId())
 					.getResultStream()
 					.findFirst()
 					.orElse(null);
 
 			if (cart == null) {
-				cart = new Cart(user);
+				cart = new Cart(customer);
 				em.persist(cart);
 			}
 
@@ -635,14 +776,14 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-	private Cart getCartByUserId(Long userId) {
+	private Cart getCartByCustomerId(Long customerId) {
 		EntityManager em = emf.createEntityManager();
 		Cart cart;
 
 		try {
 			cart = em.createQuery(
-							"SELECT c FROM Cart c WHERE c.user.id = :userId", Cart.class)
-					.setParameter("userId", userId)
+							"SELECT c FROM Cart c WHERE c.customer.id = :uid", Cart.class)
+					.setParameter("uid", customerId)
 					.getSingleResult();
 		} finally {
 			em.close();

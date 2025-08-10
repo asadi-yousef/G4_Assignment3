@@ -11,6 +11,9 @@
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Product</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Cart</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.CartItem</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Customer</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Order</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderItem</class>
 
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="com.mysql.cj.jdbc.Driver"/>

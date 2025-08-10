@@ -12,22 +12,23 @@ public class Cart implements Serializable {
     private Long id;
 
     @OneToOne
-    private User user;  // Assuming you already have a User entity
+    @JoinColumn(name = "customer_ID")
+    private Customer customer;
 
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<CartItem> items = new ArrayList<>();
 
     public Cart() {}
 
-    public Cart(User user) {
-        this.user = user;
+    public Cart(Customer customer) {
+        this.customer = customer;
     }
 
     public Long getId() { return id; }
 
-    public User getUser() { return user; }
+    public User getCustomer() { return customer; }
 
-    public void setUser(User user) { this.user = user; }
+    public void setCustomer(Customer customer) { this.customer = customer; }
 
     public List<CartItem> getItems() { return items; }
 

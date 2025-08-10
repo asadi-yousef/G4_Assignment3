@@ -15,6 +15,7 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.net.URL;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +30,7 @@ public class OrderController implements Initializable {
     private RadioButton deliveryRadio;
 
     @FXML
-    private VBox deliveryDetailsSection;
+    private VBox deliveryDetailsSection;  // Contains only delivery address, different recipient, recipient phone
 
     @FXML
     private RadioButton pickupRadio;
@@ -38,10 +39,28 @@ public class OrderController implements Initializable {
     private DatePicker deliveryDatePicker;
 
     @FXML
+    private Spinner<Integer> deliveryHourSpinner;
+
+    @FXML
     private TextField recipientPhoneField;
 
     @FXML
     private CheckBox differentRecipientCheck;
+
+    @FXML
+    private TextField deliveryAddressField;
+
+    @FXML
+    private TextArea orderNoteField;
+
+    @FXML
+    private ChoiceBox<String> paymentMethodChoice;
+
+    @FXML
+    private TextField newCardField;
+
+    @FXML
+    private VBox newCardBox;
 
     @FXML
     private Button placeOrderButton;
@@ -51,21 +70,26 @@ public class OrderController implements Initializable {
 
     private ToggleGroup deliveryGroup;
 
+    @FXML
+    private VBox storeLocationSection;
+
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this);
         }
 
-        // Setup store locations
+        // Initialize store locations
         storeLocationChoice.getItems().addAll("Downtown", "Mall Branch", "Westside Store");
 
-        // Setup delivery/pickup group
         deliveryGroup = new ToggleGroup();
         deliveryRadio.setToggleGroup(deliveryGroup);
         pickupRadio.setToggleGroup(deliveryGroup);
 
-        // By default, disable recipient phone unless differentRecipientCheck is checked
+        // Spinner for hours 0-23, default noon (12)
+        deliveryHourSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 23, 12));
+
+        // Disable recipient phone unless checkbox is checked
         recipientPhoneField.setDisable(true);
         differentRecipientCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
             recipientPhoneField.setDisable(!newVal);
@@ -74,67 +98,96 @@ public class OrderController implements Initializable {
             }
         });
 
+        // Initially hide deliveryDetailsSection and show storeLocationSection (default pickup)
+        deliveryDetailsSection.setVisible(false);
+        deliveryDetailsSection.setManaged(false);
 
-        // Show/hide delivery details based on delivery method selection
+        storeLocationSection.setVisible(true);
+        storeLocationSection.setManaged(true);
+
+        // Listen to delivery method changes
         deliveryGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
             if (newToggle == deliveryRadio) {
-                // Show delivery details section
+                // Delivery selected
                 deliveryDetailsSection.setVisible(true);
                 deliveryDetailsSection.setManaged(true);
+
+                storeLocationSection.setVisible(false);
+                storeLocationSection.setManaged(false);
+
             } else if (newToggle == pickupRadio) {
-                // Hide delivery details section
+                // Pickup selected
                 deliveryDetailsSection.setVisible(false);
                 deliveryDetailsSection.setManaged(false);
-                // Clear delivery-related fields
+
+                storeLocationSection.setVisible(true);
+                storeLocationSection.setManaged(true);
+
+                // Clear delivery-specific fields
                 deliveryDatePicker.setValue(null);
                 differentRecipientCheck.setSelected(false);
                 recipientPhoneField.clear();
+                deliveryAddressField.clear();
             }
         });
 
-        // Button handlers
+        // Payment method options
+        paymentMethodChoice.getItems().addAll("Saved Card", "New Card", "Pay Upon Delivery");
+        paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if ("New Card".equals(newVal)) {
+                newCardBox.setVisible(true);
+                newCardBox.setManaged(true);
+            } else {
+                newCardBox.setVisible(false);
+                newCardBox.setManaged(false);
+            }
+        });
+
+        newCardBox.setVisible(false);
+        newCardBox.setManaged(false);
+
         placeOrderButton.setOnAction(e -> placeOrder());
         cancelButton.setOnAction(e -> goBackToCart());
     }
 
     private void placeOrder() {
         try {
-            // Get current user and ensure it's a Customer
             if (!(SessionManager.getInstance().getCurrentUser() instanceof Customer)) {
                 showAlert("Error", "Only customers can place orders.");
                 return;
             }
             Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
 
-            // Validate store location
-            String storeLocation = storeLocationChoice.getValue();
-            if (storeLocation == null) {
-                showAlert("Missing Data", "Please select a store location.");
-                return;
-            }
-
-            // Validate delivery method
             String deliveryMethod = deliveryRadio.isSelected() ? "Delivery" : pickupRadio.isSelected() ? "Pickup" : null;
             if (deliveryMethod == null) {
                 showAlert("Missing Data", "Please select delivery or pickup.");
                 return;
             }
 
-            // Validate delivery date/time if delivery
+            String storeLocation = null;
+            if ("Pickup".equals(deliveryMethod)) {
+                storeLocation = storeLocationChoice.getValue();
+                if (storeLocation == null) {
+                    showAlert("Missing Data", "Please select a store location.");
+                    return;
+                }
+            }
+
             LocalDateTime deliveryTime = null;
             if ("Delivery".equals(deliveryMethod)) {
-                if (deliveryDatePicker.getValue() == null) {
+                LocalDate date = deliveryDatePicker.getValue();
+                Integer hour = deliveryHourSpinner.getValue();
+                if (date == null) {
                     showAlert("Missing Data", "Please select a delivery date.");
                     return;
                 }
-                if (deliveryDatePicker.getValue().isBefore(java.time.LocalDate.now())) {
+                if (date.isBefore(LocalDate.now())) {
                     showAlert("Invalid Date", "Delivery date cannot be in the past.");
                     return;
                 }
-                deliveryTime = deliveryDatePicker.getValue().atTime(12, 0); // Default to noon
+                deliveryTime = date.atTime(hour, 0);
             }
 
-            // Recipient phone logic
             String recipientPhone;
             if ("Delivery".equals(deliveryMethod) && differentRecipientCheck.isSelected()) {
                 recipientPhone = recipientPhoneField.getText();
@@ -142,16 +195,46 @@ public class OrderController implements Initializable {
                     showAlert("Missing Data", "Please enter the recipient's phone number.");
                     return;
                 }
-            } else {
+            } else if ("Delivery".equals(deliveryMethod)) {
                 recipientPhone = customer.getPhone();
+            } else {
+                recipientPhone = null; // Not needed for pickup
             }
 
-            // Build order items from session cart
+            String deliveryAddress = null;
+            if ("Delivery".equals(deliveryMethod)) {
+                deliveryAddress = deliveryAddressField.getText();
+                if (deliveryAddress == null || deliveryAddress.trim().isEmpty()) {
+                    showAlert("Missing Data", "Please enter the delivery address.");
+                    return;
+                }
+            }
+
+            String orderNote = orderNoteField.getText();
+
+            String paymentMethod = paymentMethodChoice.getValue();
+            if (paymentMethod == null) {
+                showAlert("Missing Data", "Please select a payment method.");
+                return;
+            }
+            String paymentDetails = null;
+            if ("Saved Card".equals(paymentMethod)) {
+                paymentDetails = customer.getCreditNumber(); // Assuming this exists
+            } else if ("New Card".equals(paymentMethod)) {
+                paymentDetails = newCardField.getText();
+                if (paymentDetails == null || paymentDetails.trim().isEmpty()) {
+                    showAlert("Missing Data", "Please enter the new card number.");
+                    return;
+                }
+            } else if ("Pay Upon Delivery".equals(paymentMethod)) {
+                paymentDetails = "Cash on Delivery";
+            }
+
             List<OrderItem> orderItems = new ArrayList<>();
             for (Product p : SessionManager.getInstance().getCart()) {
                 OrderItem item = new OrderItem();
                 item.setProduct(p);
-                item.setQuantity(1); // Adjust if you track quantity elsewhere
+                item.setQuantity(1);
                 orderItems.add(item);
             }
 
@@ -160,27 +243,26 @@ public class OrderController implements Initializable {
                 return;
             }
 
-            // Create order
             Order order = new Order();
             order.setCustomer(customer);
+            order.setDelivery("Delivery".equals(deliveryMethod));
             order.setStoreLocation(storeLocation);
-            boolean isDelivery = deliveryRadio.isSelected();
-            order.setDelivery(isDelivery);
             order.setOrderDate(LocalDateTime.now());
-            order.setDeliveryDate(deliveryTime);
+            order.setDeliveryDateTime(deliveryTime);
             order.setRecipientPhone(recipientPhone);
+            order.setDeliveryAddress(deliveryAddress);
+            order.setNote(orderNote);
+            order.setPaymentMethod(paymentMethod);
+            order.setPaymentDetails(paymentDetails);
             order.setItems(orderItems);
 
-            // Link items to the order (bidirectional)
             for (OrderItem item : orderItems) {
                 item.setOrder(order);
             }
 
-            // Disable button to prevent double submission
             placeOrderButton.setDisable(true);
             placeOrderButton.setText("Processing...");
 
-            // Send to server
             Message message = new Message("place_order", order, null);
             SimpleClient.getClient().sendToServer(message);
 

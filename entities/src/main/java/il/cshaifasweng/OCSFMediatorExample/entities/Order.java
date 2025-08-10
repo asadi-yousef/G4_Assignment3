@@ -7,40 +7,56 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "orders")
+@Table(name = "order_table")
 public class Order implements Serializable {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id; // primary key
+
     @ManyToOne
     private Customer customer;
+
     private String storeLocation;
     private boolean delivery;
+
     private LocalDateTime orderDate;
-    private LocalDateTime deliveryDate;
+    private LocalDateTime deliveryDateTime; // combines date & hour
+
     private String recipientPhone;
+    private String deliveryAddress; // new
+    private String note; // ברכה (optional)
+    private String paymentMethod; // "SavedCard", "NewCard", "CashOnDelivery"
+    private String paymentDetails; // e.g. card number or "Cash on Delivery"
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<OrderItem> items = new ArrayList<>();
 
     public Order() {}
+
     public Order(Customer customer, String storeLocation, boolean delivery,
-                 LocalDateTime orderDate, LocalDateTime deliveryDate, String recipientPhone) {
+                 LocalDateTime orderDate, LocalDateTime deliveryDateTime,
+                 String recipientPhone, String deliveryAddress, String note,
+                 String paymentMethod, String paymentDetails) {
         this.customer = customer;
         this.storeLocation = storeLocation;
         this.delivery = delivery;
         this.orderDate = orderDate;
-        this.deliveryDate = deliveryDate;
+        this.deliveryDateTime = deliveryDateTime;
         this.recipientPhone = recipientPhone;
+        this.deliveryAddress = deliveryAddress;
+        this.note = note;
+        this.paymentMethod = paymentMethod;
+        this.paymentDetails = paymentDetails;
     }
 
     public Long getId() {
         return id;
     }
+
     public Customer getCustomer() {
         return customer;
     }
-
     public void setCustomer(Customer customer) {
         this.customer = customer;
     }
@@ -49,7 +65,7 @@ public class Order implements Serializable {
         return storeLocation;
     }
     public void setStoreLocation(String storeLocation) {
-    this.storeLocation = storeLocation;
+        this.storeLocation = storeLocation;
     }
 
     public boolean getDelivery() {
@@ -66,17 +82,46 @@ public class Order implements Serializable {
         this.orderDate = orderDate;
     }
 
-    public LocalDateTime getDeliveryDate() {
-        return deliveryDate;
+    public LocalDateTime getDeliveryDateTime() {
+        return deliveryDateTime;
     }
-    public void setDeliveryDate(LocalDateTime deliveryDate) {
-        this.deliveryDate = deliveryDate;
+    public void setDeliveryDateTime(LocalDateTime deliveryDateTime) {
+        this.deliveryDateTime = deliveryDateTime;
     }
+
     public String getRecipientPhone() {
         return recipientPhone;
     }
     public void setRecipientPhone(String recipientPhone) {
         this.recipientPhone = recipientPhone;
+    }
+
+    public String getDeliveryAddress() {
+        return deliveryAddress;
+    }
+    public void setDeliveryAddress(String deliveryAddress) {
+        this.deliveryAddress = deliveryAddress;
+    }
+
+    public String getNote() {
+        return note;
+    }
+    public void setNote(String note) {
+        this.note = note;
+    }
+
+    public String getPaymentMethod() {
+        return paymentMethod;
+    }
+    public void setPaymentMethod(String paymentMethod) {
+        this.paymentMethod = paymentMethod;
+    }
+
+    public String getPaymentDetails() {
+        return paymentDetails;
+    }
+    public void setPaymentDetails(String paymentDetails) {
+        this.paymentDetails = paymentDetails;
     }
 
     public List<OrderItem> getItems() {
@@ -85,5 +130,4 @@ public class Order implements Serializable {
     public void setItems(List<OrderItem> items) {
         this.items = items;
     }
-
 }
