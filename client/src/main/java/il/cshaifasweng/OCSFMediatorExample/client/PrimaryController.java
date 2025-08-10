@@ -112,7 +112,7 @@ public class PrimaryController implements Initializable {
 			int row = 0;
 			for (Product product : productsToRender) {
 				try {
-					// ✨ FIX #2: Use absolute path for FXML to prevent loading errors
+
 					FXMLLoader loader = new FXMLLoader(getClass().getResource("/il/cshaifasweng/OCSFMediatorExample/client/productCard.fxml"));
 					StackPane cardNode = loader.load();
 					ProductCardController cardController = loader.getController();

@@ -67,7 +67,7 @@ public class ViewFlowerController {
 
 
             // 4. Pass the product data and actions to the card
-            cardController.setData(selectedProduct, isEmployee, viewAction, saveAction, deleteAction);
+            cardController.setData(selectedProduct, isEmployee, viewAction, deleteAction);
 
             // 5. Place the fully configured card into the container
             cardContainer.setCenter(cardNode);
