@@ -369,7 +369,11 @@ public class SimpleServer extends AbstractServer {
 		catalogLock.readLock().lock();
 		try {
 			// Create a defensive copy to avoid sharing mutable state
-			Catalog catalogCopy = new Catalog(new ArrayList<>(catalog.getFlowers()));
+			Catalog catalogCopy = new Catalog(catalog.getFlowers());
+			List<Product> tmp = catalogCopy.getFlowers();
+			for(Product p : tmp) {
+				System.out.println("Color: " + p.getColor());
+			}
 			Message message = new Message("catalog", catalogCopy, null);
 			client.sendToClient(message);
 		} catch (IOException e) {
@@ -381,18 +385,19 @@ public class SimpleServer extends AbstractServer {
 
 	private void handleProductEdit(Message msg) {
 		String msgString = msg.getMessage();
-		String[] parts = msgString.split(":");
-		if (parts.length == 3) {
+		Product product = (Product)(msg.getObject());
+		if (product != null) {
 			try {
-				Product product = (Product)(msg.getObject());
-				int productId = Integer.parseInt(parts[2]);
+
+				Long productId = product.getId();
 				double newPrice = product.getPrice();
+				double newDiscountPercentage = product.getDiscountPercentage();
 				String newProductName = product.getName();
 				String newType = product.getType();
 				String newImagePath = product.getImagePath();
 
 				// Update database first
-				boolean updateSuccess = updateProduct(productId, newProductName, newPrice, newType, newImagePath);
+				boolean updateSuccess = updateProduct(productId, newProductName, newPrice, newDiscountPercentage,newType, newImagePath);
 
 				if (updateSuccess) {
 					// Update catalog with write lock only if database update succeeded
@@ -456,7 +461,7 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-	public boolean updateProduct(int productId, String newProductName, double newPrice, String newType, String newImagePath) {
+	public boolean updateProduct(Long productId, String newProductName, double newPrice, double newDiscount,String newType, String newImagePath) {
 		Transaction tx = null;
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
 			tx = session.beginTransaction();
@@ -464,6 +469,7 @@ public class SimpleServer extends AbstractServer {
 			Product product = session.get(Product.class, productId);
 			if (product != null) {
 				product.setPrice(newPrice);
+				product.setDiscountPercentage(newDiscount);
 				product.setName(newProductName);
 				product.setType(newType);
 				product.setImagePath(newImagePath);

@@ -26,6 +26,7 @@ public class LoginControl implements Initializable {
     @FXML private ToggleButton togglePasswordButton;
     @FXML private Label errorLabel;
     @FXML private Button loginButton;
+    @FXML private Button backButton; // Add this line - missing @FXML field
     @FXML private ProgressIndicator loadingIndicator;
 
     private ImageView eyeOpenView;
@@ -60,7 +61,6 @@ public class LoginControl implements Initializable {
             togglePasswordButton.setText("S");
         }
     }
-
 
     private void setupPasswordToggle() {
         // Bind the visibility of the fields to the toggle button's selected state
@@ -148,6 +148,16 @@ public class LoginControl implements Initializable {
         if (isLoading) {
             errorLabel.setVisible(false);
             errorLabel.setManaged(false);
+        }
+    }
+
+    @FXML
+    public void handleBack(ActionEvent actionEvent) {
+        EventBus.getDefault().unregister(this);
+        try {
+            App.setRoot("primary");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 }
