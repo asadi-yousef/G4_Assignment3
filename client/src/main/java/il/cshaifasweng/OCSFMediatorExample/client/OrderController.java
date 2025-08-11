@@ -158,7 +158,8 @@ public class OrderController implements Initializable {
             }
             Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
 
-            String deliveryMethod = deliveryRadio.isSelected() ? "Delivery" : pickupRadio.isSelected() ? "Pickup" : null;
+            String deliveryMethod = deliveryRadio.isSelected() ? "Delivery" :
+                    pickupRadio.isSelected() ? "Pickup" : null;
             if (deliveryMethod == null) {
                 showAlert("Missing Data", "Please select delivery or pickup.");
                 return;
@@ -177,28 +178,24 @@ public class OrderController implements Initializable {
             if ("Delivery".equals(deliveryMethod)) {
                 LocalDate date = deliveryDatePicker.getValue();
                 Integer hour = deliveryHourSpinner.getValue();
-                if (date == null) {
-                    showAlert("Missing Data", "Please select a delivery date.");
-                    return;
-                }
-                if (date.isBefore(LocalDate.now())) {
-                    showAlert("Invalid Date", "Delivery date cannot be in the past.");
+                if (date == null || date.isBefore(LocalDate.now())) {
+                    showAlert("Invalid Date", "Please select a valid delivery date.");
                     return;
                 }
                 deliveryTime = date.atTime(hour, 0);
             }
 
-            String recipientPhone;
-            if ("Delivery".equals(deliveryMethod) && differentRecipientCheck.isSelected()) {
-                recipientPhone = recipientPhoneField.getText();
-                if (recipientPhone == null || recipientPhone.trim().isEmpty()) {
-                    showAlert("Missing Data", "Please enter the recipient's phone number.");
-                    return;
+            String recipientPhone = null;
+            if ("Delivery".equals(deliveryMethod)) {
+                if (differentRecipientCheck.isSelected()) {
+                    recipientPhone = recipientPhoneField.getText();
+                    if (recipientPhone == null || recipientPhone.trim().isEmpty()) {
+                        showAlert("Missing Data", "Please enter the recipient's phone number.");
+                        return;
+                    }
+                } else {
+                    recipientPhone = customer.getPhone();
                 }
-            } else if ("Delivery".equals(deliveryMethod)) {
-                recipientPhone = customer.getPhone();
-            } else {
-                recipientPhone = null; // Not needed for pickup
             }
 
             String deliveryAddress = null;
@@ -219,7 +216,7 @@ public class OrderController implements Initializable {
             }
             String paymentDetails = null;
             if ("Saved Card".equals(paymentMethod)) {
-                paymentDetails = customer.getCreditNumber(); // Assuming this exists
+                paymentDetails = customer.getCreditNumber();
             } else if ("New Card".equals(paymentMethod)) {
                 paymentDetails = newCardField.getText();
                 if (paymentDetails == null || paymentDetails.trim().isEmpty()) {
@@ -230,6 +227,7 @@ public class OrderController implements Initializable {
                 paymentDetails = "Cash on Delivery";
             }
 
+            // Use SessionManager cart
             List<OrderItem> orderItems = new ArrayList<>();
             for (Product p : SessionManager.getInstance().getCart()) {
                 OrderItem item = new OrderItem();
@@ -263,6 +261,7 @@ public class OrderController implements Initializable {
             placeOrderButton.setDisable(true);
             placeOrderButton.setText("Processing...");
 
+            // Send order to server
             Message message = new Message("place_order", order, null);
             SimpleClient.getClient().sendToServer(message);
 
@@ -271,6 +270,7 @@ public class OrderController implements Initializable {
             ex.printStackTrace();
         }
     }
+
 
     @Subscribe
     public void onServerResponse(Message msg) {

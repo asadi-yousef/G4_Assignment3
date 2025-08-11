@@ -159,15 +159,20 @@ public class PrimaryController implements Initializable {
 					addToCartButton.setOnAction(event -> {
 						try {
 							User currentUser = SessionManager.getInstance().getCurrentUser();
+							if (currentUser == null) {
+								showAlert("Login Required", "Please login to add items to cart.");
+								return;
+							}
 							List<Object> payload = new ArrayList<>();
 							payload.add(currentUser);
 							Message message = new Message("add_to_cart", product.getId(), payload);
 							SimpleClient.getClient().sendToServer(message);
-							showAlert("Success", product.getName() + " added to cart!");
+							// Don't show success alert here! Wait for server response
 						} catch (IOException e) {
 							showAlert("Error", "Failed to add item to cart.");
 						}
 					});
+
 
 					HBox buttonBox = new HBox(10, viewButton, addToCartButton);
 					buttonBox.setAlignment(Pos.CENTER);
@@ -247,9 +252,11 @@ public class PrimaryController implements Initializable {
 					loadCatalogData();
 					break;
 				case "cart_updated":
+					// You can optionally show a subtle notification or badge update
 					showAlert("Success", "Cart updated successfully!");
 					break;
 				case "cart_data":
+					// This message contains the cart, so open the cart view
 					try {
 						EventBus.getDefault().unregister(this);
 						App.setRoot("cartView");
@@ -263,6 +270,7 @@ public class PrimaryController implements Initializable {
 			}
 		});
 	}
+
 
 	private void showAlert(String title, String message) {
 		Platform.runLater(() -> {

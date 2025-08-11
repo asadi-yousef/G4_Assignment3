@@ -193,6 +193,9 @@ public class CartController implements Initializable {
             showAlert("Empty Cart", "Your cart is empty. Add items before proceeding to order.");
             return;
         }
+        // Pass cart to SessionManager so OrderController can access it
+       // SessionManager.getInstance().setCart(cart);
+        ///
         EventBus.getDefault().unregister(this);
         Platform.runLater(() -> {
             try {

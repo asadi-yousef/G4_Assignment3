@@ -7,7 +7,7 @@ import java.io.Serializable;
 
 @Entity
 @Inheritance(strategy = InheritanceType.JOINED)
-public class Customer extends User implements Serializable {
+public class Customer extends User {
     private static final long serialVersionUID = 1L;
     @Column
     private boolean isSigned;
@@ -26,8 +26,12 @@ public class Customer extends User implements Serializable {
     @Column
     private String country;
 
+    @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name = "cart_id")
+    private Cart cart;
 
-    public Customer(String name, String username, String password,boolean isSigned, boolean isSubbed, String creditNumber, String email, String phone, String address, String city, String country) {
+
+    public Customer(String name, String username, String password, boolean isSigned, boolean isSubbed, String creditNumber, String email, String phone, String address, String city, String country) {
         super(name, username, password);
         this.isSigned = isSigned;
         this.isSubbed = isSubbed;
@@ -37,6 +41,10 @@ public class Customer extends User implements Serializable {
         this.address = address;
         this.city = city;
         this.country = country;
+    }
+
+    public Customer() {
+        super();
     }
 
     public boolean isSigned() {
@@ -87,9 +95,11 @@ public class Customer extends User implements Serializable {
     public void setCountry(String country) {
         this.country = country;
     }
-
-    public Customer() {
-        super();
+    public Cart getCart() { return cart; }
+    public void setCart(Cart cart) {
+        this.cart = cart;
+        if (cart != null) cart.setCustomer(this);
     }
+
 }
 

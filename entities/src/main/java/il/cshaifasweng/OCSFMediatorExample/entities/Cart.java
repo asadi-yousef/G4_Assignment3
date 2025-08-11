@@ -12,25 +12,43 @@ public class Cart implements Serializable {
     private Long id;
 
     @OneToOne
-    @JoinColumn(name = "customer_ID")
+    @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
-    @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
     private List<CartItem> items = new ArrayList<>();
 
     public Cart() {}
 
     public Cart(Customer customer) {
-        this.customer = customer;
+        setCustomer(customer);
     }
 
-    public Long getId() { return id; }
+    public void setCustomer(Customer customer) {
+        this.customer = customer;
+        if (customer != null && customer.getCart() != this) {
+            customer.setCart(this);
+        }
+    }
+    public Long getId() {
+        return id;
+    }
 
-    public User getCustomer() { return customer; }
-
-    public void setCustomer(Customer customer) { this.customer = customer; }
 
     public List<CartItem> getItems() { return items; }
 
-    public void setItems(List<CartItem> items) { this.items = items; }
+    public void addItem(Product product, int quantity) {
+        for (CartItem item : items) {
+            if (item.getProduct().getId().equals(product.getId())) {
+                item.setQuantity(item.getQuantity() + quantity);
+                return;
+            }
+        }
+        CartItem newItem = new CartItem(product, this, quantity);
+        items.add(newItem);
+    }
 }
+
+
+
+
