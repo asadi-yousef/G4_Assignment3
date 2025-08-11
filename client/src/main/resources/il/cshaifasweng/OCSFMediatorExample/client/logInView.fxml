@@ -7,7 +7,14 @@
 
 <AnchorPane prefHeight="450.0" prefWidth="400.0" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.LoginControl">
     <children>
-        <VBox alignment="CENTER" spacing="20.0" style="-fx-background-color: #f4f4f9;" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
+        <!-- Back Button positioned at top left -->
+        <Button fx:id="backButton" mnemonicParsing="false" onAction="#handleBack" style="-fx-background-color: transparent; -fx-text-fill: #5e35b1; -fx-cursor: hand;" text="← Back" AnchorPane.leftAnchor="15.0" AnchorPane.topAnchor="15.0">
+            <font>
+                <Font size="14.0" />
+            </font>
+        </Button>
+
+        <VBox alignment="CENTER" spacing="20.0" style="-fx-background-color: #f4f4f9;" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="50.0">
             <padding>
                 <Insets bottom="40.0" left="40.0" right="40.0" top="40.0" />
             </padding>
