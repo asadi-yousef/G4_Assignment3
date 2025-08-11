@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 
 public class PrimaryController implements Initializable {
 
+	// FXML declarations for existing controls
 	@FXML private Button loginButton;
 	@FXML private Label userStatusLabel;
 	@FXML private HBox customerMenuBar;
@@ -35,6 +36,13 @@ public class PrimaryController implements Initializable {
 	@FXML private Label catalogLabel;
 	@FXML private TextField searchTextField;
 
+	// ADDED: FXML declarations for new filter controls
+	@FXML private ComboBox<String> typeFilterComboBox;
+	@FXML private TextField minPriceField;
+	@FXML private TextField maxPriceField;
+	@FXML private Button clearFiltersButton;
+
+
 	private Catalog catalog;
 
 	@Override
@@ -44,9 +52,17 @@ public class PrimaryController implements Initializable {
 		}
 		updateUIBasedOnUserStatus();
 		loadCatalogData();
-		searchTextField.textProperty().addListener((observable, oldValue, newValue) -> renderCatalog());
+
+		// Add listeners to all filter controls to re-render the catalog on change
+		searchTextField.textProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
+		typeFilterComboBox.valueProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
+		minPriceField.textProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
+		maxPriceField.textProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
 	}
 
+	/**
+	 * MODIFIED: This method now applies name, type, and price filters before rendering products.
+	 */
 	private void renderCatalog() {
 		boolean isEmployee = SessionManager.getInstance().isEmployee();
 		Platform.runLater(() -> {
@@ -56,7 +72,10 @@ public class PrimaryController implements Initializable {
 				return;
 			}
 
+			// Start with the full, unique list of products
 			List<Product> productsToRender = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
+
+			// 1. Filter by search query (name)
 			String searchQuery = searchTextField.getText().toLowerCase().trim();
 			if (!searchQuery.isEmpty()) {
 				productsToRender = productsToRender.stream()
@@ -64,6 +83,37 @@ public class PrimaryController implements Initializable {
 						.collect(Collectors.toList());
 			}
 
+			// 2. Filter by type
+			String selectedType = typeFilterComboBox.getValue();
+			if (selectedType != null && !selectedType.equals("All Types")) {
+				productsToRender = productsToRender.stream()
+						.filter(p -> p.getType().equalsIgnoreCase(selectedType))
+						.collect(Collectors.toList());
+			}
+
+			// 3. Filter by price range
+			try {
+				// Min price filter
+				if (!minPriceField.getText().isEmpty()) {
+					double minPrice = Double.parseDouble(minPriceField.getText());
+					productsToRender = productsToRender.stream()
+							.filter(p -> p.getPrice() >= minPrice)
+							.collect(Collectors.toList());
+				}
+				// Max price filter
+				if (!maxPriceField.getText().isEmpty()) {
+					double maxPrice = Double.parseDouble(maxPriceField.getText());
+					productsToRender = productsToRender.stream()
+							.filter(p -> p.getPrice() <= maxPrice)
+							.collect(Collectors.toList());
+				}
+			} catch (NumberFormatException e) {
+				// Ignore invalid price input, or show an alert
+				System.err.println("Invalid number in price filter.");
+			}
+
+
+			// Render the final filtered list
 			int col = 0;
 			int row = 0;
 			for (Product product : productsToRender) {
@@ -73,23 +123,21 @@ public class PrimaryController implements Initializable {
 					ProductCardController cardController = loader.getController();
 
 					if (isEmployee) {
-						// EMPLOYEES get "Edit" and "Delete" buttons
 						cardController.setData(
 								product,
-								updatedProduct -> { // The saveAction (Consumer)
+								updatedProduct -> {
 									try {
 										Message message = new Message("editProduct", updatedProduct, null);
 										SimpleClient.getClient().sendToServer(message);
 									} catch (IOException e) { e.printStackTrace(); }
 								},
-								() -> handleDeleteProduct(product) // The deleteAction (Runnable)
+								() -> handleDeleteProduct(product)
 						);
 					} else {
-						// CUSTOMERS get "View" and "Add to Cart" buttons
 						cardController.setData(
 								product,
-								() -> handleViewProduct(product),    // The viewAction (Runnable)
-								() -> handleAddToCart(product)     // The addToCartAction (Runnable)
+								() -> handleViewProduct(product),
+								() -> handleAddToCart(product)
 						);
 					}
 
@@ -105,6 +153,38 @@ public class PrimaryController implements Initializable {
 		});
 	}
 
+	/**
+	 * ADDED: Populates the type filter ComboBox with unique types from the catalog.
+	 */
+	private void populateTypeFilter() {
+		if (catalog == null || catalog.getFlowers() == null) return;
+
+		// Get unique, non-blank types from products
+		Set<String> types = catalog.getFlowers().stream()
+				.map(Product::getType)
+				.filter(type -> type != null && !type.trim().isEmpty())
+				.collect(Collectors.toCollection(TreeSet::new)); // TreeSet sorts them alphabetically
+
+		Platform.runLater(() -> {
+			typeFilterComboBox.getItems().clear();
+			typeFilterComboBox.getItems().add("All Types"); // Add a default option
+			typeFilterComboBox.getItems().addAll(types);
+			typeFilterComboBox.setValue("All Types"); // Set default selection
+		});
+	}
+
+	/**
+	 * ADDED: Clears all filter fields and re-renders the catalog.
+	 */
+	@FXML
+	void handleClearFilters(ActionEvent event) {
+		searchTextField.clear();
+		minPriceField.clear();
+		maxPriceField.clear();
+		typeFilterComboBox.setValue("All Types");
+		renderCatalog(); // Re-render with no filters
+	}
+
 	@Subscribe
 	public void onMessageFromServer(Message msg) {
 		Platform.runLater(() -> {
@@ -112,6 +192,8 @@ public class PrimaryController implements Initializable {
 			switch (msg.getMessage()) {
 				case "catalog":
 					this.catalog = (Catalog) msg.getObject();
+					// MODIFIED: Populate filters and then render
+					populateTypeFilter();
 					renderCatalog();
 					break;
 				case "add_product":

@@ -51,28 +51,29 @@
                </children>
             </HBox>
 
-            <HBox alignment="CENTER" layoutY="120.0" spacing="20.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
+            <HBox alignment="CENTER" layoutY="120.0" spacing="15.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
                <children>
                   <Label fx:id="catalogLabel" text="Catalog">
                      <font><Font name="Bell MT Bold" size="36.0" /></font>
                   </Label>
                   <HBox alignment="CENTER" style="-fx-background-color: white; -fx-border-color: #cccccc; -fx-border-radius: 20; -fx-background-radius: 20;">
-                     <padding><Insets left="10" right="5" top="5" bottom="5" /></padding>
+                     <padding><Insets bottom="5" left="10" right="5" top="5" /></padding>
                      <children>
-                        <Label text="🔍">
-                           <font><Font size="16.0" /></font>
-                        </Label>
+                        <Label text="🔍"><font><Font size="16.0" /></font></Label>
                         <TextField fx:id="searchTextField" promptText="Search by name..." style="-fx-background-color: transparent; -fx-border-color: transparent;" />
                      </children>
                   </HBox>
+                  <ComboBox fx:id="typeFilterComboBox" promptText="Filter by Type" />
+                  <TextField fx:id="minPriceField" promptText="Min Price" prefWidth="100" />
+                  <TextField fx:id="maxPriceField" promptText="Max Price" prefWidth="100" />
+                  <Button fx:id="clearFiltersButton" onAction="#handleClearFilters" text="Clear Filters" />
                </children>
             </HBox>
 
             <ProgressIndicator fx:id="loadingIndicator" visible="false" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="350.0" />
 
-            <!-- FIXED: Removed AnchorPane.bottomAnchor="0.0" to allow content to grow -->
             <VBox AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="180.0">
-               <padding><Insets left="20" right="20" bottom="20" /></padding>
+               <padding><Insets bottom="20" left="20" right="20" /></padding>
                <children>
                   <GridPane fx:id="catalogGrid" hgap="20" vgap="20">
                      <columnConstraints>
