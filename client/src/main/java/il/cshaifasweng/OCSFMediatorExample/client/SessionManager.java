@@ -4,13 +4,15 @@ import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
 import il.cshaifasweng.OCSFMediatorExample.entities.Employee;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import il.cshaifasweng.OCSFMediatorExample.entities.User;
+import il.cshaifasweng.OCSFMediatorExample.entities.Order;
 import java.util.List;
 import java.util.ArrayList;
 
 public class SessionManager {
     private static SessionManager instance;
     private User currentUser;
-    private List<Product> cart;  // Add this line
+    private List<Product> cart;
+    private List<Order> orders = new ArrayList<>();
 
     private SessionManager() {
         cart = new ArrayList<>();  // Initialize the cart
@@ -42,6 +44,12 @@ public class SessionManager {
     // Cart methods
     public List<Product> getCart() {
         return cart;
+    }
+    public List<Order> getOrders() {
+        return orders;
+    }
+    public void setOrders(List<Order> orders) {
+        this.orders = orders;
     }
 
     public void addToCart(Product product) {

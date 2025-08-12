@@ -264,6 +264,16 @@ public class PrimaryController implements Initializable {
 						showAlert("Error", "Failed to open cart page.");
 					}
 					break;
+				case "orders_data":
+					try {
+						// Orders data is handled inside OrdersScreenController
+						EventBus.getDefault().unregister(this);
+						App.setRoot("ordersScreenView");  // this triggers OrdersScreenController.initialize()
+					} catch (IOException e) {
+						showAlert("Error", "Failed to open orders page.");
+					}
+					break;
+
 				default:
 					System.out.println("Received unhandled message from server: " + msg.getMessage());
 					break;
@@ -310,6 +320,22 @@ public class PrimaryController implements Initializable {
 			showAlert("Error", "Failed to open orders page.");
 		}
 	}
+
+	@FXML
+	public void handleOrdersScreen(ActionEvent actionEvent) {
+		try {
+			User currentUser = SessionManager.getInstance().getCurrentUser();
+			if (currentUser == null) {
+				showAlert("Login Required", "Please login to view your orders.");
+				return;
+			}
+			App.setRoot("ordersScreenView");  // This will trigger OrdersScreenController.initialize()
+		} catch (IOException e) {
+			showAlert("Error", "Failed to open orders page.");
+		}
+	}
+
+
 
 	@FXML public void handleComplaints(ActionEvent actionEvent) {
 		try {

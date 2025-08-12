@@ -17,6 +17,8 @@ import org.greenrobot.eventbus.Subscribe;
 import java.net.URL;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ResourceBundle;
@@ -174,16 +176,19 @@ public class OrderController implements Initializable {
                 }
             }
 
-            LocalDateTime deliveryTime = null;
-            if ("Delivery".equals(deliveryMethod)) {
-                LocalDate date = deliveryDatePicker.getValue();
-                Integer hour = deliveryHourSpinner.getValue();
-                if (date == null || date.isBefore(LocalDate.now())) {
-                    showAlert("Invalid Date", "Please select a valid delivery date.");
-                    return;
-                }
-                deliveryTime = date.atTime(hour, 0);
+            ZoneId israelZone = ZoneId.of("Asia/Jerusalem");
+
+            LocalDate date = deliveryDatePicker.getValue();
+            Integer hour = deliveryHourSpinner.getValue();
+            if (date == null || date.isBefore(LocalDate.now())) {
+                showAlert("Invalid Date", "Please select a valid delivery date.");
+                return;
             }
+            LocalDateTime deliveryTime = date.atTime(hour + 3, 0);
+            //ZonedDateTime israelDateTime = deliveryTime.atZone(israelZone);
+            //deliveryTime = israelDateTime.toLocalDateTime();
+
+
 
             String recipientPhone = null;
             if ("Delivery".equals(deliveryMethod)) {
@@ -227,16 +232,9 @@ public class OrderController implements Initializable {
                 paymentDetails = "Cash on Delivery";
             }
 
-            // Use SessionManager cart
-            List<OrderItem> orderItems = new ArrayList<>();
-            for (Product p : SessionManager.getInstance().getCart()) {
-                OrderItem item = new OrderItem();
-                item.setProduct(p);
-                item.setQuantity(1);
-                orderItems.add(item);
-            }
-
-            if (orderItems.isEmpty()) {
+            // Verify client-side SessionManager cart is not empty.
+// (We won't set order items here. Server constructs items from DB cart.)
+            if (SessionManager.getInstance().getCart() == null || SessionManager.getInstance().getCart().isEmpty()) {
                 showAlert("Empty Cart", "Your cart is empty.");
                 return;
             }
@@ -252,11 +250,7 @@ public class OrderController implements Initializable {
             order.setNote(orderNote);
             order.setPaymentMethod(paymentMethod);
             order.setPaymentDetails(paymentDetails);
-            order.setItems(orderItems);
 
-            for (OrderItem item : orderItems) {
-                item.setOrder(order);
-            }
 
             placeOrderButton.setDisable(true);
             placeOrderButton.setText("Processing...");

@@ -1,9 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
-import il.cshaifasweng.OCSFMediatorExample.entities.Cart;
-import il.cshaifasweng.OCSFMediatorExample.entities.CartItem;
-import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
-import il.cshaifasweng.OCSFMediatorExample.entities.Message;
+import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
@@ -78,6 +75,17 @@ public class CartController implements Initializable {
             }
 
             this.cart = (Cart) msg.getObject();
+            // Sync client-side SessionManager list so OrderController sees the cart too
+            SessionManager.getInstance().clearCart();
+            if (this.cart != null && this.cart.getItems() != null) {
+                for (CartItem ci : this.cart.getItems()) {
+                    Product p = ci.getProduct();
+                    int qty = ci.getQuantity();
+                    for (int i = 0; i < qty; i++) {
+                        SessionManager.getInstance().addToCart(p);
+                    }
+                }
+            }
             if (this.cart != null) {
                 renderCart();
             } else {
@@ -193,9 +201,15 @@ public class CartController implements Initializable {
             showAlert("Empty Cart", "Your cart is empty. Add items before proceeding to order.");
             return;
         }
-        // Pass cart to SessionManager so OrderController can access it
-       // SessionManager.getInstance().setCart(cart);
-        ///
+
+        // Sync SessionManager as safety (same logic as onMessageFromServer)
+        SessionManager.getInstance().clearCart();
+        for (CartItem ci : cart.getItems()) {
+            for (int i = 0; i < ci.getQuantity(); i++) {
+                SessionManager.getInstance().addToCart(ci.getProduct());
+            }
+        }
+
         EventBus.getDefault().unregister(this);
         Platform.runLater(() -> {
             try {
@@ -206,6 +220,7 @@ public class CartController implements Initializable {
             }
         });
     }
+
 
     private void showAlert(String title, String content) {
         Platform.runLater(() -> {

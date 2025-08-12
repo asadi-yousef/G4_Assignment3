@@ -110,6 +110,9 @@ public class SimpleServer extends AbstractServer {
 				else if(msgString.startsWith("request_cart")) {
 					handleCartRequest(message, client);
 				}
+				else if(msgString.startsWith("request_orders")) {
+					handleOrdersRequest(message,client);
+				}
 				else if(msgString.equals("request_customer_data")) {
 					handleCustomerDataRequest(message, client, session);
 				}
@@ -616,6 +619,34 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
+	private void handleOrdersRequest(Message message, ConnectionToClient client) {
+		EntityManager em = emf.createEntityManager();
+		try {
+			User user = (User) message.getObjectList().get(0);
+			if (!(user instanceof Customer)) {
+				client.sendToClient(new Message("error", "User is not a customer", null));
+				return;
+			}
+			Customer customer = em.find(Customer.class, user.getId());
+
+			List<Order> orders = em.createQuery("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.customer.id = :cid", Order.class)
+					.setParameter("cid", customer.getId())
+					.getResultList();
+
+			client.sendToClient(new Message("orders_data", orders, null));
+		} catch (Exception e) {
+			e.printStackTrace();
+			try {
+				client.sendToClient(new Message("error", "Failed to load orders", null));
+			} catch (IOException ex) {
+				ex.printStackTrace();
+			}
+		} finally {
+			em.close();
+		}
+	}
+
+
 	private void handlePlaceOrder(Message message, ConnectionToClient client) {
 		EntityManager em = emf.createEntityManager();
 
@@ -645,6 +676,15 @@ public class SimpleServer extends AbstractServer {
 					.getResultStream()
 					.findFirst()
 					.orElse(null);
+///
+			System.out.println("DEBUG(handlePlaceOrder): fetched cart id=" + (cart != null ? cart.getId() : "null"));
+			if (cart != null) {
+				System.out.println("DEBUG(handlePlaceOrder): cart items = " + cart.getItems().size());
+				for (CartItem ci : cart.getItems()) {
+					System.out.println("DEBUG(handlePlaceOrder): CartItem pid=" + ci.getProduct().getId() + " qty=" + ci.getQuantity());
+				}
+			}
+///
 
 			if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
 				em.getTransaction().rollback();
