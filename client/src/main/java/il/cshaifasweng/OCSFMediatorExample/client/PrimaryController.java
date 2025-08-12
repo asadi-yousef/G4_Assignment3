@@ -7,28 +7,22 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Pane;
-import javafx.scene.layout.VBox;
-import javafx.scene.text.Font;
+import javafx.scene.layout.StackPane; // needed for productCard.fxml
 import javafx.stage.Stage;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
-import java.util.stream.Collectors;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.*;
+import java.util.ResourceBundle;
 import java.util.stream.Collectors;
 
 public class PrimaryController implements Initializable {
@@ -39,13 +33,13 @@ public class PrimaryController implements Initializable {
 	@FXML private HBox customerMenuBar;
 	@FXML private HBox employeeMenuBar;
 	@FXML private Button logoutButton;
-	@FXML private Button employeeLogoutButton;
+	@FXML private Button employeeLogoutButton; // if present in FXML
 	@FXML private GridPane catalogGrid;
 	@FXML private ProgressIndicator loadingIndicator;
 	@FXML private Label catalogLabel;
 	@FXML private TextField searchTextField;
 
-	// NEW: Reports button (must exist in primary.fxml with fx:id="reportButton")
+	// Reports button (must exist in primary.fxml with fx:id="reportButton")
 	@FXML private Button reportButton;
 
 	private Catalog catalog;
@@ -57,11 +51,15 @@ public class PrimaryController implements Initializable {
 		}
 		updateUIBasedOnUserStatus();
 		loadCatalogData();
-		searchTextField.textProperty().addListener((observable, oldValue, newValue) -> renderCatalog());
+
+		if (searchTextField != null) {
+			searchTextField.textProperty().addListener((obs, oldV, newV) -> renderCatalog());
+		}
 	}
 
 	private void renderCatalog() {
 		boolean isEmployee = SessionManager.getInstance().isEmployee();
+
 		Platform.runLater(() -> {
 			catalogGrid.getChildren().clear();
 			if (catalog == null || catalog.getFlowers() == null) {
@@ -70,10 +68,13 @@ public class PrimaryController implements Initializable {
 			}
 
 			List<Product> productsToRender = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
-			String searchQuery = searchTextField.getText().toLowerCase().trim();
+			String searchQuery = (searchTextField != null && searchTextField.getText() != null)
+					? searchTextField.getText().toLowerCase().trim()
+					: "";
+
 			if (!searchQuery.isEmpty()) {
 				productsToRender = productsToRender.stream()
-						.filter(p -> p.getName().toLowerCase().contains(searchQuery))
+						.filter(p -> p.getName() != null && p.getName().toLowerCase().contains(searchQuery))
 						.collect(Collectors.toList());
 			}
 
@@ -81,28 +82,29 @@ public class PrimaryController implements Initializable {
 			int row = 0;
 			for (Product product : productsToRender) {
 				try {
-					FXMLLoader loader = new FXMLLoader(getClass().getResource("/il/cshaifasweng/OCSFMediatorExample/client/productCard.fxml"));
+					FXMLLoader loader = new FXMLLoader(getClass().getResource(
+							"/il/cshaifasweng/OCSFMediatorExample/client/productCard.fxml"));
 					StackPane cardNode = loader.load();
 					ProductCardController cardController = loader.getController();
 
 					if (isEmployee) {
-						// EMPLOYEES get "Edit" and "Delete" buttons
+						// EMPLOYEES get "Edit" and "Delete"
 						cardController.setData(
 								product,
-								updatedProduct -> { // The saveAction (Consumer)
+								updatedProduct -> {
 									try {
 										Message message = new Message("editProduct", updatedProduct, null);
 										SimpleClient.getClient().sendToServer(message);
 									} catch (IOException e) { e.printStackTrace(); }
 								},
-								() -> handleDeleteProduct(product) // The deleteAction (Runnable)
+								() -> handleDeleteProduct(product)
 						);
 					} else {
-						// CUSTOMERS get "View" and "Add to Cart" buttons
+						// CUSTOMERS get "View" and "Add to Cart"
 						cardController.setData(
 								product,
-								() -> handleViewProduct(product),    // The viewAction (Runnable)
-								() -> handleAddToCart(product)     // The addToCartAction (Runnable)
+								() -> handleViewProduct(product),
+								() -> handleAddToCart(product)
 						);
 					}
 
@@ -127,14 +129,17 @@ public class PrimaryController implements Initializable {
 					this.catalog = (Catalog) msg.getObject();
 					renderCatalog();
 					break;
+
 				case "add_product":
 				case "editProduct":
 				case "delete_product_by_id":
 					loadCatalogData();
 					break;
+
 				case "cart_updated":
 					showAlert("Success", "Cart updated successfully!");
 					break;
+
 				case "cart_data":
 					try {
 						EventBus.getDefault().unregister(this);
@@ -143,9 +148,18 @@ public class PrimaryController implements Initializable {
 						showAlert("Error", "Failed to open cart page.");
 					}
 					break;
+
+				case "orders_data":
+					try {
+						EventBus.getDefault().unregister(this);
+						App.setRoot("ordersScreenView");
+					} catch (IOException e) {
+						showAlert("Error", "Failed to open orders page.");
+					}
+					break;
+
 				default:
 					System.out.println("Received unhandled message from server: " + msg.getMessage());
-					break;
 			}
 		});
 	}
@@ -173,177 +187,76 @@ public class PrimaryController implements Initializable {
 		new Thread(loadTask).start();
 	}
 
+	// -------- Role helpers / UI state --------
+
 	private boolean canSeeReports() {
 		User u = SessionManager.getInstance().getCurrentUser();
 		if (u == null) return false;
-		else if (u instanceof Employee) {
-			Employee e = (Employee) u;
-			String role = e.getRole();
-			return "manager".equalsIgnoreCase(role) ||
-					"system_manager".equalsIgnoreCase(role);
+		if (u instanceof Employee) {
+			String role = ((Employee) u).getRole();
+			return "manager".equalsIgnoreCase(role) || "system_manager".equalsIgnoreCase(role);
 		}
-		else return false;
+		return false;
 	}
 
-	private String readRole(User u) {
+	private boolean isManager() {
+		User u = SessionManager.getInstance().getCurrentUser();
+		if (u == null) return false;
 
-		try { Object r = u.getClass().getMethod("getRole").invoke(u);
-			return r == null ? "" : r.toString(); } catch (Exception e) { return ""; }
+		if (u instanceof Employee) {
+			try {
+				String role = ((Employee) u).getRole();
+				return role != null && role.toLowerCase().contains("manager");
+			} catch (Exception ignored) { }
+		}
+		// fallback via reflection
+		try {
+			Method m = u.getClass().getMethod("getRole");
+			Object role = m.invoke(u);
+			return role != null && "MANAGER".equalsIgnoreCase(role.toString());
+		} catch (Exception ignored) { }
+		return false;
 	}
 
 	private void updateUIBasedOnUserStatus() {
 		boolean isLoggedIn = SessionManager.getInstance().getCurrentUser() != null;
 		boolean isEmployee = SessionManager.getInstance().isEmployee();
-		boolean isManager = isManager();
 
 		loginButton.setVisible(!isLoggedIn);
 		logoutButton.setVisible(isLoggedIn);
 		userStatusLabel.setVisible(isLoggedIn);
 		customerMenuBar.setVisible(isLoggedIn && !isEmployee);
 		employeeMenuBar.setVisible(isLoggedIn && isEmployee);
-		logoutButton.setVisible(isLoggedIn);
-        // NEW: control visibility of Reports button
-        if (reportButton != null) {
-            reportButton.setVisible(isLoggedIn && canSeeReports());
-            reportButton.setManaged(isLoggedIn && canSeeReports()); // hide from layout when not visible
-        }
+
+		if (reportButton != null) {
+			boolean showReports = isLoggedIn && canSeeReports();
+			reportButton.setVisible(showReports);
+			reportButton.setManaged(showReports);
+		}
 
 		if (isLoggedIn) {
 			userStatusLabel.setText("Hi, " + SessionManager.getInstance().getCurrentUser().getUsername());
 		}
 	}
-    private boolean isManager() {
-        User u = SessionManager.getInstance().getCurrentUser();
-        if (u == null) return false;
 
-        // If Employee subclass with getRole()
-        if (u instanceof Employee) {
-            Employee e = (Employee) u;
-            try {
-                String role = e.getRole();
-                return role != null && role.contains("manager");
-            } catch (Exception ignored) { /* fallthrough */ }
-        }
+	// -------- Product actions --------
 
-        private boolean isManager() {
-            User u = SessionManager.getInstance().getCurrentUser();
-            if (u == null) return false;
-
-            // If Employee subclass with getRole()
-            if (u instanceof Employee) {
-                Employee e = (Employee) u;
-                try {
-                    String role = e.getRole();
-                    return role != null && role.contains("manager");
-                } catch (Exception ignored) { /* fallthrough */ }
-            }
-
-            // Generic getRole on User (string/enum)
-            try {
-                Method m = u.getClass().getMethod("getRole");
-                Object role = m.invoke(u);
-                return role != null && "MANAGER".equalsIgnoreCase(role.toString());
-            } catch (Exception ignored) { }
-
-            return false;
-        }
-
-			// ✨ SEARCH LOGIC: Filter the products before rendering
-			List<Product> allProducts = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
-			String searchQuery = searchTextField.getText().toLowerCase().trim();
-
-			List<Product> productsToRender;
-			if (searchQuery.isEmpty()) {
-				productsToRender = allProducts;
-			} else {
-				productsToRender = allProducts.stream()
-						.filter(product -> product.getName().toLowerCase().contains(searchQuery))
-						.collect(Collectors.toList());
-			}
-
-			// The rest of the method now uses the filtered 'productsToRender' list
-			int col = 0;
-			int row = 0;
-
-			for (Product product : productsToRender) {
-				VBox productCard = new VBox(10);
-				productCard.setAlignment(Pos.CENTER);
-				productCard.setPadding(new Insets(15));
-				productCard.setStyle("-fx-background-color: #ffffff; -fx-border-color: #dddddd; -fx-border-radius: 8; -fx-background-radius: 8; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 5);");
-
-				ImageView imageView = new ImageView();
-				try {
-					Image image = new Image(Objects.requireNonNull(PrimaryController.class.getResource(product.getImagePath())).toExternalForm());
-					imageView.setImage(image);
-				} catch (Exception e) {
-					System.err.println("Failed to load image for " + product.getName() + " at path: " + product.getImagePath());
-				}
-				imageView.setFitWidth(150);
-				imageView.setFitHeight(150);
-				imageView.setPreserveRatio(true);
-
-				Label name = new Label(product.getName());
-				name.setFont(new Font("Bell MT Bold", 18));
-				Label price = new Label(String.format("$%.2f", product.getPrice()));
-				price.setFont(new Font("Bell MT", 16));
-
-				productCard.getChildren().addAll(imageView, name, price);
-
-				if (isEmployee) {
-					HBox buttonBox = new HBox(10, createEditButton(product), createDeleteButton(product));
-					buttonBox.setAlignment(Pos.CENTER);
-					productCard.getChildren().add(buttonBox);
-				} else {
-					Button viewButton = new Button("View");
-					viewButton.setOnAction(event -> handleViewProduct(product));
-
-					Button addToCartButton = new Button("Add to Cart");
-					addToCartButton.setOnAction(event -> {
-						try {
-							User currentUser = SessionManager.getInstance().getCurrentUser();
-							if (currentUser == null) {
-								showAlert("Login Required", "Please login to add items to cart.");
-								return;
-							}
-							List<Object> payload = new ArrayList<>();
-							payload.add(currentUser);
-							Message message = new Message("add_to_cart", product.getId(), payload);
-							SimpleClient.getClient().sendToServer(message);
-							// Don't show success alert here! Wait for server response
-						} catch (IOException e) {
-							showAlert("Error", "Failed to add item to cart.");
-						}
-					});
-
-
-					HBox buttonBox = new HBox(10, viewButton, addToCartButton);
-					buttonBox.setAlignment(Pos.CENTER);
-					productCard.getChildren().add(buttonBox);
-				}
-
-				catalogGrid.add(productCard, col, row);
-
-				col++;
-				if (col == 3) {
-					col = 0;
-					row++;
-				}
-			}
-		});
-	}
-
-	private Button createEditButton(Product product) {
-		Button editButton = new Button("Edit");
-		editButton.setStyle("-fx-background-color: #3498db; -fx-text-fill: white;");
-		editButton.setOnAction(event -> handleEditProduct(product));
-		return editButton;
-	}
-
-	private Button createDeleteButton(Product product) {
-		Button deleteButton = new Button("Delete");
-		deleteButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white;");
-		deleteButton.setOnAction(event -> handleDeleteProduct(product));
-		return deleteButton;
+	private void handleAddToCart(Product product) {
+		User currentUser = SessionManager.getInstance().getCurrentUser();
+		if (currentUser == null) {
+			showAlert("Login Required", "Please login to add items to your cart.");
+			return;
+		}
+		try {
+			List<Object> payload = new ArrayList<>();
+			payload.add(currentUser);
+			Message message = new Message("add_to_cart", product.getId(), payload);
+			SimpleClient.getClient().sendToServer(message);
+			// show alert on server confirmation if you prefer
+			showAlert("Success", product.getName() + " was added to your cart!");
+		} catch (IOException e) {
+			showAlert("Error", "Failed to add item to cart.");
+		}
 	}
 
 	private void handleViewProduct(Product product) {
@@ -357,16 +270,11 @@ public class PrimaryController implements Initializable {
 		}
 	}
 
-	private void handleEditProduct(Product product) {
-		showAlert("Action", "Navigating to edit: " + product.getName());
-	}
-
 	private void handleDeleteProduct(Product product) {
 		Alert confirmationAlert = new Alert(Alert.AlertType.CONFIRMATION);
 		confirmationAlert.setTitle("Confirm Deletion");
 		confirmationAlert.setHeaderText("Are you sure you want to delete '" + product.getName() + "'?");
 		confirmationAlert.setContentText("This action cannot be undone.");
-
 		Optional<ButtonType> result = confirmationAlert.showAndWait();
 		if (result.isPresent() && result.get() == ButtonType.OK) {
 			try {
@@ -379,50 +287,7 @@ public class PrimaryController implements Initializable {
 		}
 	}
 
-	@Subscribe
-	public void onMessageFromServer(Message msg) {
-		Platform.runLater(() -> {
-			loadingIndicator.setVisible(false);
-			switch (msg.getMessage()) {
-				case "catalog":
-					this.catalog = (Catalog) msg.getObject();
-					renderCatalog();
-					break;
-				case "add_product":
-				case "editProduct":
-				case "delete_product_by_id":
-					loadCatalogData();
-					break;
-				case "cart_updated":
-					// You can optionally show a subtle notification or badge update
-					showAlert("Success", "Cart updated successfully!");
-					break;
-				case "cart_data":
-					// This message contains the cart, so open the cart view
-					try {
-						EventBus.getDefault().unregister(this);
-						App.setRoot("cartView");
-					} catch (IOException e) {
-						showAlert("Error", "Failed to open cart page.");
-					}
-					break;
-				case "orders_data":
-					try {
-						// Orders data is handled inside OrdersScreenController
-						EventBus.getDefault().unregister(this);
-						App.setRoot("ordersScreenView");  // this triggers OrdersScreenController.initialize()
-					} catch (IOException e) {
-						showAlert("Error", "Failed to open orders page.");
-					}
-					break;
-
-				default:
-					System.out.println("Received unhandled message from server: " + msg.getMessage());
-					break;
-			}
-		});
-	}
-
+	// -------- Alerts --------
 
 	private void showAlert(String title, String message) {
 		Platform.runLater(() -> {
@@ -434,7 +299,7 @@ public class PrimaryController implements Initializable {
 		});
 	}
 
-	// --- Navigation Handlers ---
+	// -------- Navigation --------
 
 	@FXML public void handleCatalog(ActionEvent actionEvent) { loadCatalogData(); }
 
@@ -458,6 +323,20 @@ public class PrimaryController implements Initializable {
 		try {
 			App.setRoot("ordersView");
 			EventBus.getDefault().unregister(this);
+		} catch (IOException e) {
+			showAlert("Error", "Failed to open orders page.");
+		}
+	}
+
+	// optional second entry-point you had
+	@FXML public void handleOrdersScreen(ActionEvent actionEvent) {
+		try {
+			User currentUser = SessionManager.getInstance().getCurrentUser();
+			if (currentUser == null) {
+				showAlert("Login Required", "Please login to view your orders.");
+				return;
+			}
+			App.setRoot("ordersScreenView");
 		} catch (IOException e) {
 			showAlert("Error", "Failed to open orders page.");
 		}
@@ -487,9 +366,23 @@ public class PrimaryController implements Initializable {
 
 	@FXML void handleManageCatalog(ActionEvent event) { loadCatalogData(); }
 
-	@FXML void handleViewReports(ActionEvent event) { showAlert("Action", "View Reports clicked."); }
+	@FXML void handleViewReports(ActionEvent event) {
+		if (!isManager()) {
+			showAlert("Permission Denied", "You do not have permission to view reports.");
+			return;
+		}
+		try {
+			EventBus.getDefault().unregister(this);
+			App.setRoot("reportView"); // ensure your FXML file is reportView.fxml
+		} catch (IOException e) {
+			e.printStackTrace();
+			showAlert("Error", "Failed to open reports page:\n" + e.getMessage());
+		}
+	}
 
-	@FXML void handleManageComplaints(ActionEvent event) { showAlert("Action", "Manage Complaints clicked."); }
+	@FXML void handleManageComplaints(ActionEvent event) {
+		showAlert("Action", "Manage Complaints clicked.");
+	}
 
 	@FXML public void handleLogout(ActionEvent actionEvent) {
 		SessionManager.getInstance().logout();

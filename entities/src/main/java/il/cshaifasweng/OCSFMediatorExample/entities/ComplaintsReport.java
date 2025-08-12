@@ -10,20 +10,11 @@ public class ComplaintsReport extends Report{
     private int unresolvedComplaints;
     private LocalDateTime maxComplaintsDate;
 
-    public ComplaintsReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate,Map<LocalDateTime,Integer> complaintsHistogram, int totalComplaints, int resolvedComplaints, int unresolvedComplaints, LocalDateTime maxComplaintsDate) {
-        super(store_id, branch_name, branch_id, startDate, endDate);
-        this.complaintsHistogram = complaintsHistogram;
-        this.totalComplaints = totalComplaints;
-        this.resolvedComplaints = resolvedComplaints;
-        this.unresolvedComplaints = unresolvedComplaints;
-        this.maxComplaintsDate = maxComplaintsDate;
-    }
     @Override
     public void generate() {
         // Mock data
         this.complaintsHistogram = new HashMap<>();
         LocalDateTime today = LocalDateTime.now();
-
         complaintsHistogram.put(today.minusDays(3), 5);
         complaintsHistogram.put(today.minusDays(2), 12);
         complaintsHistogram.put(today.minusDays(1), 8);
@@ -36,10 +27,15 @@ public class ComplaintsReport extends Report{
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
                 .orElse(null);
-
-        System.out.println("ComplaintsReport generated for branch " + getBranch_name());
     }
-
+    public ComplaintsReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate,Map<LocalDateTime,Integer> complaintsHistogram, int totalComplaints, int resolvedComplaints, int unresolvedComplaints, LocalDateTime maxComplaintsDate) {
+        super(store_id, branch_name, branch_id, startDate, endDate);
+        this.complaintsHistogram = complaintsHistogram;
+        this.totalComplaints = totalComplaints;
+        this.resolvedComplaints = resolvedComplaints;
+        this.unresolvedComplaints = unresolvedComplaints;
+        this.maxComplaintsDate = maxComplaintsDate;
+    }
     public Map<LocalDateTime, Integer> getComplaintsHistogram() {
         return complaintsHistogram;
     }
@@ -68,6 +64,6 @@ public class ComplaintsReport extends Report{
         this.unresolvedComplaints = unresolvedComplaints;
     }
     public void setComplaintsHistogram(Map<LocalDateTime, Integer> complaintsHistogram) {
-        complaintsHistogram = complaintsHistogram;
+        this.complaintsHistogram = complaintsHistogram;
     }
 }

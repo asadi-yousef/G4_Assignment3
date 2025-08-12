@@ -238,7 +238,7 @@ public class ReportsViewController implements Initializable {
         return (v == null) ? "-" : v.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
-    private boolean isManager() {
+    /*private boolean isManager() {
         User u = SessionManager.getInstance().getCurrentUser();
         if (u == null) return false;
         try {
@@ -246,7 +246,7 @@ public class ReportsViewController implements Initializable {
             return role != null && "MANAGER".equalsIgnoreCase(role.toString());
         } catch (Exception ignored) { }
         return false;
-    }
+    }*/
 
     private void showInfo(String title, String msg) {
         Platform.runLater(() -> {

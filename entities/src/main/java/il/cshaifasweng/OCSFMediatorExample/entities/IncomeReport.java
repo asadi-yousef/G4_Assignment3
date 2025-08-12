@@ -14,10 +14,10 @@ public class IncomeReport extends Report{
     public IncomeReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate, BigDecimal totalRevenue,BigDecimal totalExpenses, BigDecimal netProfit, BigDecimal avgDailyNetProfit, int totalTransactions) {
         super(store_id, branch_name, branch_id, startDate, endDate);
         TotalRevenue = totalRevenue;
-        TotalExpenses = totalExpenses;
+        TotalExpenses = totalRevenue;
+        NetProfit = totalRevenue;
+        AvgDailyNetProfit = netProfit;
         TotalTransactions = totalTransactions;
-        //compute netProfit and avgDailyNetProfit
-        computeDerivedFields();
     }
     @Override
     public void generate() {
@@ -25,20 +25,13 @@ public class IncomeReport extends Report{
         this.TotalRevenue = new BigDecimal("12000.50");
         this.TotalExpenses = new BigDecimal("4500.25");
         this.TotalTransactions = 300;
-
-        // Compute derived fields
         computeDerivedFields();
-
-        System.out.println("IncomeReport generated for branch " + getBranch_name());
     }
-
     private void computeDerivedFields() {
         this.NetProfit = this.TotalRevenue.subtract(this.TotalExpenses);
-
-        long days = Math.max(1, ChronoUnit.DAYS.between(getStartDate().toLocalDate(), getEndDate().toLocalDate()));
-        // use scale 2 and RoundingMode.HALF_UP (adjust as needed)
-        this.AvgDailyNetProfit = this.NetProfit
-                .divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
+        long days = Math.max(1,
+                ChronoUnit.DAYS.between(getStartDate().toLocalDate(), getEndDate().toLocalDate()));
+        this.AvgDailyNetProfit = this.NetProfit.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
     }
 
     public BigDecimal getTotalRevenue() {

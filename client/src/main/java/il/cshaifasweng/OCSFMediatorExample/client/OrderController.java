@@ -281,6 +281,7 @@ public class OrderController implements Initializable {
 
     private void goBackToCart() {
         try {
+            EventBus.getDefault().unregister(this);
             App.setRoot("cartView");
         } catch (Exception e) {
             showAlert("Error", "Failed to go back to cart.");
@@ -289,6 +290,7 @@ public class OrderController implements Initializable {
 
     private void goToCatalog() {
         try {
+            EventBus.getDefault().unregister(this);
             App.setRoot("primary");
         } catch (Exception e) {
             showAlert("Error", "Failed to return to catalog.");

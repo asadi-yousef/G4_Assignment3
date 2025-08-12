@@ -29,10 +29,7 @@ public class OrdersReport extends Report{
         typeHistogram.put("Tulips", 150);
         typeHistogram.put("Lilies", 120);
         typeHistogram.put("Orchids", 30);
-
-        System.out.println("OrdersReport generated for branch " + getBranch_name());
     }
-
     public int getCancelledOrders() {
         return cancelledOrders;
     }
