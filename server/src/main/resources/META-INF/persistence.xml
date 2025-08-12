@@ -11,18 +11,23 @@
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Product</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Cart</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.CartItem</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Customer</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Order</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderItem</class>
 
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="com.mysql.cj.jdbc.Driver"/>
             <property name="jakarta.persistence.jdbc.url" value="jdbc:mysql://localhost:3306/MyFirstDataBase?createDatabaseIfNotExist=true&amp;useSSL=false&amp;serverTimezone=UTC"/>
             <property name="jakarta.persistence.jdbc.user" value="root"/>
-            <property name="jakarta.persistence.jdbc.password" value="silin"/>
+            <property name="jakarta.persistence.jdbc.password" value="Renata123"/>
 
             <!-- Hibernate Settings -->
             <property name="hibernate.dialect" value="org.hibernate.dialect.MySQL8Dialect"/>
             <property name="hibernate.hbm2ddl.auto" value="update"/>
             <property name="hibernate.show_sql" value="true"/>
             <property name="hibernate.format_sql" value="true"/>
+            <property name="hibernate.jdbc.time_zone" value="UTC"/>
+
         </properties>
     </persistence-unit>
 </persistence>

@@ -33,7 +33,7 @@
                <children>
                   <Button onAction="#handleCatalog" text="Catalog" />
                   <Button onAction="#handleCart" text="My Cart" />
-                  <Button onAction="#handleOrders" text="My Orders" />
+                  <Button onAction="#handleOrdersScreen" text="My Orders" />
                   <Button onAction="#handleComplaints" text="Complaints" />
                   <Pane HBox.hgrow="ALWAYS" />
                   <Button onAction="#handleProfile" style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-background-radius: 8;" text="👤 Profile">

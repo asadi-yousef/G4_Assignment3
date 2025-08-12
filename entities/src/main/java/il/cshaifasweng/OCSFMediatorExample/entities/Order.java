@@ -1,0 +1,133 @@
+package il.cshaifasweng.OCSFMediatorExample.entities;
+
+import jakarta.persistence.*;
+import java.io.Serializable;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+@Entity
+@Table(name = "order_table")
+public class Order implements Serializable {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id; // primary key
+
+    @ManyToOne
+    private Customer customer;
+
+    private String storeLocation;
+    private boolean delivery;
+
+    private LocalDateTime orderDate;
+    private LocalDateTime deliveryDateTime; // combines date & hour
+
+    private String recipientPhone;
+    private String deliveryAddress; // new
+    private String note; // ברכה (optional)
+    private String paymentMethod; // "SavedCard", "NewCard", "CashOnDelivery"
+    private String paymentDetails; // e.g. card number or "Cash on Delivery"
+
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    private List<OrderItem> items = new ArrayList<>();
+
+    public Order() {}
+
+    public Order(Customer customer, String storeLocation, boolean delivery,
+                 LocalDateTime orderDate, LocalDateTime deliveryDateTime,
+                 String recipientPhone, String deliveryAddress, String note,
+                 String paymentMethod, String paymentDetails) {
+        this.customer = customer;
+        this.storeLocation = storeLocation;
+        this.delivery = delivery;
+        this.orderDate = orderDate;
+        this.deliveryDateTime = deliveryDateTime;
+        this.recipientPhone = recipientPhone;
+        this.deliveryAddress = deliveryAddress;
+        this.note = note;
+        this.paymentMethod = paymentMethod;
+        this.paymentDetails = paymentDetails;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public Customer getCustomer() {
+        return customer;
+    }
+    public void setCustomer(Customer customer) {
+        this.customer = customer;
+    }
+
+    public String getStoreLocation() {
+        return storeLocation;
+    }
+    public void setStoreLocation(String storeLocation) {
+        this.storeLocation = storeLocation;
+    }
+
+    public boolean getDelivery() {
+        return delivery;
+    }
+    public void setDelivery(boolean delivery) {
+        this.delivery = delivery;
+    }
+
+    public LocalDateTime getOrderDate() {
+        return orderDate;
+    }
+    public void setOrderDate(LocalDateTime orderDate) {
+        this.orderDate = orderDate;
+    }
+
+    public LocalDateTime getDeliveryDateTime() {
+        return deliveryDateTime;
+    }
+    public void setDeliveryDateTime(LocalDateTime deliveryDateTime) {
+        this.deliveryDateTime = deliveryDateTime;
+    }
+
+    public String getRecipientPhone() {
+        return recipientPhone;
+    }
+    public void setRecipientPhone(String recipientPhone) {
+        this.recipientPhone = recipientPhone;
+    }
+
+    public String getDeliveryAddress() {
+        return deliveryAddress;
+    }
+    public void setDeliveryAddress(String deliveryAddress) {
+        this.deliveryAddress = deliveryAddress;
+    }
+
+    public String getNote() {
+        return note;
+    }
+    public void setNote(String note) {
+        this.note = note;
+    }
+
+    public String getPaymentMethod() {
+        return paymentMethod;
+    }
+    public void setPaymentMethod(String paymentMethod) {
+        this.paymentMethod = paymentMethod;
+    }
+
+    public String getPaymentDetails() {
+        return paymentDetails;
+    }
+    public void setPaymentDetails(String paymentDetails) {
+        this.paymentDetails = paymentDetails;
+    }
+
+    public List<OrderItem> getItems() {
+        return items;
+    }
+    public void setItems(List<OrderItem> items) {
+        this.items = items;
+    }
+}
