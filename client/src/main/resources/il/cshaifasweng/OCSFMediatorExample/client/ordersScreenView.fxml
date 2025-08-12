@@ -11,11 +11,29 @@
       style="-fx-background-color: #fafafa; -fx-padding: 30;">
 
     <!-- Header Section -->
-    <VBox alignment="CENTER" spacing="5">
-        <Label text="Your Orders"
-               style="-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;" />
-        <Label text="Track and review your order history"
-               style="-fx-font-size: 14px; -fx-text-fill: #7f8c8d;" />
+    <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
+        <VBox.margin>
+            <Insets left="30" right="30" top="25" />
+        </VBox.margin>
+        <HBox alignment="CENTER_LEFT">
+            <padding>
+                <Insets bottom="20" left="25" right="25" top="25" />
+            </padding>
+            <VBox alignment="CENTER_LEFT" spacing="5">
+                <Label text="📋" style="-fx-font-size: 28px;">
+                    <VBox.margin>
+                        <Insets bottom="5" />
+                    </VBox.margin>
+                </Label>
+                <Label text="Your Orders"
+                       style="-fx-font-size: 28px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;" />
+                <Label text="Track and review your order history"
+                       style="-fx-font-size: 14px; -fx-text-fill: #7f8c8d;" />
+            </VBox>
+            <Region HBox.hgrow="ALWAYS" />
+            <Button fx:id="backToCatalogButton" onAction="#handleBackToCatalog" text="← Back to Catalog"
+                    style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 10 20 10 20; -fx-cursor: hand; -fx-font-weight: bold; -fx-font-size: 14px;" />
+        </HBox>
     </VBox>
 
     <!-- Content Section -->

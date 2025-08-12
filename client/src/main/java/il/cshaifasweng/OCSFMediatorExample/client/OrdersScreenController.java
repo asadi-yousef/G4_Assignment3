@@ -2,6 +2,7 @@ package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import javafx.application.Platform;
+import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.geometry.Insets;
@@ -29,6 +30,9 @@ public class OrdersScreenController implements Initializable {
 
     @FXML
     private Label noOrdersLabel;
+
+    @FXML
+    private Button backToCatalogButton;
 
     private List<Order> orders;
 
@@ -75,7 +79,9 @@ public class OrdersScreenController implements Initializable {
                 ordersListView.setVisible(true);
                 ordersListView.getItems().clear();
 
-                for (Order order : orders) {
+                // Loop through orders in reverse order (most recent first)
+                for (int i = orders.size() - 1; i >= 0; i--) {
+                    Order order = orders.get(i);
                     VBox orderBox = createOrderBox(order);
                     ordersListView.getItems().add(orderBox);
                 }
@@ -230,6 +236,17 @@ public class OrdersScreenController implements Initializable {
         return itemBox;
     }
 
+    @FXML
+    public void handleBackToCatalog(ActionEvent event) {
+        EventBus.getDefault().unregister(this);
+        Platform.runLater(() -> {
+            try {
+                App.setRoot("primary");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
     // Mask card: show last 4 digits only (assumes digits only)
     private String maskCard(String cardNumber) {
         if (cardNumber == null || cardNumber.length() < 4) {
