@@ -19,6 +19,7 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -34,6 +35,9 @@ public class PrimaryController implements Initializable {
 	@FXML private ProgressIndicator loadingIndicator;
 	@FXML private Label catalogLabel;
 	@FXML private TextField searchTextField;
+
+	// NEW: Reports button (must exist in primary.fxml with fx:id="reportButton")
+	@FXML private Button reportButton;
 
 	private Catalog catalog;
 
@@ -157,17 +161,73 @@ public class PrimaryController implements Initializable {
 		new Thread(loadTask).start();
 	}
 
+	private boolean canSeeReports() {
+		User u = SessionManager.getInstance().getCurrentUser();
+		if (u == null) return false;
+		else if (u instanceof Employee) {
+			Employee e = (Employee) u;
+			String role = e.getRole();
+			return "manager".equalsIgnoreCase(role) ||
+					"system_manager".equalsIgnoreCase(role);
+		}
+		else return false;
+	}
+
+	private String readRole(User u) {
+
+		try { Object r = u.getClass().getMethod("getRole").invoke(u);
+			return r == null ? "" : r.toString(); } catch (Exception e) { return ""; }
+	}
+
 	private void updateUIBasedOnUserStatus() {
 		boolean isLoggedIn = SessionManager.getInstance().getCurrentUser() != null;
 		boolean isEmployee = SessionManager.getInstance().isEmployee();
+		boolean isManager = isManager();
+
 		loginButton.setVisible(!isLoggedIn);
 		logoutButton.setVisible(isLoggedIn);
 		userStatusLabel.setVisible(isLoggedIn);
 		customerMenuBar.setVisible(isLoggedIn && !isEmployee);
 		employeeMenuBar.setVisible(isLoggedIn && isEmployee);
+
+		// NEW: control visibility of Reports button
+		if (reportButton != null) {
+			reportButton.setVisible(isLoggedIn && canSeeReports());
+			reportButton.setManaged(isLoggedIn && canSeeReports()); // hide from layout when not visible
+		}
+
 		if (isLoggedIn) {
 			userStatusLabel.setText("Hi, " + SessionManager.getInstance().getCurrentUser().getUsername());
 		}
+	}
+
+	/**
+	 * Helper to determine if current user is a MANAGER.
+	 * Tries several common patterns to avoid coupling to a specific model:
+	 * - If user is an Employee with getRole() returning enum/string "MANAGER"
+	 * - If User itself has getRole()
+	 */
+	private boolean isManager() {
+		User u = SessionManager.getInstance().getCurrentUser();
+		if (u == null) return false;
+
+		// If Employee subclass with getRole()
+		if (u instanceof Employee) {
+			Employee e = (Employee) u;
+			try {
+				String role = e.getRole();
+				return role != null && role.contains("manager");
+			} catch (Exception ignored) { /* fallthrough */ }
+		}
+
+		// Generic getRole on User (string/enum)
+		try {
+			Method m = u.getClass().getMethod("getRole");
+			Object role = m.invoke(u);
+			return role != null && "MANAGER".equalsIgnoreCase(role.toString());
+		} catch (Exception ignored) { }
+
+		return false;
 	}
 
 	private void handleAddToCart(Product product) {
@@ -288,7 +348,18 @@ public class PrimaryController implements Initializable {
 
 	@FXML
 	void handleViewReports(ActionEvent event) {
-		showAlert("Action", "View Reports clicked.");
+		// Only managers can open the reports view
+		if (!isManager()) {
+			showAlert("Permission Denied", "You do not have permission to view reports.");
+			return;
+		}
+		try {
+			App.setRoot("reportView"); // Ensure reportView.fxml is placed like other views
+			EventBus.getDefault().unregister(this);
+		} catch (IOException e) {
+			e.printStackTrace();
+			showAlert("Error", "Failed to open reports page:\n" + e.getMessage());
+		}
 	}
 
 	@FXML

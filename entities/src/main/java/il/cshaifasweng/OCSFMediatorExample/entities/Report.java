@@ -15,6 +15,7 @@ public abstract class Report{
         this.StartDate = startDate;
         this.EndDate = endDate;
     }
+    public abstract void generate();
 
     public int getStore_id() {
         return Store_id;

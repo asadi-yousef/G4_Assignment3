@@ -1,24 +1,47 @@
 package il.cshaifasweng.OCSFMediatorExample.entities;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 
 public class ComplaintsReport extends Report{
-    private Map<LocalDateTime,Integer> ComplaintsHistogram;
+    private Map<LocalDateTime,Integer> complaintsHistogram;
     private int totalComplaints;
     private int resolvedComplaints;
     private int unresolvedComplaints;
     private LocalDateTime maxComplaintsDate;
 
-    ComplaintsReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate,Map<LocalDateTime,Integer> complaintsHistogram, int totalComplaints, int resolvedComplaints, int unresolvedComplaints, LocalDateTime maxComplaintsDate) {
+    public ComplaintsReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate,Map<LocalDateTime,Integer> complaintsHistogram, int totalComplaints, int resolvedComplaints, int unresolvedComplaints, LocalDateTime maxComplaintsDate) {
         super(store_id, branch_name, branch_id, startDate, endDate);
-        this.ComplaintsHistogram = complaintsHistogram;
+        this.complaintsHistogram = complaintsHistogram;
         this.totalComplaints = totalComplaints;
         this.resolvedComplaints = resolvedComplaints;
         this.unresolvedComplaints = unresolvedComplaints;
         this.maxComplaintsDate = maxComplaintsDate;
     }
+    @Override
+    public void generate() {
+        // Mock data
+        this.complaintsHistogram = new HashMap<>();
+        LocalDateTime today = LocalDateTime.now();
+
+        complaintsHistogram.put(today.minusDays(3), 5);
+        complaintsHistogram.put(today.minusDays(2), 12);
+        complaintsHistogram.put(today.minusDays(1), 8);
+
+        this.totalComplaints = complaintsHistogram.values().stream().mapToInt(Integer::intValue).sum();
+        this.resolvedComplaints = 20;
+        this.unresolvedComplaints = totalComplaints - resolvedComplaints;
+        this.maxComplaintsDate = complaintsHistogram.entrySet()
+                .stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(null);
+
+        System.out.println("ComplaintsReport generated for branch " + getBranch_name());
+    }
+
     public Map<LocalDateTime, Integer> getComplaintsHistogram() {
-        return ComplaintsHistogram;
+        return complaintsHistogram;
     }
     public int getTotalComplaints() {
         return totalComplaints;
@@ -45,6 +68,6 @@ public class ComplaintsReport extends Report{
         this.unresolvedComplaints = unresolvedComplaints;
     }
     public void setComplaintsHistogram(Map<LocalDateTime, Integer> complaintsHistogram) {
-        ComplaintsHistogram = complaintsHistogram;
+        complaintsHistogram = complaintsHistogram;
     }
 }

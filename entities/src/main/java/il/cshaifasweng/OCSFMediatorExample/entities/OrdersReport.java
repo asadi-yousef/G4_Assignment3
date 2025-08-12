@@ -10,13 +10,29 @@ public class OrdersReport extends Report{
     private int netOrders;
     private Map<String,Integer> typeHistogram;
 
-    OrdersReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate,int totalOrders,int cancelledOrders,int netOrders,Map<String,Integer> typeHistogram) {
+    public OrdersReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate,int totalOrders,int cancelledOrders,int netOrders,Map<String,Integer> typeHistogram) {
         super(store_id, branch_name, branch_id, startDate, endDate);
         this.totalOrders = totalOrders;
         this.cancelledOrders = cancelledOrders;
         this.netOrders = netOrders;
         this.typeHistogram = typeHistogram;
     }
+    @Override
+    public void generate() {
+        // Mock data
+        this.totalOrders = 500;
+        this.cancelledOrders = 30;
+        this.netOrders = totalOrders - cancelledOrders;
+
+        this.typeHistogram = new HashMap<>();
+        typeHistogram.put("Roses", 200);
+        typeHistogram.put("Tulips", 150);
+        typeHistogram.put("Lilies", 120);
+        typeHistogram.put("Orchids", 30);
+
+        System.out.println("OrdersReport generated for branch " + getBranch_name());
+    }
+
     public int getCancelledOrders() {
         return cancelledOrders;
     }
