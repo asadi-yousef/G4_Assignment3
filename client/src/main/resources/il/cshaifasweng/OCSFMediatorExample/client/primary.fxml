@@ -33,7 +33,7 @@
                <children>
                   <Button onAction="#handleCatalog" text="Catalog" />
                   <Button onAction="#handleCart" text="My Cart" />
-                  <Button onAction="#handleOrders" text="My Orders" />
+                  <Button onAction="#handleOrdersScreen" text="My Orders" />
                   <Button onAction="#handleComplaints" text="Complaints" />
                   <Pane HBox.hgrow="ALWAYS" />
                   <Button onAction="#handleProfile" style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-background-radius: 8;" text="👤 Profile">
@@ -45,7 +45,7 @@
             <HBox fx:id="employeeMenuBar" alignment="CENTER" spacing="10.0" visible="false" AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0">
                <children>
                   <Button onAction="#handleManageCatalog" text="Manage Catalog" />
-                  <Button onAction="#handleViewReports" text="View Reports" />
+                  <Button fx:id="reportButton" onAction="#handleViewReports" text="Reports" />
                   <Button onAction="#handleManageComplaints" text="Manage Complaints" />
                   <Pane HBox.hgrow="ALWAYS" />
                </children>

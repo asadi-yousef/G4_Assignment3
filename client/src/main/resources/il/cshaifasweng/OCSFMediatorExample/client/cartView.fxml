@@ -60,7 +60,7 @@
                     </VBox.margin>
                 </Label>
 
-                <ListView fx:id="cartListView" prefHeight="450.0" prefWidth="800.0" style="-fx-background-color: transparent; -fx-border-color: #e9ecef; -fx-border-radius: 8; -fx-border-width: 1; -fx-cell-size: 50;">
+                <ListView fx:id="cartListView" prefHeight="350.0" prefWidth="800.0" style="-fx-background-color: transparent; -fx-border-color: #e9ecef; -fx-border-radius: 8; -fx-border-width: 1;">
                     <VBox.margin>
                         <Insets bottom="25.0" left="30.0" right="30.0" />
                     </VBox.margin>
@@ -71,7 +71,7 @@
             </VBox.margin>
         </VBox>
 
-        <!-- Total Section -->
+        <!-- Total and Action Section -->
         <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
             <children>
                 <Separator style="-fx-background-color: #e9ecef;">
@@ -88,6 +88,20 @@
                                 <Font name="System Bold" size="20.0" />
                             </font>
                         </Label>
+                    </children>
+                    <VBox.margin>
+                        <Insets bottom="15.0" left="25.0" right="25.0" />
+                    </VBox.margin>
+                </HBox>
+
+                <!-- Order Button Section -->
+                <HBox alignment="CENTER">
+                    <children>
+                        <Button fx:id="proceedToOrderButton" onAction="#handleProceedToOrder" text="🛍️ Proceed to Order" style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-background-radius: 10; -fx-padding: 15 30 15 30; -fx-cursor: hand; -fx-font-weight: bold;" textFill="WHITE" prefWidth="200.0">
+                            <font>
+                                <Font name="System Bold" size="16.0" />
+                            </font>
+                        </Button>
                     </children>
                     <VBox.margin>
                         <Insets bottom="25.0" left="25.0" right="25.0" />

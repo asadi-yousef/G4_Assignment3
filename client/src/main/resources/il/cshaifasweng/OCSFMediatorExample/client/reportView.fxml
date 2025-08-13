@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
+<?import javafx.geometry.*?>
+<?import javafx.scene.chart.*?>
+
+<BorderPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="il.cshaifasweng.OCSFMediatorExample.client.ReportsViewController"
+            prefWidth="900" prefHeight="600"
+            style="-fx-background-color: white;">
+
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="10" style="-fx-background-color: #ffffff;">
+            <padding>
+                <Insets top="16" right="20" bottom="12" left="20"/>
+            </padding>
+            <children>
+                <Label text="📊">
+                    <font><Font size="22"/></font>
+                    <HBox.margin><Insets right="8"/></HBox.margin>
+                </Label>
+                <Label text="Reports" textFill="#2c3e50">
+                    <font><Font name="System Bold" size="22"/></font>
+                </Label>
+
+                <Region HBox.hgrow="ALWAYS"/>
+
+                <!-- The button -->
+                <Button fx:id="backToCatalogButton"
+                        text="← Back to Catalog"
+                        onAction="#handleBackToCatalog"
+                        style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 8 14 8 14;">
+                    <font><Font name="System Bold" size="14"/></font>
+                </Button>
+            </children>
+        </HBox>
+    </top>
+    <center>
+        <VBox alignment="TOP_CENTER" spacing="16" maxWidth="820" BorderPane.alignment="CENTER">
+            <padding><Insets top="20" right="20" bottom="20" left="20"/></padding>
+
+            <Label text="Manager Reports">
+                <font><Font size="24"/></font>
+            </Label>
+
+            <GridPane hgap="12" vgap="12">
+                <columnConstraints>
+                    <ColumnConstraints halignment="RIGHT" minWidth="140"/>
+                    <ColumnConstraints halignment="LEFT"  minWidth="440"/>
+                </columnConstraints>
+
+                <Label text="Report Type:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                <HBox spacing="12" GridPane.rowIndex="0" GridPane.columnIndex="1">
+                    <RadioButton fx:id="incomeReportBtn" text="Income"/>
+                    <RadioButton fx:id="ordersReportBtn" text="Orders"/>
+                    <RadioButton fx:id="complaintsReportBtn" text="Complaints"/>
+                </HBox>
+
+                <Label text="Branch:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                <ComboBox fx:id="branchComboBox" promptText="Choose branch..." GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+
+                <Label text="Dates:" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                <HBox spacing="10" alignment="CENTER_LEFT" GridPane.rowIndex="2" GridPane.columnIndex="1">
+                    <DatePicker fx:id="startDatePicker"/>
+                    <Label text="→"/>
+                    <DatePicker fx:id="endDatePicker"/>
+                    <Button fx:id="generateButton" text="Generate" onAction="#onGenerate"/>
+                </HBox>
+            </GridPane>
+
+            <SplitPane orientation="VERTICAL" prefHeight="420" dividerPositions="0.6">
+                <items>
+                    <BorderPane>
+                        <center>
+                            <BarChart fx:id="barChart">
+                                <xAxis><CategoryAxis/></xAxis>
+                                <yAxis><NumberAxis/></yAxis>
+                            </BarChart>
+                        </center>
+                    </BorderPane>
+                    <TextArea fx:id="reportOutput" wrapText="true" editable="false" prefRowCount="6"/>
+                </items>
+            </SplitPane>
+        </VBox>
+    </center>
+</BorderPane>

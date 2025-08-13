@@ -21,18 +21,20 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.*;
+import java.util.ResourceBundle;
 import java.util.stream.Collectors;
 
 public class PrimaryController implements Initializable {
 
-	// FXML declarations
 	@FXML private Button loginButton;
 	@FXML private Label userStatusLabel;
 	@FXML private HBox customerMenuBar;
 	@FXML private HBox employeeMenuBar;
 	@FXML private Button logoutButton;
+	@FXML private Button employeeLogoutButton; // if present in FXML
 	@FXML private GridPane catalogGrid;
 	@FXML private ProgressIndicator loadingIndicator;
 	@FXML private Label catalogLabel;
@@ -41,6 +43,9 @@ public class PrimaryController implements Initializable {
 	@FXML private TextField minPriceField;
 	@FXML private TextField maxPriceField;
 	@FXML private Button clearFiltersButton;
+
+	// Reports button (must exist in primary.fxml with fx:id="reportButton")
+	@FXML private Button reportButton;
 
 	private Catalog catalog;
 	private PauseTransition debounceTimer;
@@ -65,6 +70,7 @@ public class PrimaryController implements Initializable {
 
 	private void renderCatalog() {
 		boolean isEmployee = SessionManager.getInstance().isEmployee();
+
 		Platform.runLater(() -> {
 			catalogGrid.getChildren().clear();
 			if (catalog == null || catalog.getFlowers() == null) {
@@ -168,14 +174,17 @@ public class PrimaryController implements Initializable {
 					populateTypeFilter();
 					renderCatalog();
 					break;
+
 				case "add_product":
 				case "editProduct":
 				case "delete_product_by_id":
 					loadCatalogData();
 					break;
+
 				case "cart_updated":
 					showAlert("Success", "Cart updated successfully!");
 					break;
+
 				case "cart_data":
 					try {
 						EventBus.getDefault().unregister(this);
@@ -184,6 +193,16 @@ public class PrimaryController implements Initializable {
 						showAlert("Error", "Failed to open cart page.");
 					}
 					break;
+
+				case "orders_data":
+					try {
+						EventBus.getDefault().unregister(this);
+						App.setRoot("ordersScreenView");
+					} catch (IOException e) {
+						showAlert("Error", "Failed to open orders page.");
+					}
+					break;
+
 				default:
 					System.out.println("Received unhandled message from server: " + msg.getMessage());
 					break;
@@ -194,6 +213,7 @@ public class PrimaryController implements Initializable {
 	private void loadCatalogData() {
 		loadingIndicator.setVisible(true);
 		catalogGrid.getChildren().clear();
+
 		Task<Void> loadTask = new Task<>() {
 			@Override
 			protected Void call() throws Exception {
@@ -204,25 +224,68 @@ public class PrimaryController implements Initializable {
 				return null;
 			}
 		};
+
 		loadTask.setOnFailed(e -> {
 			loadingIndicator.setVisible(false);
 			showAlert("Connection Error", "Failed to connect to the server.");
 		});
+
 		new Thread(loadTask).start();
+	}
+
+	// -------- Role helpers / UI state --------
+
+	private boolean canSeeReports() {
+		User u = SessionManager.getInstance().getCurrentUser();
+		if (u == null) return false;
+		if (u instanceof Employee) {
+			String role = ((Employee) u).getRole();
+			return "manager".equalsIgnoreCase(role) || "system_manager".equalsIgnoreCase(role);
+		}
+		return false;
+	}
+
+	private boolean isManager() {
+		User u = SessionManager.getInstance().getCurrentUser();
+		if (u == null) return false;
+
+		if (u instanceof Employee) {
+			try {
+				String role = ((Employee) u).getRole();
+				return role != null && role.toLowerCase().contains("manager");
+			} catch (Exception ignored) { }
+		}
+		// fallback via reflection
+		try {
+			Method m = u.getClass().getMethod("getRole");
+			Object role = m.invoke(u);
+			return role != null && "MANAGER".equalsIgnoreCase(role.toString());
+		} catch (Exception ignored) { }
+		return false;
 	}
 
 	private void updateUIBasedOnUserStatus() {
 		boolean isLoggedIn = SessionManager.getInstance().getCurrentUser() != null;
 		boolean isEmployee = SessionManager.getInstance().isEmployee();
+
 		loginButton.setVisible(!isLoggedIn);
 		logoutButton.setVisible(isLoggedIn);
 		userStatusLabel.setVisible(isLoggedIn);
 		customerMenuBar.setVisible(isLoggedIn && !isEmployee);
 		employeeMenuBar.setVisible(isLoggedIn && isEmployee);
+
+		if (reportButton != null) {
+			boolean showReports = isLoggedIn && canSeeReports();
+			reportButton.setVisible(showReports);
+			reportButton.setManaged(showReports);
+		}
+
 		if (isLoggedIn) {
 			userStatusLabel.setText("Hi, " + SessionManager.getInstance().getCurrentUser().getUsername());
 		}
 	}
+
+	// -------- Product actions --------
 
 	private void handleAddToCart(Product product) {
 		User currentUser = SessionManager.getInstance().getCurrentUser();
@@ -235,6 +298,7 @@ public class PrimaryController implements Initializable {
 			payload.add(currentUser);
 			Message message = new Message("add_to_cart", product.getId(), payload);
 			SimpleClient.getClient().sendToServer(message);
+			// show alert on server confirmation if you prefer
 			showAlert("Success", product.getName() + " was added to your cart!");
 		} catch (IOException e) {
 			showAlert("Error", "Failed to add item to cart.");
@@ -268,6 +332,8 @@ public class PrimaryController implements Initializable {
 			}
 		}
 	}
+
+	// -------- Alerts --------
 
 	private void showAlert(String title, String message) {
 		Platform.runLater(() -> {
