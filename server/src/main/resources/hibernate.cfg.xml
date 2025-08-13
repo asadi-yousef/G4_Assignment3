@@ -18,6 +18,9 @@
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Employee"/>
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Cart"/>
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.CartItem"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Branch"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.CreditCard"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Subscription"/>
 
     </session-factory>
 </hibernate-configuration>

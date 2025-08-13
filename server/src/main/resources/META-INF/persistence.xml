@@ -8,9 +8,14 @@
     <persistence-unit name="my-persistence-unit" transaction-type="RESOURCE_LOCAL">
         <provider>org.hibernate.jpa.HibernatePersistenceProvider</provider>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.User</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Customer</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Product</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Cart</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.CartItem</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Branch</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.CreditCard</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Subscription</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Employee</class>
 
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="com.mysql.cj.jdbc.Driver"/>

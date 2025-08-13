@@ -1,114 +1,97 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.lang.*?>
-<?import java.util.*?>
-<?import javafx.scene.*?>
+<?import javafx.geometry.Insets?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<?import javafx.geometry.*?>
 
 <AnchorPane xmlns="http://javafx.com/javafx"
             xmlns:fx="http://javafx.com/fxml"
             fx:controller="il.cshaifasweng.OCSFMediatorExample.client.RegisterControl"
-            prefHeight="600.0" prefWidth="500.0">
+            prefHeight="750.0" prefWidth="500.0">
 
-    <!-- Main VBox container centered in AnchorPane -->
-    <VBox alignment="CENTER" spacing="20" AnchorPane.topAnchor="20.0" AnchorPane.bottomAnchor="20.0"
+    <VBox alignment="CENTER" spacing="15" AnchorPane.topAnchor="20.0" AnchorPane.bottomAnchor="20.0"
           AnchorPane.leftAnchor="50.0" AnchorPane.rightAnchor="50.0">
 
-        <!-- Title -->
         <Label fx:id="titleLabel" text="Customer Registration"
                style="-fx-font-size: 24px; -fx-font-weight: bold;" alignment="CENTER"/>
 
-        <!-- Personal Information Section -->
         <VBox spacing="10" alignment="CENTER">
-            <Label text="Personal Information"
-                   style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
-
-            <!-- Name Field -->
+            <Label text="Personal Information" style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="Name:" prefWidth="100" alignment="CENTER_RIGHT"/>
                 <TextField fx:id="nameField" prefWidth="200"/>
             </HBox>
-
-            <!-- Username Field -->
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="Username:" prefWidth="100" alignment="CENTER_RIGHT"/>
                 <TextField fx:id="usernameField" prefWidth="200"/>
             </HBox>
-
-            <!-- Password Field -->
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="Password:" prefWidth="100" alignment="CENTER_RIGHT"/>
                 <PasswordField fx:id="passwordField" prefWidth="200"/>
             </HBox>
         </VBox>
 
-        <!-- Contact Information Section -->
         <VBox spacing="10" alignment="CENTER">
-            <Label text="Contact Information"
-                   style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
+            <Label text="Account Type" style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
+            <HBox spacing="10" alignment="CENTER" prefWidth="350">
+                <Label text="Choose:" prefWidth="100" alignment="CENTER_RIGHT"/>
+                <ComboBox fx:id="accountTypeComboBox" prefWidth="200"/>
+            </HBox>
+            <Label fx:id="accountTypeDescriptionLabel" text="Please select an account type."
+                   alignment="CENTER" wrapText="true" style="-fx-text-fill: #666;"/>
+        </VBox>
 
-            <!-- Email Field -->
+        <VBox spacing="10" alignment="CENTER">
+            <Label text="Contact Information" style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="Email:" prefWidth="100" alignment="CENTER_RIGHT"/>
                 <TextField fx:id="emailField" prefWidth="200"/>
             </HBox>
-
-            <!-- Phone Field -->
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="Phone:" prefWidth="100" alignment="CENTER_RIGHT"/>
                 <TextField fx:id="phoneField" prefWidth="200"/>
             </HBox>
         </VBox>
 
-        <!-- Address Information Section -->
         <VBox spacing="10" alignment="CENTER">
-            <Label text="Address Information"
-                   style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
-
-            <!-- Address Field -->
+            <Label text="Address Information" style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="Address:" prefWidth="100" alignment="CENTER_RIGHT"/>
                 <TextField fx:id="addressField" prefWidth="200"/>
             </HBox>
-
-            <!-- City Field -->
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="City:" prefWidth="100" alignment="CENTER_RIGHT"/>
                 <TextField fx:id="cityField" prefWidth="200"/>
             </HBox>
-
-            <!-- Country Field -->
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="Country:" prefWidth="100" alignment="CENTER_RIGHT"/>
                 <TextField fx:id="countryField" prefWidth="200"/>
             </HBox>
         </VBox>
 
-        <!-- Payment Information Section -->
         <VBox spacing="10" alignment="CENTER">
-            <Label text="Payment Information"
-                   style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
-
-            <!-- Credit Card Number Field -->
+            <Label text="Payment Information" style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
             <HBox spacing="10" alignment="CENTER" prefWidth="350">
                 <Label text="Credit Card:" prefWidth="100" alignment="CENTER_RIGHT"/>
-                <TextField fx:id="creditNumberField" prefWidth="200"/>
+                <TextField fx:id="creditNumberField" prefWidth="200" promptText="Card Number"/>
+            </HBox>
+            <HBox spacing="10" alignment="CENTER" prefWidth="350">
+                <Label text="Expiration:" prefWidth="100" alignment="CENTER_RIGHT"/>
+                <ComboBox fx:id="expirationMonthComboBox" prefWidth="95" promptText="Month"/>
+                <ComboBox fx:id="expirationYearComboBox" prefWidth="95" promptText="Year"/>
+            </HBox>
+            <HBox spacing="10" alignment="CENTER" prefWidth="350">
+                <Label text="CVV:" prefWidth="100" alignment="CENTER_RIGHT"/>
+                <PasswordField fx:id="cvvField" prefWidth="200" promptText="CVV"/>
             </HBox>
         </VBox>
 
-        <!-- Buttons -->
         <HBox spacing="20" alignment="CENTER">
-            <Button fx:id="registerButton" text="Register" onAction="#handleRegister"
-                    prefWidth="100.0" prefHeight="35.0"
+            <Button fx:id="registerButton" text="Register" onAction="#handleRegister" prefWidth="100.0" prefHeight="35.0"
                     style="-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-font-size: 14px;"/>
-
-            <Button fx:id="cancelButton" text="Cancel" onAction="#handleCancel"
-                    prefWidth="100.0" prefHeight="35.0"
+            <Button fx:id="cancelButton" text="Cancel" onAction="#handleCancel" prefWidth="100.0" prefHeight="35.0"
                     style="-fx-background-color: #f44336; -fx-text-fill: white; -fx-font-size: 14px;"/>
         </HBox>
 
     </VBox>
-
 </AnchorPane>

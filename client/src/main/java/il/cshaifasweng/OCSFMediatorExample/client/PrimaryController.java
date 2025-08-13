@@ -1,6 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.*;
+import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
@@ -15,6 +16,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
@@ -25,7 +27,7 @@ import java.util.stream.Collectors;
 
 public class PrimaryController implements Initializable {
 
-	// FXML declarations for existing controls
+	// FXML declarations
 	@FXML private Button loginButton;
 	@FXML private Label userStatusLabel;
 	@FXML private HBox customerMenuBar;
@@ -35,34 +37,32 @@ public class PrimaryController implements Initializable {
 	@FXML private ProgressIndicator loadingIndicator;
 	@FXML private Label catalogLabel;
 	@FXML private TextField searchTextField;
-
-	// ADDED: FXML declarations for new filter controls
 	@FXML private ComboBox<String> typeFilterComboBox;
 	@FXML private TextField minPriceField;
 	@FXML private TextField maxPriceField;
 	@FXML private Button clearFiltersButton;
 
-
 	private Catalog catalog;
+	private PauseTransition debounceTimer;
 
 	@Override
 	public void initialize(URL location, ResourceBundle resources) {
 		if (!EventBus.getDefault().isRegistered(this)) {
 			EventBus.getDefault().register(this);
 		}
+
+		debounceTimer = new PauseTransition(Duration.millis(300));
+		debounceTimer.setOnFinished(event -> renderCatalog());
+
+		searchTextField.textProperty().addListener((obs, oldVal, newVal) -> debounceTimer.playFromStart());
+		minPriceField.textProperty().addListener((obs, oldVal, newVal) -> debounceTimer.playFromStart());
+		maxPriceField.textProperty().addListener((obs, oldVal, newVal) -> debounceTimer.playFromStart());
+		typeFilterComboBox.valueProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
+
 		updateUIBasedOnUserStatus();
 		loadCatalogData();
-
-		// Add listeners to all filter controls to re-render the catalog on change
-		searchTextField.textProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
-		typeFilterComboBox.valueProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
-		minPriceField.textProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
-		maxPriceField.textProperty().addListener((obs, oldVal, newVal) -> renderCatalog());
 	}
 
-	/**
-	 * MODIFIED: This method now applies name, type, and price filters before rendering products.
-	 */
 	private void renderCatalog() {
 		boolean isEmployee = SessionManager.getInstance().isEmployee();
 		Platform.runLater(() -> {
@@ -72,48 +72,19 @@ public class PrimaryController implements Initializable {
 				return;
 			}
 
-			// Start with the full, unique list of products
-			List<Product> productsToRender = new ArrayList<>(new LinkedHashSet<>(catalog.getFlowers()));
-
-			// 1. Filter by search query (name)
 			String searchQuery = searchTextField.getText().toLowerCase().trim();
-			if (!searchQuery.isEmpty()) {
-				productsToRender = productsToRender.stream()
-						.filter(p -> p.getName().toLowerCase().contains(searchQuery))
-						.collect(Collectors.toList());
-			}
-
-			// 2. Filter by type
 			String selectedType = typeFilterComboBox.getValue();
-			if (selectedType != null && !selectedType.equals("All Types")) {
-				productsToRender = productsToRender.stream()
-						.filter(p -> p.getType().equalsIgnoreCase(selectedType))
-						.collect(Collectors.toList());
-			}
+			Optional<Double> minPrice = parseDouble(minPriceField.getText());
+			Optional<Double> maxPrice = parseDouble(maxPriceField.getText());
 
-			// 3. Filter by price range
-			try {
-				// Min price filter
-				if (!minPriceField.getText().isEmpty()) {
-					double minPrice = Double.parseDouble(minPriceField.getText());
-					productsToRender = productsToRender.stream()
-							.filter(p -> p.getPrice() >= minPrice)
-							.collect(Collectors.toList());
-				}
-				// Max price filter
-				if (!maxPriceField.getText().isEmpty()) {
-					double maxPrice = Double.parseDouble(maxPriceField.getText());
-					productsToRender = productsToRender.stream()
-							.filter(p -> p.getPrice() <= maxPrice)
-							.collect(Collectors.toList());
-				}
-			} catch (NumberFormatException e) {
-				// Ignore invalid price input, or show an alert
-				System.err.println("Invalid number in price filter.");
-			}
+			List<Product> productsToRender = catalog.getFlowers().stream()
+					.distinct()
+					.filter(p -> searchQuery.isEmpty() || p.getName().toLowerCase().contains(searchQuery))
+					.filter(p -> selectedType == null || selectedType.equals("All Types") || p.getType().equalsIgnoreCase(selectedType))
+					.filter(p -> minPrice.map(min -> p.getPrice() >= min).orElse(true))
+					.filter(p -> maxPrice.map(max -> p.getPrice() <= max).orElse(true))
+					.collect(Collectors.toList());
 
-
-			// Render the final filtered list
 			int col = 0;
 			int row = 0;
 			for (Product product : productsToRender) {
@@ -123,22 +94,14 @@ public class PrimaryController implements Initializable {
 					ProductCardController cardController = loader.getController();
 
 					if (isEmployee) {
-						cardController.setData(
-								product,
-								updatedProduct -> {
-									try {
-										Message message = new Message("editProduct", updatedProduct, null);
-										SimpleClient.getClient().sendToServer(message);
-									} catch (IOException e) { e.printStackTrace(); }
-								},
-								() -> handleDeleteProduct(product)
-						);
+						cardController.setData(product, updatedProduct -> {
+							try {
+								Message message = new Message("editProduct", updatedProduct, null);
+								SimpleClient.getClient().sendToServer(message);
+							} catch (IOException e) { e.printStackTrace(); }
+						}, () -> handleDeleteProduct(product));
 					} else {
-						cardController.setData(
-								product,
-								() -> handleViewProduct(product),
-								() -> handleAddToCart(product)
-						);
+						cardController.setData(product, () -> handleViewProduct(product), () -> handleAddToCart(product));
 					}
 
 					catalogGrid.add(cardNode, col, row);
@@ -153,36 +116,46 @@ public class PrimaryController implements Initializable {
 		});
 	}
 
-	/**
-	 * ADDED: Populates the type filter ComboBox with unique types from the catalog.
-	 */
+	private Optional<Double> parseDouble(String text) {
+		if (text == null || text.trim().isEmpty()) {
+			return Optional.empty();
+		}
+		try {
+			return Optional.of(Double.parseDouble(text.trim()));
+		} catch (NumberFormatException e) {
+			return Optional.empty();
+		}
+	}
+
 	private void populateTypeFilter() {
 		if (catalog == null || catalog.getFlowers() == null) return;
-
-		// Get unique, non-blank types from products
 		Set<String> types = catalog.getFlowers().stream()
 				.map(Product::getType)
 				.filter(type -> type != null && !type.trim().isEmpty())
-				.collect(Collectors.toCollection(TreeSet::new)); // TreeSet sorts them alphabetically
+				.collect(Collectors.toCollection(TreeSet::new));
 
 		Platform.runLater(() -> {
+			String selected = typeFilterComboBox.getValue();
 			typeFilterComboBox.getItems().clear();
-			typeFilterComboBox.getItems().add("All Types"); // Add a default option
+			typeFilterComboBox.getItems().add("All Types");
 			typeFilterComboBox.getItems().addAll(types);
-			typeFilterComboBox.setValue("All Types"); // Set default selection
+
+			// MODIFIED: Added null check to prevent NullPointerException
+			if (selected != null && types.contains(selected)) {
+				typeFilterComboBox.setValue(selected);
+			} else {
+				typeFilterComboBox.setValue("All Types");
+			}
 		});
 	}
 
-	/**
-	 * ADDED: Clears all filter fields and re-renders the catalog.
-	 */
 	@FXML
 	void handleClearFilters(ActionEvent event) {
 		searchTextField.clear();
 		minPriceField.clear();
 		maxPriceField.clear();
 		typeFilterComboBox.setValue("All Types");
-		renderCatalog(); // Re-render with no filters
+		renderCatalog();
 	}
 
 	@Subscribe
@@ -192,7 +165,6 @@ public class PrimaryController implements Initializable {
 			switch (msg.getMessage()) {
 				case "catalog":
 					this.catalog = (Catalog) msg.getObject();
-					// MODIFIED: Populate filters and then render
 					populateTypeFilter();
 					renderCatalog();
 					break;

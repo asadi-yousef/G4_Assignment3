@@ -30,5 +30,14 @@ public class Catalog implements Serializable {
         }
         return null; // or throw an exception if not found
     }
+    public void addProduct(Product product) {
+        products.add(product);
+    }
+    public void removeProduct(Product product) {
+        products.remove(product);
+    }
+    public void editProduct(Product product) {
+        products.set(products.indexOf(product), product);
+    }
 
 }
