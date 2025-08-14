@@ -107,6 +107,9 @@ public class SimpleServer extends AbstractServer {
 				else if(msgString.startsWith("add_to_cart")) {
 					handleAddToCart(message, client);
 				}
+				else if(msgString.startsWith("remove_cart_item")) {
+					handleRemoveFromCart(message, client);
+				}
 				else if(msgString.startsWith("request_cart")) {
 					handleCartRequest(message, client);
 				}
@@ -122,7 +125,10 @@ public class SimpleServer extends AbstractServer {
 				else if(msgString.startsWith("place_order")){
 					handlePlaceOrder(message, client);
 				}
-
+				else if(msgString.startsWith("update_cart_item_quantity"))
+				{
+					handleUpdateCartItemQuantity(message, client);
+				}
 
 
 			}
@@ -569,6 +575,140 @@ public class SimpleServer extends AbstractServer {
 			} catch (IOException ex) {
 				ex.printStackTrace();
 			}
+		} finally {
+			em.close();
+		}
+	}
+
+	private void handleRemoveFromCart(Message message, ConnectionToClient client) {
+		EntityManager em = emf.createEntityManager();
+
+		try {
+			Customer customer = (Customer) message.getObjectList().get(0);
+			CartItem itemToRemove = (CartItem) message.getObjectList().get(1);
+
+			em.getTransaction().begin();
+
+			Customer managedCustomer = em.find(Customer.class, customer.getId());
+			if (managedCustomer == null) {
+				em.getTransaction().rollback();
+				client.sendToClient(new Message("error", "Customer not found", null));
+				return;
+			}
+
+			Cart cart = managedCustomer.getCart();
+			if (cart == null) {
+				em.getTransaction().rollback();
+				client.sendToClient(new Message("error", "Cart not found", null));
+				return;
+			}
+
+			CartItem managedItem = em.find(CartItem.class, itemToRemove.getId());
+			if (managedItem == null || !cart.getItems().contains(managedItem)) {
+				em.getTransaction().rollback();
+				client.sendToClient(new Message("error", "Item not found in cart", null));
+				return;
+			}
+
+			// Reduce quantity instead of removing immediately
+			if (managedItem.getQuantity() > 1) {
+				managedItem.setQuantity(managedItem.getQuantity() - 1);
+				em.merge(managedItem);
+			} else {
+				cart.getItems().remove(managedItem);
+				em.remove(managedItem);
+			}
+
+			em.merge(cart);
+			em.getTransaction().commit();
+
+			// Re-fetch updated cart
+			em.getTransaction().begin();
+			Cart refreshedCart = em.createQuery(
+							"SELECT DISTINCT c FROM Cart c " +
+									"LEFT JOIN FETCH c.items i " +
+									"LEFT JOIN FETCH i.product " +
+									"WHERE c.id = :cid", Cart.class)
+					.setParameter("cid", cart.getId())
+					.getSingleResult();
+			em.getTransaction().commit();
+
+			client.sendToClient(new Message("cart_data", refreshedCart, null));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			if (em.getTransaction().isActive()) {
+				em.getTransaction().rollback();
+			}
+			try {
+				client.sendToClient(new Message("error", "Failed to remove item from cart", null));
+			} catch (IOException ex) {
+				ex.printStackTrace();
+			}
+		} finally {
+			em.close();
+		}
+	}
+
+	private void handleUpdateCartItemQuantity(Message message, ConnectionToClient client) {
+		EntityManager em = emf.createEntityManager();
+		try {
+			Customer customer = (Customer) message.getObjectList().get(0);
+			CartItem itemToUpdate = (CartItem) message.getObjectList().get(1);
+			int newQuantity = (Integer) message.getObjectList().get(2);
+
+			em.getTransaction().begin();
+
+			Customer managedCustomer = em.find(Customer.class, customer.getId());
+			if (managedCustomer == null) {
+				em.getTransaction().rollback();
+				client.sendToClient(new Message("error", "Customer not found", null));
+				return;
+			}
+
+			Cart cart = managedCustomer.getCart();
+			if (cart == null) {
+				em.getTransaction().rollback();
+				client.sendToClient(new Message("error", "Cart not found", null));
+				return;
+			}
+
+			CartItem managedItem = em.find(CartItem.class, itemToUpdate.getId());
+			if (managedItem == null || !cart.getItems().contains(managedItem)) {
+				em.getTransaction().rollback();
+				client.sendToClient(new Message("error", "Item not found in cart", null));
+				return;
+			}
+
+			if (newQuantity <= 0) {
+				cart.getItems().remove(managedItem);
+				em.remove(managedItem);
+			} else {
+				managedItem.setQuantity(newQuantity);
+				em.merge(managedItem);
+			}
+
+			em.merge(cart);
+			em.getTransaction().commit();
+
+			// Refresh cart
+			em.getTransaction().begin();
+			Cart refreshedCart = em.createQuery(
+							"SELECT DISTINCT c FROM Cart c " +
+									"LEFT JOIN FETCH c.items i " +
+									"LEFT JOIN FETCH i.product " +
+									"WHERE c.id = :cid", Cart.class)
+					.setParameter("cid", cart.getId())
+					.getSingleResult();
+			em.getTransaction().commit();
+
+			client.sendToClient(new Message("cart_data", refreshedCart, null));
+
+		} catch (Exception e) {
+			if (em.getTransaction().isActive()) {
+				em.getTransaction().rollback();
+			}
+			e.printStackTrace();
 		} finally {
 			em.close();
 		}

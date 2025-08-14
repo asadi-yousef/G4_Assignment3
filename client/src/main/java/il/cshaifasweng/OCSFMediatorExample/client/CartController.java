@@ -142,28 +142,96 @@ public class CartController implements Initializable {
     private HBox createCartItemBox(CartItem item) {
         HBox itemBox = new HBox();
         itemBox.setAlignment(Pos.CENTER_LEFT);
-        itemBox.setSpacing(10);
-        itemBox.setPadding(new Insets(10));
-        itemBox.setStyle("-fx-background-color: #f8f9fa; -fx-background-radius: 5;");
+        itemBox.setSpacing(15);
+        itemBox.setPadding(new Insets(15));
+        itemBox.setStyle("-fx-background-color: #f8f9fa; -fx-background-radius: 8; " +
+                "-fx-border-color: #dee2e6; -fx-border-width: 1; -fx-border-radius: 8;");
 
-        Label itemLabel = new Label(item.getProduct().getName() +
-                " - $" + String.format("%.2f", item.getProduct().getPrice()) +
-                " x " + item.getQuantity() +
-                " = $" + String.format("%.2f", item.getProduct().getPrice() * item.getQuantity()));
-        itemLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #2c3e50;");
+        Label namePriceLabel = new Label(item.getProduct().getName() +
+                " - $" + String.format("%.2f", item.getProduct().getPrice()));
+        namePriceLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #2c3e50; -fx-font-weight: bold;");
+
+        // Per-item total label
+        Label totalItemLabel = new Label("$" +
+                String.format("%.2f", item.getProduct().getPrice() * item.getQuantity()));
+        totalItemLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #555;");
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button removeButton = new Button("🗑️ Remove");
-        removeButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; " +
-                "-fx-background-radius: 5; -fx-padding: 5 10 5 10; " +
-                "-fx-cursor: hand; -fx-font-size: 12px;");
+        // Quantity controls (on the RIGHT)
+        Label qtyLbl = new Label("Qty:");
+        qtyLbl.setStyle("-fx-text-fill: #2c3e50; -fx-font-size: 14px;");
+
+        Spinner<Integer> quantitySpinner =
+                new Spinner<>(1, 99, item.getQuantity());
+        quantitySpinner.setEditable(false); // arrow-only (no typing)
+        quantitySpinner.setPrefWidth(80);
+        quantitySpinner.setStyle("-fx-background-color: white; -fx-border-color: #ced4da; -fx-border-radius: 4;");
+
+        // Only react to user changes (ignore programmatic updates during render)
+        quantitySpinner.valueProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null && !newVal.equals(oldVal) && quantitySpinner.isFocused()) {
+                // Update per-item total label immediately (UI feedback)
+                totalItemLabel.setText("$" +
+                        String.format("%.2f", item.getProduct().getPrice() * newVal));
+
+                // Optimistic cart total update in UI
+                updateCartTotalPreview(item, newVal);
+
+                // Tell server to update DB & then it will push fresh cart_data
+                updateCartItemQuantity(item, newVal);
+            }
+        });
+
+        HBox qtyBox = new HBox(6, qtyLbl, quantitySpinner);
+        qtyBox.setAlignment(Pos.CENTER_RIGHT);
+
+        Button removeButton = new Button("X Remove");
+        removeButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white; " +
+                "-fx-background-radius: 8; -fx-padding: 8 16 8 16; " +
+                "-fx-cursor: hand; -fx-font-size: 14px; -fx-font-weight: bold;");
         removeButton.setOnAction(e -> removeItemFromCart(item));
 
-        itemBox.getChildren().addAll(itemLabel, spacer, removeButton);
+        // Order: name/price, per-item total, spacer, qty (right), remove (right)
+        itemBox.getChildren().addAll(namePriceLabel, totalItemLabel, spacer, qtyBox, removeButton);
         return itemBox;
     }
+
+    private void updateCartTotalPreview(CartItem changedItem, int newQty) {
+        if (cart == null || cart.getItems() == null) return;
+
+        double total = 0.0;
+        for (CartItem ci : cart.getItems()) {
+            int qty = (ci == changedItem || (ci.getId() != null && changedItem.getId() != null && ci.getId().equals(changedItem.getId())))
+                    ? newQty
+                    : ci.getQuantity();
+            total += ci.getProduct().getPrice() * qty;
+        }
+        totalLabel.setText("Total: $" + String.format("%.2f", total));
+    }
+
+    private void updateCartItemQuantity(CartItem item, int newQuantity) {
+        try {
+            if (!(SessionManager.getInstance().getCurrentUser() instanceof Customer)) {
+                showAlert("Error", "Current user is not a customer.");
+                return;
+            }
+            Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
+            var payload = new java.util.ArrayList<Object>();
+            payload.add(customer);
+            payload.add(item);
+            payload.add(newQuantity);
+
+            Message message = new Message("update_cart_item_quantity", null, payload);
+            SimpleClient.getClient().sendToServer(message);
+
+            System.out.println("Requested quantity update for: " + item.getProduct().getName() + " to " + newQuantity);
+        } catch (Exception e) {
+            showAlert("Error", "Failed to update item quantity.");
+        }
+    }
+
 
     private void removeItemFromCart(CartItem item) {
         try {
@@ -176,12 +244,19 @@ public class CartController implements Initializable {
             payload.add(customer);
             payload.add(item);
 
+            // Ask server to remove
             Message message = new Message("remove_cart_item", null, payload);
             SimpleClient.getClient().sendToServer(message);
+
+            // Do NOT update UI here — wait for the server's cart_data to refresh
+            System.out.println("Requested removal of: " + item.getProduct().getName());
+
         } catch (Exception e) {
             showAlert("Error", "Failed to remove item from cart.");
         }
     }
+
+
 
     @FXML
     public void handleBackToCatalog(ActionEvent event) {
