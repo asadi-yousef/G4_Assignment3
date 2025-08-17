@@ -18,7 +18,7 @@ public class App {
 
     private static SessionFactory getSessionFactory() throws HibernateException {
         Configuration configuration = new Configuration();
-        String password = "silin";
+        String password = "1@2@3@4_5Tuf";
         configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
 
         configuration.setProperty("hibernate.connection.password", password);
@@ -33,6 +33,13 @@ public class App {
         configuration.addAnnotatedClass(Branch.class);
         configuration.addAnnotatedClass(CreditCard.class);
         configuration.addAnnotatedClass(Subscription.class);
+        configuration.addAnnotatedClass(Order.class);
+        configuration.addAnnotatedClass(OrderItem.class);
+        configuration.addAnnotatedClass(Report.class);
+        configuration.addAnnotatedClass(OrderRequest.class);
+        configuration.addAnnotatedClass(OrdersReport.class);
+        configuration.addAnnotatedClass(IncomeReport.class);
+        configuration.addAnnotatedClass(ComplaintsReport.class);
 
         ServiceRegistry serviceRegistry = new StandardServiceRegistryBuilder().applySettings(configuration.getProperties()).build();
 
@@ -53,9 +60,6 @@ public class App {
         // Test DB logic
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             Transaction tx = session.beginTransaction();
-            Employee employee = new Employee("yosef","yosef","yosef2005","manager",null,true);
-            session.save(employee);
-            session.flush();
 
             // Check if the Flower table is empty
             Long count = (Long) session.createQuery("select count(f.id) from Product f").uniqueResult();

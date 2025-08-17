@@ -221,7 +221,7 @@ public class OrderController implements Initializable {
             }
             String paymentDetails = null;
             if ("Saved Card".equals(paymentMethod)) {
-                paymentDetails = customer.getCreditNumber();
+                paymentDetails = customer.getCreditCard().getCardNumber();
             } else if ("New Card".equals(paymentMethod)) {
                 paymentDetails = newCardField.getText();
                 if (paymentDetails == null || paymentDetails.trim().isEmpty()) {

@@ -96,6 +96,7 @@ public class RegisterControl implements Initializable {
             if ("registered".equals(msg.getMessage())) {
                 showAlert(Alert.AlertType.INFORMATION, "Registration Successful", "Customer registered successfully!");
                 try {
+                    EventBus.getDefault().unregister(this);
                     App.setRoot("logInView");
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -148,6 +149,7 @@ public class RegisterControl implements Initializable {
     @FXML
     private void handleCancel(ActionEvent event) throws IOException {
         clearForm();
+        EventBus.getDefault().unregister(this);
         App.setRoot("logInView");
     }
 

@@ -16,6 +16,14 @@
         <class>il.cshaifasweng.OCSFMediatorExample.entities.CreditCard</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Subscription</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Employee</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Order</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderItem</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderRequest</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrdersReport</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Report</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.ComplaintsReport</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.IncomeReport</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderRequest</class>
 
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="com.mysql.cj.jdbc.Driver"/>

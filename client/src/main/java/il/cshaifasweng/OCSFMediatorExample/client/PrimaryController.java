@@ -50,6 +50,7 @@ public class PrimaryController implements Initializable {
 	private Catalog catalog;
 	private PauseTransition debounceTimer;
 
+
 	@Override
 	public void initialize(URL location, ResourceBundle resources) {
 		if (!EventBus.getDefault().isRegistered(this)) {
@@ -308,6 +309,7 @@ public class PrimaryController implements Initializable {
 	private void handleViewProduct(Product product) {
 		ViewFlowerController.setSelectedFlower(product);
 		try {
+			System.out.println("Viewing product " + product.getName());
 			EventBus.getDefault().unregister(this);
 			App.setRoot("viewFlower");
 		} catch (IOException e) {
@@ -403,12 +405,22 @@ public class PrimaryController implements Initializable {
 
 	@FXML
 	void handleManageCatalog(ActionEvent event) {
-		loadCatalogData();
+		try {
+			EventBus.getDefault().unregister(this);
+			App.setRoot("addProductView");
+		}catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 
 	@FXML
 	void handleViewReports(ActionEvent event) {
-		showAlert("Action", "View Reports clicked.");
+		try{
+			EventBus.getDefault().unregister(this);
+			App.setRoot("reportView");
+		}catch (Exception e){
+			e.printStackTrace();
+		}
 	}
 
 	@FXML
@@ -431,6 +443,19 @@ public class PrimaryController implements Initializable {
 			App.setRoot("logInView");
 		} catch (IOException e) {
 			showAlert("Error", "Failed to open login page.");
+		}
+	}
+	@FXML
+	public void handleOrdersScreen(ActionEvent actionEvent) {
+		try {
+			User currentUser = SessionManager.getInstance().getCurrentUser();
+			if (currentUser == null) {
+				showAlert("Login Required", "Please login to view your orders.");
+				return;
+			}
+			App.setRoot("ordersScreenView");
+		} catch (IOException e) {
+			showAlert("Error", "Failed to open orders page.");
 		}
 	}
 }

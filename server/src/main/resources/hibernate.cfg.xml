@@ -21,6 +21,13 @@
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Branch"/>
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.CreditCard"/>
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Subscription"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Order"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.OrdersReport"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Report"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.IncomeReport"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.ComplaintsReport"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.OrderItem"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.OrderRequest"/>
 
     </session-factory>
 </hibernate-configuration>

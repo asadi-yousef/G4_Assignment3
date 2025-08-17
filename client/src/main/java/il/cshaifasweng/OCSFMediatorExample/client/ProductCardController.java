@@ -118,23 +118,63 @@ public class ProductCardController {
         buttonBox.getChildren().addAll(viewButton, addToCartButton);
     }
 
-    // The rest of the file (switchToEditMode, switchToDisplayMode, etc.) remains exactly the same.
-    // The saveButton's logic correctly calls saveAction.accept(currentProduct), which now triggers the real server logic.
+    /**
+     * Method to show the edit form with empty fields for creating a new product.
+     * @param saveAction The logic to execute when the Save button is clicked.
+     * @param cancelAction The logic to execute when the Cancel button is clicked.
+     */
+    public void showAddProductForm(Consumer<Product> saveAction, Runnable cancelAction) {
+        this.currentProduct = null;
+
+        // Hide display view and show edit view
+        if (displayVBox != null) {
+            displayVBox.setVisible(false);
+            displayVBox.setManaged(false);
+        }
+        editVBox.setVisible(true);
+        editVBox.setManaged(true);
+
+        // Build the form with empty fields
+        buildEditForm(saveAction, cancelAction, true);
+    }
 
     private void switchToEditMode(Consumer<Product> saveAction) {
         displayVBox.setVisible(false);
         displayVBox.setManaged(false);
         editVBox.setVisible(true);
         editVBox.setManaged(true);
+
+        buildEditForm(saveAction, this::switchToDisplayMode, false);
+    }
+
+    /**
+     * Builds the edit form UI with the specified save and cancel actions.
+     * @param saveAction The action to execute when saving.
+     * @param cancelAction The action to execute when canceling.
+     * @param isNewProduct Whether this is for creating a new product (empty fields) or editing existing.
+     */
+    private void buildEditForm(Consumer<Product> saveAction, Runnable cancelAction, boolean isNewProduct) {
         editVBox.getChildren().clear();
         editVBox.setPadding(new Insets(10));
         editVBox.setSpacing(10);
-        TextField nameField = new TextField(currentProduct.getName());
-        TextField typeField = new TextField(currentProduct.getType());
-        TextField priceField = new TextField(String.format("%.2f", currentProduct.getPrice()));
-        TextField discountField = new TextField(String.valueOf(currentProduct.getDiscountPercentage()));
-        ColorPicker colorPicker = new ColorPicker(Color.web(currentProduct.getColor()));
-        TextField imagePathField = new TextField(currentProduct.getImagePath());
+
+        // Create form fields with appropriate default values
+        TextField nameField = new TextField(isNewProduct ? "" : currentProduct.getName());
+        TextField typeField = new TextField(isNewProduct ? "" : currentProduct.getType());
+        TextField priceField = new TextField(isNewProduct ? "" : String.format("%.2f", currentProduct.getPrice()));
+        TextField discountField = new TextField(isNewProduct ? "0" : String.valueOf(currentProduct.getDiscountPercentage()));
+        ColorPicker colorPicker = new ColorPicker(isNewProduct ? Color.WHITE : Color.web(currentProduct.getColor()));
+        TextField imagePathField = new TextField(isNewProduct ? "" : currentProduct.getImagePath());
+
+        // Add placeholders for better UX
+        if (isNewProduct) {
+            nameField.setPromptText("Enter product name");
+            typeField.setPromptText("Enter product type");
+            priceField.setPromptText("Enter price (e.g., 29.99)");
+            discountField.setPromptText("Enter discount percentage (0-100)");
+            imagePathField.setPromptText("Select or enter image path");
+        }
+
         Button browseButton = new Button("Browse...");
         browseButton.setOnAction(e -> {
             FileChooser fileChooser = new FileChooser();
@@ -146,11 +186,16 @@ public class ProductCardController {
                 imagePathField.setText(file.getAbsolutePath());
             }
         });
+
         HBox imagePathBox = new HBox(5, imagePathField, browseButton);
-        Button saveButton = new Button("Save");
+
+        Button saveButton = new Button(isNewProduct ? "Create Product" : "Save");
         saveButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
+
         Button cancelButton = new Button("Cancel");
         HBox actionButtons = new HBox(10, saveButton, cancelButton);
+
+        // Create grid layout
         GridPane grid = new GridPane();
         grid.setVgap(8);
         grid.setHgap(10);
@@ -160,15 +205,34 @@ public class ProductCardController {
         grid.add(new Label("Color:"), 0, 3);      grid.add(colorPicker, 1, 3);
         grid.add(new Label("Price:"), 0, 4);      grid.add(priceField, 1, 4);
         grid.add(new Label("Discount %:"), 0, 5); grid.add(discountField, 1, 5);
+
         editVBox.getChildren().addAll(grid, actionButtons);
-        cancelButton.setOnAction(e -> switchToDisplayMode());
+
+        // Set up button actions
+        cancelButton.setOnAction(e -> cancelAction.run());
+
         saveButton.setOnAction(e -> {
             try {
-                currentProduct.setName(nameField.getText());
-                currentProduct.setType(typeField.getText());
-                currentProduct.setPrice(Double.parseDouble(priceField.getText()));
-                currentProduct.setDiscountPercentage(Double.parseDouble(discountField.getText()));
-                currentProduct.setColor(toHexString(colorPicker.getValue()));
+                // Create new product if this is for adding, or update existing product
+                Product productToSave = isNewProduct ? new Product() : currentProduct;
+
+                // Validate required fields
+                if (nameField.getText().trim().isEmpty()) {
+                    new Alert(Alert.AlertType.ERROR, "Product name is required.").showAndWait();
+                    return;
+                }
+
+                if (priceField.getText().trim().isEmpty()) {
+                    new Alert(Alert.AlertType.ERROR, "Price is required.").showAndWait();
+                    return;
+                }
+
+                productToSave.setName(nameField.getText().trim());
+                productToSave.setType(typeField.getText().trim());
+                productToSave.setPrice(Double.parseDouble(priceField.getText()));
+                productToSave.setDiscountPercentage(Double.parseDouble(discountField.getText()));
+                productToSave.setColor(toHexString(colorPicker.getValue()));
+
                 String pathFromField = imagePathField.getText().trim();
                 if (!pathFromField.isEmpty() && !pathFromField.startsWith("/")) {
                     File sourceFile = new File(pathFromField);
@@ -180,13 +244,18 @@ public class ProductCardController {
                         try (InputStream in = new FileInputStream(sourceFile); OutputStream out = new FileOutputStream(destFile)) {
                             in.transferTo(out);
                         }
-                        currentProduct.setImagePath("/il/cshaifasweng/OCSFMediatorExample/client/images/" + fileName);
+                        productToSave.setImagePath("/il/cshaifasweng/OCSFMediatorExample/client/images/" + fileName);
                     }
                 } else {
-                    currentProduct.setImagePath(pathFromField);
+                    productToSave.setImagePath(pathFromField);
                 }
-                saveAction.accept(currentProduct);
-                switchToDisplayMode();
+
+                System.out.println("DEBUG: color to save: " + productToSave.getColor());
+                saveAction.accept(productToSave);
+
+                if (!isNewProduct) {
+                    switchToDisplayMode();
+                }
             } catch (NumberFormatException ex) {
                 new Alert(Alert.AlertType.ERROR, "Price and Discount must be valid numbers.").showAndWait();
             } catch (IOException ex) {

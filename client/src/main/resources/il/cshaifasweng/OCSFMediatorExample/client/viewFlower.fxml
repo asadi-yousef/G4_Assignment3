@@ -6,15 +6,20 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.geometry.Pos?>
 
-<VBox xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1"
+<VBox xmlns="http://javafx.com/javafx/17.0.12"
+      xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="il.cshaifasweng.OCSFMediatorExample.client.ViewFlowerController"
       alignment="CENTER" spacing="20">
+
     <children>
-        <BorderPane fx:id="cardContainer" VBox.vgrow="ALWAYS" />
+        <!-- Changed fx:id from cardContainer to mainPane -->
+        <BorderPane fx:id="mainPane" VBox.vgrow="ALWAYS" />
 
         <Button onAction="#handleBack" text="Back to Catalog" />
     </children>
+
     <padding>
         <Insets bottom="20" left="20" right="20" top="20" />
     </padding>
+
 </VBox>

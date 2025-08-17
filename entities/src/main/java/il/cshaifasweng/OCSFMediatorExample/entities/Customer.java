@@ -32,6 +32,10 @@ public class Customer extends User implements Serializable {
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private Subscription subscription;
 
+    // Cart logic from first file
+    @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Cart cart;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "branch_id")
     private Branch branch;
@@ -43,7 +47,7 @@ public class Customer extends User implements Serializable {
     public Customer(String name, String username, String password, boolean isNetworkAccount,
                     boolean isSubscribed, LocalDate subStartDate, LocalDate subExpDate, String email, String phone,
                     String address, String city, String country, String cardNumber,
-                    int expirationMonth, int expirationYear, String cvv,Branch branch) {
+                    int expirationMonth, int expirationYear, String cvv, Branch branch) {
         super(name, username, password);
         this.isNetworkAccount = isNetworkAccount;
         this.email = email;
@@ -51,8 +55,8 @@ public class Customer extends User implements Serializable {
         this.address = address;
         this.city = city;
         this.country = country;
-        this.creditCard = new CreditCard(cardNumber,expirationMonth,expirationYear,cvv,this);
-        this.subscription = new Subscription(subStartDate,subExpDate,true,this);
+        this.creditCard = new CreditCard(cardNumber, expirationMonth, expirationYear, cvv, this);
+        this.subscription = new Subscription(subStartDate, subExpDate, true, this);
         this.branch = branch;
     }
 
@@ -84,5 +88,12 @@ public class Customer extends User implements Serializable {
     public void setSubscription(Subscription subscription) {
         this.subscription = subscription;
         subscription.setCustomer(this); // keep both sides in sync
+    }
+
+    // Cart methods from first file
+    public Cart getCart() { return cart; }
+    public void setCart(Cart cart) {
+        this.cart = cart;
+        if (cart != null) cart.setCustomer(this);
     }
 }
