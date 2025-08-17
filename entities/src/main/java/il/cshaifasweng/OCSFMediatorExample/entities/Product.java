@@ -18,25 +18,19 @@ public class Product implements Serializable {
     private String name;
     @Column(name = "type")
     private String type;
-    @Column(name = "color")
-    private String color;
     @Column(name = "price")
     private double price;
-    @Column(name = "discountPercentage")
-    private double discountPercentage;
 
     @Column(name = "ImagePath")
     private String image_path;
 
     public Product() { }
 
-    public Product(String name, String type, double price,String color, String image_path) {
+    public Product(String name, String type, double price, String image_path) {
         this.name = name;
         this.type = type;
         this.price = price;
         this.image_path = image_path;
-        this.color = color;
-        this.discountPercentage = 0;
     }
     public void setId(Long id) {
         this.id = id;
@@ -67,28 +61,6 @@ public class Product implements Serializable {
     }
     public void setImagePath(String image_path) {
         this.image_path = image_path;
-    }
-    public double getDiscountPercentage() {
-        return discountPercentage;
-    }
-
-    public void setDiscountPercentage(double discountPercentage) {
-        this.discountPercentage = discountPercentage;
-    }
-    public String getColor() {
-        return color;
-    }
-    public void setColor(String color) {
-        this.color = color;
-    }
-
-    public double getSalePrice() {
-        if (this.discountPercentage > 0) {
-            double discountAmount = this.getPrice() * (this.discountPercentage / 100.0);
-            return this.getPrice() - discountAmount;
-        } else {
-            return this.price;
-        }
     }
 
     @Override

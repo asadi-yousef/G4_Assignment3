@@ -45,6 +45,7 @@ public class App {
 
         // Start server
         SimpleServer server = new SimpleServer(3000);
+        server.listen();
 
 
         // Test DB logic
@@ -55,21 +56,21 @@ public class App {
             Long count = (Long) session.createQuery("select count(f.id) from Product f").uniqueResult();
 
             if (count == 0) {
-            Product product1 = new Product("Roses", "Flower", 19.99,"Red","/il/cshaifasweng/OCSFMediatorExample/client/images/roses.png");
+            Product product1 = new Product("Roses", "Flower", 19.99,"/il/cshaifasweng/OCSFMediatorExample/client/images/roses.png");
             session.save(product1);session.flush();
-            Product product2 = new Product("Tulips", "Flower", 14.50,"White", "/il/cshaifasweng/OCSFMediatorExample/client/images/white tulip.png");
+            Product product2 = new Product("Tulips", "Flower", 14.50, "/il/cshaifasweng/OCSFMediatorExample/client/images/white tulip.png");
             session.save(product2); session.flush();
-            Product product3 = new Product("Pretty in Pink Lilies", "Flower", 17.25,"Pink","/il/cshaifasweng/OCSFMediatorExample/client/images/lilies.png");
+            Product product3 = new Product("Pretty in Pink Lilies", "Flower", 17.25,"/il/cshaifasweng/OCSFMediatorExample/client/images/lilies.png");
             session.save(product3); session.flush();
-            Product product4 = new Product("Sunflower Bouquet", "Flower", 12.00,"Yellow","/il/cshaifasweng/OCSFMediatorExample/client/images/sunflower.png");
+            Product product4 = new Product("Sunflower Bouquet", "Flower", 12.00,"/il/cshaifasweng/OCSFMediatorExample/client/images/sunflower.png");
             session.save(product4); session.flush();
-            Product product5 =new Product("Orange Carnations Bouquet","Flower",25.75,"Orange","/il/cshaifasweng/OCSFMediatorExample/client/images/carnations.png");
+            Product product5 =new Product("Orange Carnations Bouquet","Flower",25.75,"/il/cshaifasweng/OCSFMediatorExample/client/images/carnations.png");
             session.save(product5); session.flush();
-            Product productPot1 = new Product("Purple Orchid Pot", "Brown", 9.99,"Purple", "/il/cshaifasweng/OCSFMediatorExample/client/images/orchids.png");
+            Product productPot1 = new Product("Purple Orchid Pot", "Brown", 9.99, "/il/cshaifasweng/OCSFMediatorExample/client/images/orchids.png");
             session.save(productPot1); session.flush();
-            Product productPot2 = new Product("Ceramic Pot", "White", 14.49, "Black","/il/cshaifasweng/OCSFMediatorExample/client/images/ceramic.png");
+            Product productPot2 = new Product("Ceramic Pot", "White", 14.49, "/il/cshaifasweng/OCSFMediatorExample/client/images/ceramic.png");
             session.save(productPot2); session.flush();
-            Product productPot3 = new Product("Plastic Pot", "Green", 4.75,"Brown", "/il/cshaifasweng/OCSFMediatorExample/client/images/plastic.png");
+            Product productPot3 = new Product("Plastic Pot", "Green", 4.75, "/il/cshaifasweng/OCSFMediatorExample/client/images/plastic.png");
             session.save(productPot3); session.flush();
             } else {
                 System.out.println("Flower table already contains data. Skipping insert.");
@@ -100,7 +101,6 @@ public class App {
             e.printStackTrace();
         }
         server.initCaches();
-        server.listen();
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             HibernateUtil.shutdown();
             com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();

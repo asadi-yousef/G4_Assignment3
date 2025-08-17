@@ -383,11 +383,7 @@ public class SimpleServer extends AbstractServer {
 		catalogLock.readLock().lock();
 		try {
 			// Create a defensive copy to avoid sharing mutable state
-			Catalog catalogCopy = new Catalog(catalog.getFlowers());
-			List<Product> tmp = catalogCopy.getFlowers();
-			for(Product p : tmp) {
-				System.out.println("Color: " + p.getColor());
-			}
+			Catalog catalogCopy = new Catalog(new ArrayList<>(catalog.getFlowers()));
 			Message message = new Message("catalog", catalogCopy, null);
 			client.sendToClient(message);
 		} catch (IOException e) {
