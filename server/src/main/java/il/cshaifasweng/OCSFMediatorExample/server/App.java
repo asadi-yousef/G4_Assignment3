@@ -18,7 +18,7 @@ public class App {
 
     private static SessionFactory getSessionFactory() throws HibernateException {
         Configuration configuration = new Configuration();
-        String password = "Renata123";
+        String password = "1@2@3@4_5Tuf";
         configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
 
         configuration.setProperty("hibernate.connection.password", password);
@@ -30,6 +30,16 @@ public class App {
         configuration.addAnnotatedClass(Employee.class);
         configuration.addAnnotatedClass(Cart.class);
         configuration.addAnnotatedClass(CartItem.class);
+        configuration.addAnnotatedClass(Branch.class);
+        configuration.addAnnotatedClass(CreditCard.class);
+        configuration.addAnnotatedClass(Subscription.class);
+        configuration.addAnnotatedClass(Order.class);
+        configuration.addAnnotatedClass(OrderItem.class);
+        configuration.addAnnotatedClass(Report.class);
+        configuration.addAnnotatedClass(OrderRequest.class);
+        configuration.addAnnotatedClass(OrdersReport.class);
+        configuration.addAnnotatedClass(IncomeReport.class);
+        configuration.addAnnotatedClass(ComplaintsReport.class);
 
         ServiceRegistry serviceRegistry = new StandardServiceRegistryBuilder().applySettings(configuration.getProperties()).build();
 
@@ -78,10 +88,10 @@ public class App {
             count = (Long) session.createQuery("select count(f.id) from User f").uniqueResult();
             System.out.println(count);
             if (count == 0) {
-                Customer customer = new Customer("Yosef","yosef","yosef2005",true,
-                        false,"111111111","assdiyousef@gmail.com",
-                        "0549946411","bb","aaaaa","aaa");
-                session.save(customer); session.flush();
+                //Customer customer = new Customer("Yosef","yosef","yosef2005",true,
+                  //      false,"111111111","assdiyousef@gmail.com",
+                    //    "0549946411","bb","aaaaa","aaa");
+                //session.save(customer); session.flush();
             }else {
                 System.out.println("Customer table already contains data. Skipping insert.");
             }

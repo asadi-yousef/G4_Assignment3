@@ -68,15 +68,12 @@ public class Product implements Serializable {
         if (this == obj) return true;
         if (obj == null || getClass() != obj.getClass()) return false;
         Product product = (Product) obj;
-        return Objects.equals(name, product.name) &&
-                Objects.equals(type, product.type) &&
-                Double.compare(product.price, price) == 0 &&
-                Objects.equals(image_path, product.image_path);
+        return Objects.equals(id, product.id);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, type, price,image_path);
+        return Objects.hash(id);
     }
 
 }

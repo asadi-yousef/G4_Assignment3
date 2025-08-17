@@ -1,71 +1,163 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
-import il.cshaifasweng.OCSFMediatorExample.entities.Employee;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import javafx.application.Platform;
+import javafx.concurrent.Task;
+import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
-import java.net.URL;
-import java.util.ResourceBundle;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
-import java.io.IOException;
-import javafx.event.ActionEvent;
 
+import java.io.IOException;
+import java.net.URL;
+import java.util.Objects;
+import java.util.ResourceBundle;
 
 public class LoginControl implements Initializable {
-    @FXML
-    public TextField usernameField;
-    @FXML
-    public PasswordField passwordField;
-    @FXML
-    private Label errorLabel;
 
+    @FXML private TextField usernameField;
+    @FXML private PasswordField passwordField;
+    @FXML private TextField visiblePasswordField;
+    @FXML private ToggleButton togglePasswordButton;
+    @FXML private Label errorLabel;
+    @FXML private Button loginButton;
+    @FXML private Button backButton; // Add this line - missing @FXML field
+    @FXML private ProgressIndicator loadingIndicator;
 
+    private ImageView eyeOpenView;
+    private ImageView eyeClosedView;
+
+    @Override
     public void initialize(URL location, ResourceBundle resources) {
         EventBus.getDefault().register(this);
+        loadToggleImages(); // Load images first
+        setupPasswordToggle(); // Then set up the button
+    }
+
+    private void loadToggleImages() {
         try {
-            if (!SimpleClient.getClient().isConnected()) {
-                SimpleClient.getClient().openConnection();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
+            // Change the path strings to the full path
+            String openPath = "/il/cshaifasweng/OCSFMediatorExample/client/images/eye-open.png";
+            String closedPath = "/il/cshaifasweng/OCSFMediatorExample/client/images/eye-closed.png";
+
+            Image eyeOpen = new Image(Objects.requireNonNull(getClass().getResourceAsStream(openPath)));
+            eyeOpenView = new ImageView(eyeOpen);
+            eyeOpenView.setFitHeight(16);
+            eyeOpenView.setFitWidth(16);
+
+            Image eyeClosed = new Image(Objects.requireNonNull(getClass().getResourceAsStream(closedPath)));
+            eyeClosedView = new ImageView(eyeClosed);
+            eyeClosedView.setFitHeight(16);
+            eyeClosedView.setFitWidth(16);
+
+        } catch (Exception e) {
+            System.err.println("Error loading toggle images. Make sure the path is correct!");
+            e.printStackTrace(); // Print the full error
+            togglePasswordButton.setText("S");
         }
     }
 
-    public void handleLogin(ActionEvent actionEvent) throws IOException {
-        SimpleClient.getClient().sendToServer("check existence: " + usernameField.getText() + " " + passwordField.getText());
+    private void setupPasswordToggle() {
+        // Bind the visibility of the fields to the toggle button's selected state
+        visiblePasswordField.managedProperty().bind(togglePasswordButton.selectedProperty());
+        visiblePasswordField.visibleProperty().bind(togglePasswordButton.selectedProperty());
+        passwordField.managedProperty().bind(togglePasswordButton.selectedProperty().not());
+        passwordField.visibleProperty().bind(togglePasswordButton.selectedProperty().not());
+        visiblePasswordField.textProperty().bindBidirectional(passwordField.textProperty());
+        togglePasswordButton.setGraphic(eyeOpenView);
+        togglePasswordButton.selectedProperty().addListener((observable, oldValue, isSelected) -> {
+            if (isSelected) {
+                togglePasswordButton.setGraphic(eyeClosedView);
+            } else {
+                togglePasswordButton.setGraphic(eyeOpenView);
+            }
+        });
+    }
+
+    @FXML
+    void handleLogin(ActionEvent event) {
+        String username = usernameField.getText();
+        String password = passwordField.getText();
+
+        if (username.isEmpty() || password.isEmpty()) {
+            showError("Username and password cannot be empty.");
+            return;
+        }
+
+        setLoading(true);
+
+        Task<Void> loginTask = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                if (!SimpleClient.getClient().isConnected()) {
+                    SimpleClient.getClient().openConnection();
+                }
+                SimpleClient.getClient().sendToServer("check existence: " + username + " " + password);
+                return null;
+            }
+        };
+
+        loginTask.setOnFailed(e -> {
+            setLoading(false);
+            showError("Connection to server failed. Please try again later.");
+        });
+
+        new Thread(loginTask).start();
     }
 
     @Subscribe
-    public void onMessage(Object message) {
-        Message tmp = (Message) message;
-        String msg = tmp.getMessage();
-        if(msg.equals("correct")) {
-            User user = (User)(tmp.getObject());
-            SessionManager.getInstance().setCurrentUser(user);
-
-            Platform.runLater(() -> {
+    public void onMessage(Message message) {
+        Platform.runLater(() -> {
+            setLoading(false);
+            if ("correct".equals(message.getMessage())) {
                 try {
+                    User user = (User) message.getObject();
+                    SessionManager.getInstance().setCurrentUser(user);
                     EventBus.getDefault().unregister(this);
                     App.setRoot("primary");
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    showError("Failed to load the main page.");
+                    e.printStackTrace();
                 }
-            });
-        }
-        else if(msg.equals("incorrect")) {
-            Platform.runLater(() -> {
-                errorLabel.setText("incorrect");
-                errorLabel.setVisible(true);
-            });
+            } else if ("incorrect".equals(message.getMessage())) {
+                showError("Invalid username or password.");
+            }
+        });
+    }
+
+    @FXML
+    void handleRegister(ActionEvent event) throws IOException {
+        EventBus.getDefault().unregister(this);
+        App.setRoot("registerView");
+    }
+
+    private void showError(String message) {
+        errorLabel.setText(message);
+        errorLabel.setVisible(true);
+        errorLabel.setManaged(true);
+    }
+
+    private void setLoading(boolean isLoading) {
+        loadingIndicator.setVisible(isLoading);
+        loginButton.setDisable(isLoading);
+        if (isLoading) {
+            errorLabel.setVisible(false);
+            errorLabel.setManaged(false);
         }
     }
 
-    public void handleRegister(ActionEvent actionEvent) throws IOException {
+    @FXML
+    public void handleBack(ActionEvent actionEvent) {
         EventBus.getDefault().unregister(this);
-        App.setRoot("registerView");
+        try {
+            App.setRoot("primary");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
