@@ -221,7 +221,7 @@ public class OrderController implements Initializable {
             }
             String paymentDetails = null;
             if ("Saved Card".equals(paymentMethod)) {
-                paymentDetails = customer.getCreditCard().getCardNumber();
+                paymentDetails = customer.getCreditNumber();
             } else if ("New Card".equals(paymentMethod)) {
                 paymentDetails = newCardField.getText();
                 if (paymentDetails == null || paymentDetails.trim().isEmpty()) {
@@ -281,7 +281,6 @@ public class OrderController implements Initializable {
 
     private void goBackToCart() {
         try {
-            EventBus.getDefault().unregister(this);
             App.setRoot("cartView");
         } catch (Exception e) {
             showAlert("Error", "Failed to go back to cart.");
@@ -290,7 +289,6 @@ public class OrderController implements Initializable {
 
     private void goToCatalog() {
         try {
-            EventBus.getDefault().unregister(this);
             App.setRoot("primary");
         } catch (Exception e) {
             showAlert("Error", "Failed to return to catalog.");

@@ -395,20 +395,18 @@ public class SimpleServer extends AbstractServer {
 
 	private void handleProductEdit(Message msg) {
 		String msgString = msg.getMessage();
-		Product product = (Product)(msg.getObject());
-		if (product != null) {
+		String[] parts = msgString.split(":");
+		if (parts.length == 3) {
 			try {
-
-				Long productId = product.getId();
+				Product product = (Product)(msg.getObject());
+				int productId = Integer.parseInt(parts[2]);
 				double newPrice = product.getPrice();
-				double newDiscountPercentage = product.getDiscountPercentage();
 				String newProductName = product.getName();
 				String newType = product.getType();
 				String newImagePath = product.getImagePath();
-				String newColor = product.getColor();
 
 				// Update database first
-				boolean updateSuccess = updateProduct(productId, newProductName, newColor ,newPrice, newDiscountPercentage,newType, newImagePath);
+				boolean updateSuccess = updateProduct(productId, newProductName, newPrice, newType, newImagePath);
 
 				if (updateSuccess) {
 					// Update catalog with write lock only if database update succeeded
@@ -472,8 +470,7 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-	public boolean updateProduct(Long productId, String newProductName,String newColor, double newPrice, double newDiscount,String newType, String newImagePath) {
-		catalogLock.writeLock().lock();
+	public boolean updateProduct(int productId, String newProductName, double newPrice, String newType, String newImagePath) {
 		Transaction tx = null;
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
 			tx = session.beginTransaction();
@@ -481,28 +478,23 @@ public class SimpleServer extends AbstractServer {
 			Product product = session.get(Product.class, productId);
 			if (product != null) {
 				product.setPrice(newPrice);
-				product.setDiscountPercentage(newDiscount);
 				product.setName(newProductName);
 				product.setType(newType);
 				product.setImagePath(newImagePath);
-				product.setColor(newColor);
 				session.update(product);
 				tx.commit();
-				catalogLock.writeLock().unlock();
-				return true;
+				return true; // Return success status
 			} else {
 				System.out.println("Product not found with ID: " + productId);
 				if (tx != null) {
 					tx.rollback();
 				}
-				catalogLock.writeLock().unlock();
 				return false;
 			}
 		} catch (Exception e) {
 			if (tx != null) {
 				tx.rollback();
 			}
-			catalogLock.writeLock().unlock();
 			e.printStackTrace();
 			return false;
 		}
