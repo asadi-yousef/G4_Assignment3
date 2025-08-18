@@ -7,7 +7,7 @@
 <AnchorPane xmlns="http://javafx.com/javafx"
             xmlns:fx="http://javafx.com/fxml"
             fx:controller="il.cshaifasweng.OCSFMediatorExample.client.RegisterControl"
-            prefHeight="750.0" prefWidth="500.0">
+            prefHeight="800.0" prefWidth="500.0">
 
     <VBox alignment="CENTER" spacing="15" AnchorPane.topAnchor="20.0" AnchorPane.bottomAnchor="20.0"
           AnchorPane.leftAnchor="50.0" AnchorPane.rightAnchor="50.0">
@@ -39,6 +39,12 @@
             </HBox>
             <Label fx:id="accountTypeDescriptionLabel" text="Please select an account type."
                    alignment="CENTER" wrapText="true" style="-fx-text-fill: #666;"/>
+
+            <!-- NEW: Branch ComboBox (hidden by default in controller) -->
+            <HBox spacing="10" alignment="CENTER" prefWidth="350">
+                <Label text="Branch:" prefWidth="100" alignment="CENTER_RIGHT"/>
+                <ComboBox fx:id="branchComboBox" prefWidth="200"/>
+            </HBox>
         </VBox>
 
         <VBox spacing="10" alignment="CENTER">

@@ -1,5 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.Branch;
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import javafx.application.Platform;
@@ -7,7 +8,6 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
-import javafx.stage.Stage;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.time.LocalDate;
 import java.time.Year;
+import java.util.List;
 import java.util.ResourceBundle;
 import java.util.stream.IntStream;
 
@@ -40,6 +41,10 @@ public class RegisterControl implements Initializable {
     @FXML private ComboBox<Integer> expirationYearComboBox;
     @FXML private PasswordField cvvField;
 
+    // NEW: Branch ComboBox
+    @FXML private ComboBox<String> branchComboBox;
+
+    private List<Branch> branches;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
@@ -53,21 +58,28 @@ public class RegisterControl implements Initializable {
         } catch (IOException e) {
             e.printStackTrace();
         }
+        try {
+            SimpleClient.getClient().sendToServer(new Message("request_branches", null, null));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         // Setup for new fields
         populateAccountTypes();
         populateExpirationDate();
         setupAccountTypeListener();
+
+        // Hide branch combo by default
+        branchComboBox.setVisible(false);
+        branchComboBox.setManaged(false);
     }
 
     private void populateAccountTypes() {
-        accountTypeComboBox.getItems().addAll("Regular Account", "Premium Subscription");
+        accountTypeComboBox.getItems().addAll("Branch Account", "Network Account", "yearly subscription");
     }
 
     private void populateExpirationDate() {
-        // Populate months 1-12
         expirationMonthComboBox.getItems().addAll(IntStream.rangeClosed(1, 12).boxed().toArray(Integer[]::new));
-        // Populate years from current year to 15 years in the future
         int currentYear = Year.now().getValue();
         expirationYearComboBox.getItems().addAll(IntStream.rangeClosed(currentYear, currentYear + 15).boxed().toArray(Integer[]::new));
     }
@@ -76,14 +88,25 @@ public class RegisterControl implements Initializable {
         accountTypeComboBox.valueProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
                 switch (newVal) {
-                    case "Regular Account":
-                        accountTypeDescriptionLabel.setText("A free account with access to our full catalog of products.");
+                    case "Branch Account":
+                        accountTypeDescriptionLabel.setText("A free account tied to a specific branch.");
+                        branchComboBox.setVisible(true);
+                        branchComboBox.setManaged(true);
                         break;
-                    case "Premium Subscription":
+                    case "Network Account":
                         accountTypeDescriptionLabel.setText("A yearly subscription with a 10% discount on all purchases!");
+                        branchComboBox.setVisible(false);
+                        branchComboBox.setManaged(false);
+                        break;
+                    case "yearly subscription":
+                        accountTypeDescriptionLabel.setText("An account with a subscription for one year that gives you a 10% discount on all purchases above 50 shekels! Subscription cost: 100 shekels!");
+                        branchComboBox.setVisible(false);
+                        branchComboBox.setManaged(false);
                         break;
                     default:
                         accountTypeDescriptionLabel.setText("Please select an account type.");
+                        branchComboBox.setVisible(false);
+                        branchComboBox.setManaged(false);
                         break;
                 }
             }
@@ -103,6 +126,13 @@ public class RegisterControl implements Initializable {
                 }
             } else if ("user already exists".equals(msg.getMessage())) {
                 showAlert(Alert.AlertType.ERROR, "Registration Failed", "A user with this username already exists.");
+            } else if (msg.getMessage().startsWith("Branches")) {
+                this.branches = (List<Branch>) msg.getObject();
+                branchComboBox.getItems().clear();
+                for (Branch branch : branches) {
+                    System.out.println("Branch: " + branch.getName());
+                    branchComboBox.getItems().add(branch.getName());
+                }
             }
         });
     }
@@ -112,9 +142,8 @@ public class RegisterControl implements Initializable {
         LocalDate date = LocalDate.now();
         if (validateFields()) {
             try {
-                // Determine if user is subscribed based on ComboBox selection
-                boolean isSubscribed = "Premium Subscription".equals(accountTypeComboBox.getValue());
-                boolean isNetworkAccount = "Network Account".equals(accountTypeComboBox.getValue());
+                boolean isSubscribed = "yearly subscription".equals(accountTypeComboBox.getValue());
+                boolean isNetworkAccount = ("Network Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
 
                 // Create new Customer object with all form data
                 Customer newCustomer = new Customer(
@@ -133,8 +162,12 @@ public class RegisterControl implements Initializable {
                         creditNumberField.getText().trim(),
                         expirationMonthComboBox.getValue(),
                         expirationYearComboBox.getValue(),
-                        cvvField.getText().trim(),null
+                        cvvField.getText().trim(),
+                        branchComboBox.isVisible() ? getSelectedBranch() : null
                 );
+                if(!isNetworkAccount) {
+                    newCustomer.setBranch(getSelectedBranch());
+                }
 
                 Message msg = new Message("register", newCustomer, null);
                 SimpleClient.getClient().sendToServer(msg);
@@ -144,6 +177,14 @@ public class RegisterControl implements Initializable {
                         "An error occurred: " + e.getMessage()));
             }
         }
+    }
+
+    private Branch getSelectedBranch() {
+        if (branchComboBox.getValue() == null || branches == null) return null;
+        return branches.stream()
+                .filter(b -> b.getName().equals(branchComboBox.getValue()))
+                .findFirst()
+                .orElse(null);
     }
 
     @FXML
@@ -167,6 +208,9 @@ public class RegisterControl implements Initializable {
         }
         if (accountTypeComboBox.getValue() == null) {
             errorMessage.append("Please select an account type.\n");
+        }
+        if ("Branch Account".equals(accountTypeComboBox.getValue()) && branchComboBox.getValue() == null) {
+            errorMessage.append("Please select a branch.\n");
         }
         if (emailField.getText() == null || !isValidEmail(emailField.getText().trim())) {
             errorMessage.append("A valid email is required.\n");
@@ -192,12 +236,21 @@ public class RegisterControl implements Initializable {
         if (cvvField.getText() == null || !cvvField.getText().trim().matches("\\d{3,4}")) {
             errorMessage.append("A valid 3 or 4 digit CVV is required.\n");
         }
-
+        if(usernameField.getText().contains(" ")){
+            errorMessage.append("Usernames cannot contain spaces.\n");
+        }
+        if (phoneField.getText() == null || !isValidPhone(phoneField.getText().trim())) {
+            errorMessage.append("A valid phone number is required (7–15 digits, optional +).\n");
+        }
         if (errorMessage.length() > 0) {
             showAlert(Alert.AlertType.ERROR, "Validation Error", errorMessage.toString());
             return false;
         }
         return true;
+    }
+
+    private boolean isValidPhone(String phone) {
+        return phone.matches("^\\+?[0-9]{7,15}$");
     }
 
     private boolean isValidEmail(String email) {
@@ -223,6 +276,7 @@ public class RegisterControl implements Initializable {
         accountTypeComboBox.getSelectionModel().clearSelection();
         expirationMonthComboBox.getSelectionModel().clearSelection();
         expirationYearComboBox.getSelectionModel().clearSelection();
+        branchComboBox.getSelectionModel().clearSelection();
     }
 
     private void showAlert(Alert.AlertType alertType, String title, String message) {

@@ -404,7 +404,7 @@ public class PrimaryController implements Initializable {
 	}
 
 	@FXML
-	void handleManageCatalog(ActionEvent event) {
+	void handleAddProduct(ActionEvent event) {
 		try {
 			EventBus.getDefault().unregister(this);
 			App.setRoot("addProductView");

@@ -96,4 +96,9 @@ public class Customer extends User implements Serializable {
         this.cart = cart;
         if (cart != null) cart.setCustomer(this);
     }
+
+    public Branch getBranch() { return branch; }
+    public void setBranch(Branch branch) {
+        this.branch = branch;
+    }
 }

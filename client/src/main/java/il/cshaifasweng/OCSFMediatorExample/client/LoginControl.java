@@ -15,8 +15,7 @@ import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
 import java.net.URL;
-import java.util.Objects;
-import java.util.ResourceBundle;
+import java.util.*;
 
 public class LoginControl implements Initializable {
 
@@ -97,7 +96,10 @@ public class LoginControl implements Initializable {
                 if (!SimpleClient.getClient().isConnected()) {
                     SimpleClient.getClient().openConnection();
                 }
-                SimpleClient.getClient().sendToServer("check existence: " + username + " " + password);
+                List<String> info = new ArrayList<String>();
+                info.add(username);
+                info.add(password);
+                SimpleClient.getClient().sendToServer( new Message("check existence", info , null));
                 return null;
             }
         };
@@ -112,9 +114,11 @@ public class LoginControl implements Initializable {
 
     @Subscribe
     public void onMessage(Message message) {
-        Platform.runLater(() -> {
+        Platform.runLater(() -> { // Wrap UI updates in Platform.runLater()
+            System.out.println(message.getMessage());
             setLoading(false);
             if ("correct".equals(message.getMessage())) {
+                System.out.println("correct");
                 try {
                     User user = (User) message.getObject();
                     SessionManager.getInstance().setCurrentUser(user);

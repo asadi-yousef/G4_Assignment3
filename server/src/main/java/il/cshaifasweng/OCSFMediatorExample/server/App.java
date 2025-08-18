@@ -94,6 +94,15 @@ public class App {
             }else {
                 System.out.println("Customer table already contains data. Skipping insert.");
             }
+            count = (Long) session.createQuery("select count(f.id) from Branch f").uniqueResult();
+            if(count == 0) {
+                Branch branch = new Branch("Haifa");
+                session.save(branch);session.flush();
+                Branch branch2 = new Branch("Tel Aviv");
+                session.save(branch2);session.flush();
+            }else
+                System.out.println("Branch table already contains data. Skipping insert.");
+
             tx.commit();
             List<User> users = server.getListFromDB(User.class);
             for (User user : users) {
