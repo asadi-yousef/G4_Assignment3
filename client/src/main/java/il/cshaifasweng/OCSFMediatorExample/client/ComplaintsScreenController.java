@@ -62,7 +62,7 @@ public class ComplaintsScreenController implements Initializable {
     @FXML
     private void handleBack(ActionEvent event) {
         try {
-            App.setRoot("orders");
+            App.setRoot("ordersScreenView");
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
