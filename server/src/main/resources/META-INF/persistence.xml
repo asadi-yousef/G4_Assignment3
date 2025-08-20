@@ -8,26 +8,34 @@
     <persistence-unit name="my-persistence-unit" transaction-type="RESOURCE_LOCAL">
         <provider>org.hibernate.jpa.HibernatePersistenceProvider</provider>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.User</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Customer</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Product</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Cart</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.CartItem</class>
-        <class>il.cshaifasweng.OCSFMediatorExample.entities.Customer</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Branch</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.CreditCard</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Subscription</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Employee</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.Order</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderItem</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderRequest</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrdersReport</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.Report</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.ComplaintsReport</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.IncomeReport</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderRequest</class>
 
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="com.mysql.cj.jdbc.Driver"/>
             <property name="jakarta.persistence.jdbc.url" value="jdbc:mysql://localhost:3306/MyFirstDataBase?createDatabaseIfNotExist=true&amp;useSSL=false&amp;serverTimezone=UTC"/>
             <property name="jakarta.persistence.jdbc.user" value="root"/>
-            <property name="jakarta.persistence.jdbc.password" value="Renata123"/>
+            <property name="jakarta.persistence.jdbc.password" value="1@2@3@4_5Tuf"/>
 
             <!-- Hibernate Settings -->
             <property name="hibernate.dialect" value="org.hibernate.dialect.MySQL8Dialect"/>
             <property name="hibernate.hbm2ddl.auto" value="update"/>
             <property name="hibernate.show_sql" value="true"/>
             <property name="hibernate.format_sql" value="true"/>
-            <property name="hibernate.jdbc.time_zone" value="UTC"/>
-
         </properties>
     </persistence-unit>
 </persistence>

@@ -96,7 +96,7 @@ public class ProfileController implements Initializable {
                     addressField.setText(currentCustomer.getAddress() != null ? currentCustomer.getAddress() : "");
                     cityField.setText(currentCustomer.getCity() != null ? currentCustomer.getCity() : "");
                     countryField.setText(currentCustomer.getCountry() != null ? currentCustomer.getCountry() : "");
-                    creditCardField.setText(maskCreditCard(currentCustomer.getCreditNumber() != null ? currentCustomer.getCreditNumber() : ""));
+                    creditCardField.setText(maskCreditCard(currentCustomer.getCreditCard().getCardNumber() != null ? currentCustomer.getCreditCard().getCardNumber() : ""));
                 } else {
                     // Clear customer fields if no customer data
                     emailField.setText("");
@@ -155,7 +155,7 @@ public class ProfileController implements Initializable {
                 customerUser.setCountry(countryField.getText().trim());
 
                 if (!creditCardField.getText().startsWith("****") && !creditCardField.getText().trim().isEmpty()) {
-                    customerUser.setCreditNumber(creditCardField.getText().trim());
+                    customerUser.getCreditCard().setCardNumber(creditCardField.getText().trim());
                 }
 
                 // Send the updated customer (which is also a user)
@@ -184,7 +184,7 @@ public class ProfileController implements Initializable {
                     currentCustomer.setCountry(countryField.getText().trim());
 
                     if (!creditCardField.getText().startsWith("****") && !creditCardField.getText().trim().isEmpty()) {
-                        currentCustomer.setCreditNumber(creditCardField.getText().trim());
+                        currentCustomer.getCreditCard().setCardNumber(creditCardField.getText().trim());
                     }
 
                     // Send customer as main object since it has all the data
