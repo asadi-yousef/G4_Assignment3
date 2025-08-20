@@ -44,7 +44,7 @@
 
             <HBox fx:id="employeeMenuBar" alignment="CENTER" spacing="10.0" visible="false" AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0">
                <children>
-                  <Button onAction="#handleManageCatalog" text="Manage Catalog" />
+                  <Button onAction="#handleAddProduct" text="Add Product" />
                   <Button fx:id="reportButton" onAction="#handleViewReports" text="Reports" />
                   <Button onAction="#handleManageComplaints" text="Manage Complaints" />
                   <Pane HBox.hgrow="ALWAYS" />

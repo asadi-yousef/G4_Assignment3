@@ -22,6 +22,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.ResourceBundle;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+
 
 public class OrdersScreenController implements Initializable {
 
@@ -163,8 +166,39 @@ public class OrdersScreenController implements Initializable {
         if (noteLabel != null) container.getChildren().add(noteLabel);
         container.getChildren().add(itemsContainer);
 
+
+        // Add Complaint Button if eligible
+        if (order.getDeliveryDateTime() != null) {
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime deliveryTime = order.getDeliveryDateTime();
+
+            // Check if delivered in the past 14 days
+            if (deliveryTime.isBefore(now) && ChronoUnit.DAYS.between(deliveryTime, now) <= 14) {
+                Button complaintButton = new Button("Make Complaint");
+                complaintButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
+                complaintButton.setCursor(javafx.scene.Cursor.HAND);
+
+                complaintButton.setOnAction(e -> openComplaintPage(order));
+
+                container.getChildren().add(complaintButton);
+            }
+        }
+
         return container;
     }
+
+    private void openComplaintPage(Order order) {
+        try {
+            // Option A: Pass order via SessionManager (easier)
+            SessionManager.getInstance().setSelectedOrder(order);
+
+            // Load complaints FXML
+            App.setRoot("complaints");  // assumes you have complaints.fxml set up
+        } catch (IOException e) {
+            showAlert("Error", "Failed to open complaints page.");
+        }
+    }
+
 
     private HBox createOrderItemBox(OrderItem item) {
         HBox itemBox = new HBox(15); // Increased spacing

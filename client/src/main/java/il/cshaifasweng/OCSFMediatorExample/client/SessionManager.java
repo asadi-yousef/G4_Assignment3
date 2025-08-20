@@ -13,6 +13,7 @@ public class SessionManager {
     private User currentUser;
     private List<Product> cart;
     private List<Order> orders = new ArrayList<>();
+    private Order selectedOrder;
 
     private SessionManager() {
         cart = new ArrayList<>();  // Initialize the cart
@@ -66,5 +67,12 @@ public class SessionManager {
 
     public void logout() {
         this.currentUser = null;
+    }
+
+    public void setSelectedOrder(Order order) {
+        this.selectedOrder = order;
+    }
+    public Order getSelectedOrder() {
+        return selectedOrder;
     }
 }

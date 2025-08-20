@@ -8,24 +8,18 @@ import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.fxml.Initializable;
-import javafx.geometry.Insets;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Pane;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
-import java.util.stream.Collectors;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -342,50 +336,7 @@ public class PrimaryController implements Initializable {
 		}
 	}
 
-	@Subscribe
-	public void onMessageFromServer(Message msg) {
-		Platform.runLater(() -> {
-			loadingIndicator.setVisible(false);
-			switch (msg.getMessage()) {
-				case "catalog":
-					this.catalog = (Catalog) msg.getObject();
-					renderCatalog();
-					break;
-				case "add_product":
-				case "editProduct":
-				case "delete_product_by_id":
-					loadCatalogData();
-					break;
-				case "cart_updated":
-					// You can optionally show a subtle notification or badge update
-					showAlert("Success", "Cart updated successfully!");
-					break;
-				case "cart_data":
-					// This message contains the cart, so open the cart view
-					try {
-						EventBus.getDefault().unregister(this);
-						App.setRoot("cartView");
-					} catch (IOException e) {
-						showAlert("Error", "Failed to open cart page.");
-					}
-					break;
-				case "orders_data":
-					try {
-						// Orders data is handled inside OrdersScreenController
-						EventBus.getDefault().unregister(this);
-						App.setRoot("ordersScreenView");  // this triggers OrdersScreenController.initialize()
-					} catch (IOException e) {
-						showAlert("Error", "Failed to open orders page.");
-					}
-					break;
-
-				default:
-					System.out.println("Received unhandled message from server: " + msg.getMessage());
-					break;
-			}
-		});
-	}
-
+	// -------- Alerts --------
 
 	private void showAlert(String title, String message) {
 		Platform.runLater(() -> {
@@ -430,22 +381,7 @@ public class PrimaryController implements Initializable {
 	}
 
 	@FXML
-	public void handleOrdersScreen(ActionEvent actionEvent) {
-		try {
-			User currentUser = SessionManager.getInstance().getCurrentUser();
-			if (currentUser == null) {
-				showAlert("Login Required", "Please login to view your orders.");
-				return;
-			}
-			App.setRoot("ordersScreenView");  // This will trigger OrdersScreenController.initialize()
-		} catch (IOException e) {
-			showAlert("Error", "Failed to open orders page.");
-		}
-	}
-
-
-
-	@FXML public void handleComplaints(ActionEvent actionEvent) {
+	public void handleComplaints(ActionEvent actionEvent) {
 		try {
 			App.setRoot("complaintsView");
 			EventBus.getDefault().unregister(this);
@@ -469,7 +405,7 @@ public class PrimaryController implements Initializable {
 	}
 
 	@FXML
-	void handleManageCatalog(ActionEvent event) {
+	void handleAddProduct(ActionEvent event) {
 		try {
 			EventBus.getDefault().unregister(this);
 			App.setRoot("addProductView");
@@ -490,7 +426,12 @@ public class PrimaryController implements Initializable {
 
 	@FXML
 	void handleManageComplaints(ActionEvent event) {
-		showAlert("Action", "Manage Complaints clicked.");
+		try {
+			EventBus.getDefault().unregister(this);
+			App.setRoot("complaintsList");
+		}catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 
 	@FXML
