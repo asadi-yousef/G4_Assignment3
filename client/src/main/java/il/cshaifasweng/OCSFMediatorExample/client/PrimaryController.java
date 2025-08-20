@@ -15,6 +15,7 @@ import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.text.Font;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import org.greenrobot.eventbus.EventBus;
@@ -425,7 +426,12 @@ public class PrimaryController implements Initializable {
 
 	@FXML
 	void handleManageComplaints(ActionEvent event) {
-		showAlert("Action", "Manage Complaints clicked.");
+		try {
+			EventBus.getDefault().unregister(this);
+			App.setRoot("complaintsList");
+		}catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 
 	@FXML
