@@ -6,6 +6,7 @@ import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -129,7 +130,13 @@ public class SimpleServer extends AbstractServer {
 				{
 					handleUpdateCartItemQuantity(message, client);
 				}
-
+				else if (msgString.startsWith("request_branches")) {
+					System.out.println("request_Branches");
+					handleBranchesRequest(message, client);
+				}
+				else if (msgString.equals("check existence")) {
+					handleUserAuthentication(message, client, session);
+				}
 
 			}
 
@@ -140,9 +147,7 @@ public class SimpleServer extends AbstractServer {
 				handleClientRemoval(client);
 				System.out.println("removed subscribed client");
 			}
-			else if (msgString.contains("check existence")) {
-				handleUserAuthentication(msgString, client, session);
-			}
+
 		} catch (Exception e) {
 			e.printStackTrace();
 			// Send error response to client
@@ -155,7 +160,13 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-
+	private void handleBranchesRequest(Message msg, ConnectionToClient client) throws IOException {
+		List<Branch> branches = getListFromDB(Branch.class);
+		for (Branch branch : branches) {
+			System.out.println("Branch: " + branch.getName());
+		}
+		client.sendToClient(new Message("Branches",branches,null));
+	}
 	private void handleCustomerDataRequest(Message message, ConnectionToClient client, Session session) {
 		try {
 			// Check if the message has a payload - it should be the User object
@@ -430,27 +441,23 @@ public class SimpleServer extends AbstractServer {
 		subscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
 	}
 
-	private void handleUserAuthentication(String msgString, ConnectionToClient client, Session session) {
+	private void handleUserAuthentication(Message msg, ConnectionToClient client, Session session) throws Exception {
 		try {
-			String tmp = msgString.substring("check existence: ".length());
-			String[] parts = tmp.split(" ");
-			if (parts.length < 2) {
-				Message errorMessage = new Message("invalid_request", null, null);
-				client.sendToClient(errorMessage);
-				return;
-			}
-
-			String username = parts[0];
-			String password = parts[1];
+			List<String> info = (List<String>) msg.getObject();
+			String username = info.get(0);
+			String password = info.get(1);
 
 			// Use thread-safe cache lookup
 			User user = userCache.get(username);
 
 			if(user == null) {
+				System.out.println("user not found");
 				Message message = new Message("incorrect", null, null);
 				client.sendToClient(message);
 			} else {
 				if(user.getPassword().equals(password)) {
+					System.out.println(user.getUsername());
+					System.out.println(user.getPassword());
 					Message message = new Message("correct", user, null);
 					client.sendToClient(message);
 				} else {
@@ -462,9 +469,11 @@ public class SimpleServer extends AbstractServer {
 		} catch (Exception e) {
 			e.printStackTrace();
 			try {
+				System.out.println(e.getMessage());
 				Message errorMessage = new Message("authentication_error", null, null);
 				client.sendToClient(errorMessage);
 			} catch (IOException ioException) {
+				System.out.println(ioException.getMessage());
 				ioException.printStackTrace();
 			}
 		}

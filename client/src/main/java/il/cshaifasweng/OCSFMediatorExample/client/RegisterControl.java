@@ -1,219 +1,267 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.Branch;
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.PasswordField;
-import javafx.scene.control.TextField;
-import javafx.stage.Stage;
+import javafx.scene.control.*;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
 import java.net.URL;
+import java.time.LocalDate;
+import java.time.Year;
+import java.util.List;
 import java.util.ResourceBundle;
+import java.util.stream.IntStream;
 
 public class RegisterControl implements Initializable {
 
-    // FXML field annotations for all form elements
-    @FXML
-    private TextField nameField;
+    // Existing FXML fields
+    @FXML private TextField nameField;
+    @FXML private TextField usernameField;
+    @FXML private PasswordField passwordField;
+    @FXML private TextField emailField;
+    @FXML private TextField phoneField;
+    @FXML private TextField addressField;
+    @FXML private TextField cityField;
+    @FXML private TextField countryField;
+    @FXML private Button registerButton;
+    @FXML private Button cancelButton;
 
-    @FXML
-    private TextField usernameField;
+    // ADDED: New FXML fields
+    @FXML private ComboBox<String> accountTypeComboBox;
+    @FXML private Label accountTypeDescriptionLabel;
+    @FXML private TextField creditNumberField;
+    @FXML private ComboBox<Integer> expirationMonthComboBox;
+    @FXML private ComboBox<Integer> expirationYearComboBox;
+    @FXML private PasswordField cvvField;
 
-    @FXML
-    private PasswordField passwordField;
+    // NEW: Branch ComboBox
+    @FXML private ComboBox<String> branchComboBox;
 
-    @FXML
-    private TextField emailField;
-
-    @FXML
-    private TextField phoneField;
-
-    @FXML
-    private TextField addressField;
-
-    @FXML
-    private TextField cityField;
-
-    @FXML
-    private TextField countryField;
-
-    @FXML
-    private TextField creditNumberField;
-
-    @FXML
-    private Button registerButton;
-
-    @FXML
-    private Button cancelButton;
+    private List<Branch> branches;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-        EventBus.getDefault().register(this);
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this);
+        }
         try {
             if (!SimpleClient.getClient().isConnected()) {
                 SimpleClient.getClient().openConnection();
             }
-
         } catch (IOException e) {
             e.printStackTrace();
         }
+        try {
+            SimpleClient.getClient().sendToServer(new Message("request_branches", null, null));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // Setup for new fields
+        populateAccountTypes();
+        populateExpirationDate();
+        setupAccountTypeListener();
+
+        // Hide branch combo by default
+        branchComboBox.setVisible(false);
+        branchComboBox.setManaged(false);
+    }
+
+    private void populateAccountTypes() {
+        accountTypeComboBox.getItems().addAll("Branch Account", "Network Account", "yearly subscription");
+    }
+
+    private void populateExpirationDate() {
+        expirationMonthComboBox.getItems().addAll(IntStream.rangeClosed(1, 12).boxed().toArray(Integer[]::new));
+        int currentYear = Year.now().getValue();
+        expirationYearComboBox.getItems().addAll(IntStream.rangeClosed(currentYear, currentYear + 15).boxed().toArray(Integer[]::new));
+    }
+
+    private void setupAccountTypeListener() {
+        accountTypeComboBox.valueProperty().addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                switch (newVal) {
+                    case "Branch Account":
+                        accountTypeDescriptionLabel.setText("A free account tied to a specific branch.");
+                        branchComboBox.setVisible(true);
+                        branchComboBox.setManaged(true);
+                        break;
+                    case "Network Account":
+                        accountTypeDescriptionLabel.setText("A yearly subscription with a 10% discount on all purchases!");
+                        branchComboBox.setVisible(false);
+                        branchComboBox.setManaged(false);
+                        break;
+                    case "yearly subscription":
+                        accountTypeDescriptionLabel.setText("An account with a subscription for one year that gives you a 10% discount on all purchases above 50 shekels! Subscription cost: 100 shekels!");
+                        branchComboBox.setVisible(false);
+                        branchComboBox.setManaged(false);
+                        break;
+                    default:
+                        accountTypeDescriptionLabel.setText("Please select an account type.");
+                        branchComboBox.setVisible(false);
+                        branchComboBox.setManaged(false);
+                        break;
+                }
+            }
+        });
     }
 
     @Subscribe
-    public void onMessageReceived(Object msg) throws IOException {
-        if (msg instanceof Message) {
-            Message message = (Message) msg;
-            if ("registered".equals(message.getMessage())) {
-                Platform.runLater(() -> {
-                    showAlert(Alert.AlertType.INFORMATION, "Registration Successful",
-                            "Customer registered successfully!");
-                });
-                javafx.application.Platform.runLater(() -> {
-                    try {
-                        App.setRoot("logInView");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                });
+    public void onMessageReceived(Message msg) {
+        Platform.runLater(() -> {
+            if ("registered".equals(msg.getMessage())) {
+                showAlert(Alert.AlertType.INFORMATION, "Registration Successful", "Customer registered successfully!");
+                try {
+                    EventBus.getDefault().unregister(this);
+                    App.setRoot("logInView");
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            } else if ("user already exists".equals(msg.getMessage())) {
+                showAlert(Alert.AlertType.ERROR, "Registration Failed", "A user with this username already exists.");
+            } else if (msg.getMessage().startsWith("Branches")) {
+                this.branches = (List<Branch>) msg.getObject();
+                branchComboBox.getItems().clear();
+                for (Branch branch : branches) {
+                    System.out.println("Branch: " + branch.getName());
+                    branchComboBox.getItems().add(branch.getName());
+                }
             }
-            else if("user already exists".equals(message.getMessage())){
-                System.out.println("user already exists");
-                Platform.runLater(() -> {
-                    showAlert(Alert.AlertType.INFORMATION, "Registration failed",
-                            "another user with this username already exists");
-                });
-            }
-        }
+        });
     }
-    // Handle Register button click
+
     @FXML
     private void handleRegister(ActionEvent event) {
+        LocalDate date = LocalDate.now();
         if (validateFields()) {
             try {
-                // Create new Customer object with form data
+                boolean isSubscribed = "yearly subscription".equals(accountTypeComboBox.getValue());
+                boolean isNetworkAccount = ("Network Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
+
+                // Create new Customer object with all form data
                 Customer newCustomer = new Customer(
                         nameField.getText().trim(),
                         usernameField.getText().trim(),
                         passwordField.getText(),
-                        false, // isSigned - set to false initially
-                        false, // isSubbed - set to false initially
-                        creditNumberField.getText().trim(),
+                        isNetworkAccount,
+                        isSubscribed,
+                        date,
+                        date.plusYears(1),
                         emailField.getText().trim(),
                         phoneField.getText().trim(),
                         addressField.getText().trim(),
                         cityField.getText().trim(),
-                        countryField.getText().trim()
+                        countryField.getText().trim(),
+                        creditNumberField.getText().trim(),
+                        expirationMonthComboBox.getValue(),
+                        expirationYearComboBox.getValue(),
+                        cvvField.getText().trim(),
+                        branchComboBox.isVisible() ? getSelectedBranch() : null
                 );
+                if(!isNetworkAccount) {
+                    newCustomer.setBranch(getSelectedBranch());
+                }
 
-                // TODO: Add your logic here to save the customer
-                // For example:
-                // - Send to server via client communication
-                // - Save to database
-                // - Add to customer list
-                Message msg = new Message("register",newCustomer,null);
+                Message msg = new Message("register", newCustomer, null);
                 SimpleClient.getClient().sendToServer(msg);
 
-
-                // Clear form after successful registration
-                clearForm();
-
-                // Optionally close the registration window
-                // closeWindow();
-
             } catch (Exception e) {
-                Platform.runLater(() -> {
-                    showAlert(Alert.AlertType.ERROR, "Registration Error",
-                            "An error occurred during registration: " + e.getMessage());
-                });
+                Platform.runLater(() -> showAlert(Alert.AlertType.ERROR, "Registration Error",
+                        "An error occurred: " + e.getMessage()));
             }
         }
     }
 
-    // Handle Cancel button click
-    @FXML
-    private void handleCancel(ActionEvent event) throws IOException {
-        // Clear all fields
-        clearForm();
-        App.setRoot("logInView");
-        // Optionally close the window
-        // closeWindow();
+    private Branch getSelectedBranch() {
+        if (branchComboBox.getValue() == null || branches == null) return null;
+        return branches.stream()
+                .filter(b -> b.getName().equals(branchComboBox.getValue()))
+                .findFirst()
+                .orElse(null);
     }
 
-    // Validate all required fields
+    @FXML
+    private void handleCancel(ActionEvent event) throws IOException {
+        clearForm();
+        EventBus.getDefault().unregister(this);
+        App.setRoot("logInView");
+    }
+
     private boolean validateFields() {
         StringBuilder errorMessage = new StringBuilder();
 
-        // Check required fields
         if (nameField.getText() == null || nameField.getText().trim().isEmpty()) {
             errorMessage.append("Name is required.\n");
         }
-
         if (usernameField.getText() == null || usernameField.getText().trim().isEmpty()) {
             errorMessage.append("Username is required.\n");
         }
-
-        if (passwordField.getText() == null || passwordField.getText().trim().isEmpty()) {
+        if (passwordField.getText() == null || passwordField.getText().isEmpty()) {
             errorMessage.append("Password is required.\n");
         }
-
-        if (emailField.getText() == null || emailField.getText().trim().isEmpty()) {
-            errorMessage.append("Email is required.\n");
-        } else if (!isValidEmail(emailField.getText().trim())) {
-            errorMessage.append("Please enter a valid email address.\n");
+        if (accountTypeComboBox.getValue() == null) {
+            errorMessage.append("Please select an account type.\n");
         }
-
+        if ("Branch Account".equals(accountTypeComboBox.getValue()) && branchComboBox.getValue() == null) {
+            errorMessage.append("Please select a branch.\n");
+        }
+        if (emailField.getText() == null || !isValidEmail(emailField.getText().trim())) {
+            errorMessage.append("A valid email is required.\n");
+        }
         if (phoneField.getText() == null || phoneField.getText().trim().isEmpty()) {
-            errorMessage.append("Phone is required.\n");
+            errorMessage.append("Phone number is required.\n");
         }
-
         if (addressField.getText() == null || addressField.getText().trim().isEmpty()) {
             errorMessage.append("Address is required.\n");
         }
-
         if (cityField.getText() == null || cityField.getText().trim().isEmpty()) {
             errorMessage.append("City is required.\n");
         }
-
         if (countryField.getText() == null || countryField.getText().trim().isEmpty()) {
             errorMessage.append("Country is required.\n");
         }
-
-        if (creditNumberField.getText() == null || creditNumberField.getText().trim().isEmpty()) {
-            errorMessage.append("Credit card number is required.\n");
-        } else if (!isValidCreditCard(creditNumberField.getText().trim())) {
-            errorMessage.append("Please enter a valid credit card number.\n");
+        if (creditNumberField.getText() == null || !isValidCreditCard(creditNumberField.getText().trim())) {
+            errorMessage.append("A valid 13-19 digit credit card number is required.\n");
         }
-
-        // Show validation errors if any
+        if (expirationMonthComboBox.getValue() == null || expirationYearComboBox.getValue() == null) {
+            errorMessage.append("Credit card expiration date is required.\n");
+        }
+        if (cvvField.getText() == null || !cvvField.getText().trim().matches("\\d{3,4}")) {
+            errorMessage.append("A valid 3 or 4 digit CVV is required.\n");
+        }
+        if(usernameField.getText().contains(" ")){
+            errorMessage.append("Usernames cannot contain spaces.\n");
+        }
+        if (phoneField.getText() == null || !isValidPhone(phoneField.getText().trim())) {
+            errorMessage.append("A valid phone number is required (7–15 digits, optional +).\n");
+        }
         if (errorMessage.length() > 0) {
             showAlert(Alert.AlertType.ERROR, "Validation Error", errorMessage.toString());
             return false;
         }
-
         return true;
     }
 
-    // Simple email validation
+    private boolean isValidPhone(String phone) {
+        return phone.matches("^\\+?[0-9]{7,15}$");
+    }
+
     private boolean isValidEmail(String email) {
-        return email.contains("@") && email.contains(".") && email.length() > 5;
+        return email != null && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}$");
     }
 
-    // Simple credit card validation (basic length check)
     private boolean isValidCreditCard(String creditCard) {
-        // Remove spaces and check if it's numeric and has appropriate length
         String cleanCard = creditCard.replaceAll("\\s+", "");
-        return cleanCard.matches("\\d{13,19}"); // Most credit cards are 13-19 digits
+        return cleanCard.matches("\\d{13,19}");
     }
 
-    // Clear all form fields
     private void clearForm() {
         nameField.clear();
         usernameField.clear();
@@ -224,20 +272,18 @@ public class RegisterControl implements Initializable {
         cityField.clear();
         countryField.clear();
         creditNumberField.clear();
+        cvvField.clear();
+        accountTypeComboBox.getSelectionModel().clearSelection();
+        expirationMonthComboBox.getSelectionModel().clearSelection();
+        expirationYearComboBox.getSelectionModel().clearSelection();
+        branchComboBox.getSelectionModel().clearSelection();
     }
 
-    // Show alert dialog
     private void showAlert(Alert.AlertType alertType, String title, String message) {
         Alert alert = new Alert(alertType);
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
-    }
-
-    // Close the current window
-    private void closeWindow() {
-        Stage stage = (Stage) registerButton.getScene().getWindow();
-        stage.close();
     }
 }
