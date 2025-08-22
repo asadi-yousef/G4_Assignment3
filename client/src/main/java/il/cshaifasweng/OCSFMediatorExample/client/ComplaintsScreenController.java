@@ -10,6 +10,7 @@ import javafx.fxml.Initializable;
 import javafx.scene.control.*;
 import java.io.IOException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.ResourceBundle;
 
 public class ComplaintsScreenController implements Initializable {
@@ -51,7 +52,12 @@ public class ComplaintsScreenController implements Initializable {
         );
 
         try {
-            SimpleClient.getClient().sendToServer(new Message("submit_complaint", complaint,null));
+            Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
+            var list = new ArrayList<Object>();
+            list.add(complaint);
+            list.add(customer);
+            list.add(order);
+            SimpleClient.getClient().sendToServer(new Message("submit_complaint",null,list));
             showAlert("Success", "Complaint submitted successfully!", Alert.AlertType.INFORMATION);
             App.setRoot("ordersScreenView"); // back to orders page
         } catch (IOException e) {

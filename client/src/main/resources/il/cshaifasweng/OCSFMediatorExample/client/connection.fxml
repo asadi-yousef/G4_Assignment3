@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.text.Font?>
+
+<AnchorPane xmlns="http://javafx.com/javafx"
+            xmlns:fx="http://javafx.com/fxml"
+            fx:controller="il.cshaifasweng.OCSFMediatorExample.client.ConnectionControl"
+            prefHeight="400.0" prefWidth="600.0">
+
+    <!-- Centered container -->
+    <VBox spacing="16" alignment="CENTER" AnchorPane.topAnchor="0.0"
+          AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="0.0"
+          AnchorPane.rightAnchor="0.0">
+        <padding>
+            <Insets top="24" right="24" bottom="24" left="24"/>
+        </padding>
+
+        <Label text="Connect to Server">
+            <font>
+                <Font name="System Bold" size="20.0"/>
+            </font>
+        </Label>
+
+        <!-- Form -->
+        <GridPane hgap="12" vgap="10" maxWidth="420">
+            <columnConstraints>
+                <ColumnConstraints minWidth="120.0" halignment="RIGHT"/>
+                <ColumnConstraints hgrow="ALWAYS"/>
+            </columnConstraints>
+
+            <children>
+                <Label text="Host / IP:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                <TextField fx:id="hostField" promptText="e.g. 127.0.0.1 or server.local"
+                           GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+
+                <Label text="Port:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                <TextField fx:id="portField" promptText="e.g. 5555"
+                           GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+
+                <CheckBox fx:id="rememberCheck" text="Remember settings"
+                          GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+            </children>
+        </GridPane>
+
+        <!-- Action row -->
+        <HBox spacing="10" alignment="CENTER_RIGHT" maxWidth="420">
+            <Button fx:id="connectButton" text="Connect" disable="true" onAction="#handleConnect"/>
+        </HBox>
+
+        <!-- Status -->
+        <Label fx:id="statusLabel" text="" textFill="RED" wrapText="true" maxWidth="420"/>
+    </VBox>
+</AnchorPane>

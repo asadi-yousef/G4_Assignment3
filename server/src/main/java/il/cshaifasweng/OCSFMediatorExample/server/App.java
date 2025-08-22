@@ -18,7 +18,10 @@ public class App {
 
     private static SessionFactory getSessionFactory() throws HibernateException {
         Configuration configuration = new Configuration();
-        String password = "1@2@3@4_5Tuf";
+        String password;
+        System.out.println("Please enter your MySQL password: ");
+        Scanner scanner = new Scanner(System.in);
+        password = scanner.nextLine();
         configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
 
         configuration.setProperty("hibernate.connection.password", password);

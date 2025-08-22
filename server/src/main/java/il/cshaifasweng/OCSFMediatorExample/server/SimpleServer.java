@@ -137,6 +137,9 @@ public class SimpleServer extends AbstractServer {
 				else if (msgString.equals("check existence")) {
 					handleUserAuthentication(message, client, session);
 				}
+				else if(msgString.equals("submit_complaint")){
+					handleSubmitComplaint(message, client);
+				}
 
 			}
 
@@ -160,6 +163,12 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
+	private void handleSubmitComplaint(Message msg, ConnectionToClient client) {
+		Customer customer = (Customer) (msg.getObjectList().get(1));
+		Complaint complaint = (Complaint) msg.getObjectList().get(0);
+		Order order = (Order) msg.getObjectList().get(2);
+
+	}
 	private void handleBranchesRequest(Message msg, ConnectionToClient client) throws IOException {
 		List<Branch> branches = getListFromDB(Branch.class);
 		for (Branch branch : branches) {
