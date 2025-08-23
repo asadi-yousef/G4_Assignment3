@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="il.cshaifasweng.OCSFMediatorExample.client.CancelOrderController"
+      spacing="15"
+      alignment="CENTER"
+      style="-fx-background-color: #ffffff; -fx-padding: 20; -fx-background-radius: 10;">
+
+    <Label text="Cancel Order"
+           style="-fx-font-size: 20px; -fx-font-weight: bold;" />
+
+    <Label text="Are you sure you want to cancel this order?" />
+
+    <Label text="Reason (optional):" />
+    <TextArea fx:id="reasonField" prefRowCount="3"
+              style="-fx-background-radius: 5;" />
+
+    <HBox spacing="10" alignment="CENTER">
+        <Button fx:id="confirmButton" text="Confirm" onAction="#handleConfirmCancel"
+                style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-padding: 5 15; -fx-background-radius: 5;" />
+        <Button fx:id="backButton" text="Back" onAction="#handleBack"
+                style="-fx-background-color: #bdc3c7; -fx-text-fill: black; -fx-padding: 5 15; -fx-background-radius: 5;" />
+    </HBox>
+
+</VBox>

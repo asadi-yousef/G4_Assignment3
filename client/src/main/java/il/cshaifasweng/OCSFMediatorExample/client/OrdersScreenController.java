@@ -24,6 +24,11 @@ import java.util.Objects;
 import java.util.ResourceBundle;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Scene;
+import javafx.stage.Stage;
+import javafx.stage.Window;
+
 
 
 public class OrdersScreenController implements Initializable {
@@ -184,8 +189,57 @@ public class OrdersScreenController implements Initializable {
             }
         }
 
+        if (order.getDeliveryDateTime() != null) {
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime deliveryTime = order.getDeliveryDateTime();
+
+            // Add cancel button if delivery date is in the future
+            if (deliveryTime.isAfter(now)) {
+                Button cancelButton = new Button("Cancel Order");
+                cancelButton.setStyle("-fx-background-color: #f39c12; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
+                cancelButton.setCursor(javafx.scene.Cursor.HAND);
+
+                cancelButton.setOnAction(e -> openCancelOrderPopup(order));
+
+                container.getChildren().add(cancelButton);
+            }
+        }
+
         return container;
     }
+
+    private void openCancelOrderPopup(Order order) {
+        try {
+            SessionManager.getInstance().setSelectedOrder(order);
+
+            FXMLLoader loader = new FXMLLoader(getClass().getResource(
+                    "/il/cshaifasweng/OCSFMediatorExample/client/cancelOrder.fxml"
+            ));
+            VBox root = loader.load();
+
+            Stage stage = new Stage();
+            stage.setTitle("Cancel Order");
+            stage.setScene(new Scene(root));
+            stage.initOwner(ordersListView.getScene().getWindow()); // optional: makes it modal to main window
+            stage.show();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+            showAlert("Error", "Failed to open cancel order popup.");
+        }
+    }
+
+
+    @Subscribe
+    public void onOrderCanceled(Message msg) {
+        if ("order_canceled".equals(msg.getMessage())) {
+            int canceledOrderId = (int) msg.getObject();
+            orders.removeIf(o -> o.getId() == canceledOrderId);
+            renderOrders();
+            showAlert("Success", "Order #" + canceledOrderId + " has been canceled.");
+        }
+    }
+
 
     private void openComplaintPage(Order order) {
         try {

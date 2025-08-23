@@ -137,6 +137,9 @@ public class SimpleServer extends AbstractServer {
 				else if (msgString.equals("check existence")) {
 					handleUserAuthentication(message, client, session);
 				}
+				else if(msgString.startsWith("cancel_order")) {
+					handleCancelOrder(message, client);
+				}
 
 			}
 
@@ -911,7 +914,43 @@ public class SimpleServer extends AbstractServer {
 	}
 
 
+	private void handleCancelOrder(Message message, ConnectionToClient client) {
+		EntityManager em = emf.createEntityManager();
+		try {
+			Long orderId = (Long) message.getObjectList().get(0);
+			Order order = em.find(Order.class, orderId);
+			if (order == null) {
+				client.sendToClient(new Message("order_cancel_error", "Order not found", null));
+				return;
+			}
 
+			em.getTransaction().begin();
+
+			// Remove associated items first
+			if (order.getItems() != null) {
+				for (OrderItem item : order.getItems()) {
+					if (!em.contains(item)) {
+						item = em.merge(item);
+					}
+					em.remove(item);
+				}
+			}
+
+			em.remove(order);
+			em.getTransaction().commit();
+
+			client.sendToClient(new Message("order_cancelled_successfully", orderId, null));
+		} catch (Exception e) {
+			e.printStackTrace();
+			try {
+				client.sendToClient(new Message("order_cancel_error", "Failed to cancel order", null));
+			} catch (IOException ex) {
+				ex.printStackTrace();
+			}
+		} finally {
+			em.close();
+		}
+	}
 
 
 

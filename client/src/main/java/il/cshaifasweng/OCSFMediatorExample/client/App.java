@@ -20,6 +20,9 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 import javafx.geometry.Rectangle2D;  // Rectangle2D class
 import javafx.stage.Screen;
+import javafx.stage.Modality;
+import il.cshaifasweng.OCSFMediatorExample.entities.Order;
+
 
 /**
  * JavaFX App
@@ -32,6 +35,7 @@ public class App extends Application {
 
     @Override
     public void start(Stage stage) throws IOException {
+        primaryStage = stage;
         EventBus.getDefault().register(this);
         client = SimpleClient.getClient();
         client.openConnection();
@@ -75,6 +79,16 @@ public class App extends Application {
         client.sendToServer("remove client");
         client.closeConnection();
         super.stop();
+    }
+
+    public static void openPopup(String fxml, String title) throws IOException {
+        FXMLLoader fxmlLoader = new FXMLLoader(App.class.getResource(fxml + ".fxml"));
+        Scene scene = new Scene(fxmlLoader.load());
+        Stage stage = new Stage();
+        stage.setTitle(title);
+        stage.setScene(scene);
+        stage.initModality(Modality.APPLICATION_MODAL); // blocks until closed
+        stage.showAndWait();
     }
 
     @Subscribe

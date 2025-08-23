@@ -29,7 +29,7 @@
             <property name="jakarta.persistence.jdbc.driver" value="com.mysql.cj.jdbc.Driver"/>
             <property name="jakarta.persistence.jdbc.url" value="jdbc:mysql://localhost:3306/MyFirstDataBase?createDatabaseIfNotExist=true&amp;useSSL=false&amp;serverTimezone=UTC"/>
             <property name="jakarta.persistence.jdbc.user" value="root"/>
-            <property name="jakarta.persistence.jdbc.password" value="1@2@3@4_5Tuf"/>
+            <property name="jakarta.persistence.jdbc.password" value="Renata123"/>
 
             <!-- Hibernate Settings -->
             <property name="hibernate.dialect" value="org.hibernate.dialect.MySQL8Dialect"/>
