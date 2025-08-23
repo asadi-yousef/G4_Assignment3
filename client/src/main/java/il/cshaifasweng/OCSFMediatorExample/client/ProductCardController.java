@@ -16,8 +16,12 @@ import javafx.scene.text.Text;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
-import java.io.*;
-import java.util.Objects;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URL;
 import java.util.function.Consumer;
 
 public class ProductCardController {
@@ -35,24 +39,24 @@ public class ProductCardController {
 
     private Product currentProduct;
 
+    // allows caller to override the second button label (defaults to "Add to Cart")
+    private String secondaryActionLabel = "Add to Cart";
+
     @FXML
     public void initialize() {
         if (editVBox != null) {
             editVBox.setVisible(false);
             editVBox.setManaged(false);
         }
+        if (productImageView != null) {
+            productImageView.setCache(false); // avoid node-level caching glitches
+        }
     }
 
     private void populateDisplayData() {
-        // This method remains the same.
         nameLabel.setText(currentProduct.getName());
         typeLabel.setText("Type: " + currentProduct.getType());
-        try {
-            Image image = new Image(Objects.requireNonNull(getClass().getResource(currentProduct.getImagePath())).toExternalForm());
-            productImageView.setImage(image);
-        } catch (Exception e) {
-            System.err.println("Failed to load image: " + currentProduct.getImagePath());
-        }
+        setImageFromPath(currentProduct.getImagePath());
         try {
             colorDisplayRect.setFill(Color.web(currentProduct.getColor()));
         } catch (Exception e) {
@@ -77,10 +81,72 @@ public class ProductCardController {
     }
 
     /**
+     * Load an image robustly from:
+     * - file: URL (via InputStream for freshness)
+     * - absolute filesystem path
+     * - classpath resource (for seeded images)
+     */
+    private void setImageFromPath(String path) {
+        if (path == null || path.isBlank()) {
+            productImageView.setImage(null);
+            return;
+        }
+
+        Image img = null;
+        try {
+            // 1) file: URL → read via InputStream to avoid any URL caching quirks
+            if (path.startsWith("file:")) {
+                try {
+                    java.io.File f = new java.io.File(java.net.URI.create(path));
+                    if (f.exists()) {
+                        try (InputStream is = new FileInputStream(f)) {
+                            img = new Image(is);
+                        }
+                    } else {
+                        System.err.println("file: URL does not exist: " + path);
+                    }
+                } catch (IllegalArgumentException badUri) {
+                    // Fallback: let JavaFX try the URL directly
+                    img = new Image(path, true);
+                }
+            }
+            // 2) Remote URL
+            else if (path.startsWith("http://") || path.startsWith("https://")) {
+                img = new Image(path, true);
+            }
+            // 3) Raw absolute filesystem path (no scheme)
+            else {
+                File f = new File(path);
+                if (f.isAbsolute() && f.exists()) {
+                    try (InputStream is = new FileInputStream(f)) {
+                        img = new Image(is);
+                    }
+                }
+                // 4) Fallback: classpath resource
+                else if (path.startsWith("/")) {
+                    URL res = getClass().getResource(path);
+                    if (res != null) {
+                        img = new Image(res.toExternalForm(), true);
+                    } else {
+                        System.err.println("Classpath resource not found: " + path);
+                    }
+                } else {
+                    System.err.println("Unrecognized image path: " + path);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error loading image '" + path + "': " + e);
+        }
+
+        if (img != null) {
+            productImageView.setImage(img);
+        } else {
+            System.err.println("Failed to resolve image: " + path);
+        }
+    }
+
+    /**
      * setData method for an Employee.
-     * @param product The product to display.
-     * @param saveAction The logic to execute when the Save button is clicked.
-     * @param deleteAction The logic to execute when the Delete button is clicked.
      */
     public void setData(Product product, Consumer<Product> saveAction, Runnable deleteAction) {
         this.currentProduct = product;
@@ -99,9 +165,6 @@ public class ProductCardController {
 
     /**
      * setData method for a Customer.
-     * @param product The product to display.
-     * @param viewAction The logic for the "View" button.
-     * @param addToCartAction The logic for the "Add to Cart" button.
      */
     public void setData(Product product, Runnable viewAction, Runnable addToCartAction) {
         this.currentProduct = product;
@@ -111,30 +174,33 @@ public class ProductCardController {
         Button viewButton = new Button("View");
         viewButton.setOnAction(e -> viewAction.run());
 
-        Button addToCartButton = new Button("Add to Cart");
-        addToCartButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
-        addToCartButton.setOnAction(e -> addToCartAction.run());
+        Button secondaryButton = new Button(secondaryActionLabel);
+        secondaryButton.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white;");
+        secondaryButton.setOnAction(e -> addToCartAction.run());
 
-        buttonBox.getChildren().addAll(viewButton, addToCartButton);
+        buttonBox.getChildren().addAll(viewButton, secondaryButton);
+        secondaryActionLabel = "Add to Cart"; // reset for next call
     }
 
-    /**
-     * Method to show the edit form with empty fields for creating a new product.
-     * @param saveAction The logic to execute when the Save button is clicked.
-     * @param cancelAction The logic to execute when the Cancel button is clicked.
-     */
+    // Convenience overload (e.g., to show "Select")
+    public void setData(Product product, Runnable viewAction, Runnable secondaryAction, String secondaryLabel) {
+        setSecondaryActionLabel(secondaryLabel != null && !secondaryLabel.isEmpty() ? secondaryLabel : "Add to Cart");
+        setData(product, viewAction, secondaryAction);
+    }
+
+    public void setSecondaryActionLabel(String text) {
+        this.secondaryActionLabel = (text != null && !text.isEmpty()) ? text : "Add to Cart";
+    }
+
+    /** Show the add-product form with empty fields. */
     public void showAddProductForm(Consumer<Product> saveAction, Runnable cancelAction) {
         this.currentProduct = null;
-
-        // Hide display view and show edit view
         if (displayVBox != null) {
             displayVBox.setVisible(false);
             displayVBox.setManaged(false);
         }
         editVBox.setVisible(true);
         editVBox.setManaged(true);
-
-        // Build the form with empty fields
         buildEditForm(saveAction, cancelAction, true);
     }
 
@@ -143,22 +209,17 @@ public class ProductCardController {
         displayVBox.setManaged(false);
         editVBox.setVisible(true);
         editVBox.setManaged(true);
-
         buildEditForm(saveAction, this::switchToDisplayMode, false);
     }
 
     /**
      * Builds the edit form UI with the specified save and cancel actions.
-     * @param saveAction The action to execute when saving.
-     * @param cancelAction The action to execute when canceling.
-     * @param isNewProduct Whether this is for creating a new product (empty fields) or editing existing.
      */
     private void buildEditForm(Consumer<Product> saveAction, Runnable cancelAction, boolean isNewProduct) {
         editVBox.getChildren().clear();
         editVBox.setPadding(new Insets(10));
         editVBox.setSpacing(10);
 
-        // Create form fields with appropriate default values
         TextField nameField = new TextField(isNewProduct ? "" : currentProduct.getName());
         TextField typeField = new TextField(isNewProduct ? "" : currentProduct.getType());
         TextField priceField = new TextField(isNewProduct ? "" : String.format("%.2f", currentProduct.getPrice()));
@@ -166,7 +227,6 @@ public class ProductCardController {
         ColorPicker colorPicker = new ColorPicker(isNewProduct ? Color.WHITE : Color.web(currentProduct.getColor()));
         TextField imagePathField = new TextField(isNewProduct ? "" : currentProduct.getImagePath());
 
-        // Add placeholders for better UX
         if (isNewProduct) {
             nameField.setPromptText("Enter product name");
             typeField.setPromptText("Enter product type");
@@ -195,7 +255,6 @@ public class ProductCardController {
         Button cancelButton = new Button("Cancel");
         HBox actionButtons = new HBox(10, saveButton, cancelButton);
 
-        // Create grid layout
         GridPane grid = new GridPane();
         grid.setVgap(8);
         grid.setHgap(10);
@@ -208,20 +267,16 @@ public class ProductCardController {
 
         editVBox.getChildren().addAll(grid, actionButtons);
 
-        // Set up button actions
         cancelButton.setOnAction(e -> cancelAction.run());
 
         saveButton.setOnAction(e -> {
             try {
-                // Create new product if this is for adding, or update existing product
                 Product productToSave = isNewProduct ? new Product() : currentProduct;
 
-                // Validate required fields
                 if (nameField.getText().trim().isEmpty()) {
                     new Alert(Alert.AlertType.ERROR, "Product name is required.").showAndWait();
                     return;
                 }
-
                 if (priceField.getText().trim().isEmpty()) {
                     new Alert(Alert.AlertType.ERROR, "Price is required.").showAndWait();
                     return;
@@ -229,37 +284,64 @@ public class ProductCardController {
 
                 productToSave.setName(nameField.getText().trim());
                 productToSave.setType(typeField.getText().trim());
-                productToSave.setPrice(Double.parseDouble(priceField.getText()));
-                productToSave.setDiscountPercentage(Double.parseDouble(discountField.getText()));
+                productToSave.setPrice(Double.parseDouble(priceField.getText().trim()));
+
+                double discount = 0.0;
+                String d = discountField.getText() == null ? "" : discountField.getText().trim();
+                if (!d.isEmpty()) discount = Double.parseDouble(d);
+                discount = Math.max(0, Math.min(100, discount));
+                productToSave.setDiscountPercentage(discount);
+
                 productToSave.setColor(toHexString(colorPicker.getValue()));
 
-                String pathFromField = imagePathField.getText().trim();
-                if (!pathFromField.isEmpty() && !pathFromField.startsWith("/")) {
+                // ----- IMAGE PATH HANDLING -----
+                String pathFromField = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
+
+                if (pathFromField.isEmpty()) {
+                    if (isNewProduct) {
+                        productToSave.setImagePath("");
+                    } else {
+                        productToSave.setImagePath(currentProduct.getImagePath());
+                    }
+                }
+                else if (pathFromField.startsWith("file:")) {
+                    productToSave.setImagePath(pathFromField);
+                }
+                else if (pathFromField.startsWith("/")) {
+                    productToSave.setImagePath(pathFromField);
+                }
+                else {
                     File sourceFile = new File(pathFromField);
                     if (sourceFile.exists()) {
                         File destDir = new File("src/main/resources/il/cshaifasweng/OCSFMediatorExample/client/images");
                         if (!destDir.exists()) destDir.mkdirs();
                         String fileName = sourceFile.getName();
                         File destFile = new File(destDir, fileName);
-                        try (InputStream in = new FileInputStream(sourceFile); OutputStream out = new FileOutputStream(destFile)) {
+                        try (InputStream in = new FileInputStream(sourceFile);
+                             OutputStream out = new FileOutputStream(destFile)) {
                             in.transferTo(out);
                         }
-                        productToSave.setImagePath("/il/cshaifasweng/OCSFMediatorExample/client/images/" + fileName);
+                        productToSave.setImagePath(destFile.toURI().toString());
+                    } else {
+                        productToSave.setImagePath(pathFromField);
                     }
-                } else {
-                    productToSave.setImagePath(pathFromField);
                 }
 
-                System.out.println("DEBUG: color to save: " + productToSave.getColor());
+                System.out.println("DEBUG save imagePath: " + productToSave.getImagePath());
+
+                // Send to server
                 saveAction.accept(productToSave);
 
+                // On edit, update the in-card model and re-render immediately
                 if (!isNewProduct) {
+                    this.currentProduct = productToSave;
                     switchToDisplayMode();
                 }
+
             } catch (NumberFormatException ex) {
                 new Alert(Alert.AlertType.ERROR, "Price and Discount must be valid numbers.").showAndWait();
-            } catch (IOException ex) {
-                new Alert(Alert.AlertType.ERROR, "Could not copy image file: " + ex.getMessage()).showAndWait();
+            } catch (Exception ex) {
+                new Alert(Alert.AlertType.ERROR, "Could not save product: " + ex.getMessage()).showAndWait();
             }
         });
     }

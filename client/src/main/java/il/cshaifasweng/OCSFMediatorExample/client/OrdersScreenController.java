@@ -16,6 +16,7 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URL;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -201,74 +202,69 @@ public class OrdersScreenController implements Initializable {
 
 
     private HBox createOrderItemBox(OrderItem item) {
-        HBox itemBox = new HBox(15); // Increased spacing
+        HBox itemBox = new HBox(15);
         itemBox.setAlignment(Pos.CENTER_LEFT);
-        itemBox.setPadding(new Insets(10)); // Added padding
+        itemBox.setPadding(new Insets(10));
         itemBox.setStyle("-fx-background-color: white; -fx-background-radius: 8; -fx-border-color: #dee2e6; -fx-border-width: 1; -fx-border-radius: 8;");
-        itemBox.setPrefWidth(Region.USE_COMPUTED_SIZE); // Use full width
+        itemBox.setPrefWidth(Region.USE_COMPUTED_SIZE);
         itemBox.setMaxWidth(Double.MAX_VALUE);
 
-        // Product image - make much bigger
         ImageView productImage = new ImageView();
-        productImage.setFitWidth(80); // Increased from 50 to 80
-        productImage.setFitHeight(80); // Increased from 50 to 80
+        productImage.setFitWidth(80);
+        productImage.setFitHeight(80);
         productImage.setPreserveRatio(true);
-        productImage.setStyle("-fx-background-color: #f8f9fa; -fx-background-radius: 8;");
 
-        String imageUrl = null;
+        VBox info = new VBox(5);
+        info.setAlignment(Pos.CENTER_LEFT);
+
+        String name;
+        BigDecimal unitPrice = BigDecimal.valueOf(0.0);
+
         if (item.getProduct() != null) {
-            try {
-                imageUrl = item.getProduct().getImagePath();
-            } catch (Exception e) {
-                imageUrl = null;
-            }
-        }
+            Product p = item.getProduct();
+            name = p.getName();
+            unitPrice = BigDecimal.valueOf(p.getPrice());
 
-        if (imageUrl != null && !imageUrl.isEmpty()) {
-            try {
-                Image img = new Image(imageUrl, true);
-                productImage.setImage(img);
-            } catch (Exception e) {
-                // fallback: no image - add a placeholder
-                productImage.setStyle("-fx-background-color: #ecf0f1; -fx-background-radius: 8;");
+            // If your Product.imagePath is a URL/absolute path, keep using it.
+            // If it's a classpath resource, prefer getResource(...).toExternalForm().
+            String imagePath = p.getImagePath();
+            if (imagePath != null && !imagePath.isEmpty()) {
+                try { productImage.setImage(new Image(imagePath, true)); } catch (Exception ignored) {}
             }
+        } else if (item.getCustomBouquet() != null) {
+            name = "Custom Bouquet";
+            unitPrice = item.getCustomBouquet().getTotalPrice();
+
+            // Classpath resource for bouquet icon:
+            try {
+                String url = getClass()
+                        .getResource("/il/cshaifasweng/OCSFMediatorExample/client/images/custombouquet.png")
+                        .toExternalForm();
+                productImage.setImage(new Image(url, true));
+            } catch (Exception ignored) {}
         } else {
-            // Add placeholder styling when no image
-            productImage.setStyle("-fx-background-color: #ecf0f1; -fx-background-radius: 8;");
+            name = "Unknown item";
         }
 
-        // Product info - make bigger and add more details
-        VBox productInfo = new VBox(5);
-        productInfo.setAlignment(Pos.CENTER_LEFT);
+        Label nameLbl = new Label(name);
+        nameLbl.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;");
 
-        Label productNameLabel = new Label(item.getProduct().getName());
-        productNameLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;"); // Much larger font
-        productNameLabel.setWrapText(true);
+        Label qtyLbl = new Label("Quantity: " + item.getQuantity());
+        qtyLbl.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;");
 
-        Label quantityLabel = new Label("Quantity: " + item.getQuantity());
-        quantityLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;"); // Larger font
-
-        // Add price if available (assuming OrderItem has getPrice() method)
-        try {
-            double price = item.getProduct().getPrice();
-            if (price > 0) {
-                Label priceLabel = new Label("Price: $" + String.format("%.2f", price));
-                priceLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #27ae60; -fx-font-weight: bold;");
-                productInfo.getChildren().add(priceLabel);
-            }
-        } catch (Exception e) {
-            // Price not available or method doesn't exist
+        if (unitPrice.intValue() > 0) {
+            Label priceLbl = new Label("Price: $" + String.format("%.2f", unitPrice));
+            priceLbl.setStyle("-fx-font-size: 16px; -fx-text-fill: #27ae60; -fx-font-weight: bold;");
+            info.getChildren().addAll(nameLbl, qtyLbl, priceLbl);
+        } else {
+            info.getChildren().addAll(nameLbl, qtyLbl);
         }
 
-        productInfo.getChildren().addAll(productNameLabel, quantityLabel);
-
-        // Make product info take remaining space
-        HBox.setHgrow(productInfo, Priority.ALWAYS);
-
-        itemBox.getChildren().addAll(productImage, productInfo);
-
+        HBox.setHgrow(info, Priority.ALWAYS);
+        itemBox.getChildren().addAll(productImage, info);
         return itemBox;
     }
+
 
     @FXML
     public void handleBackToCatalog(ActionEvent event) {

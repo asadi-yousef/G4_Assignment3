@@ -24,6 +24,8 @@
         <class>il.cshaifasweng.OCSFMediatorExample.entities.ComplaintsReport</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.IncomeReport</class>
         <class>il.cshaifasweng.OCSFMediatorExample.entities.OrderRequest</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.CustomBouquet</class>
+        <class>il.cshaifasweng.OCSFMediatorExample.entities.CustomBouquetItem</class>
 
         <properties>
             <property name="jakarta.persistence.jdbc.driver" value="com.mysql.cj.jdbc.Driver"/>

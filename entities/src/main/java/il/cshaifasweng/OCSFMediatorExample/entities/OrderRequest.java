@@ -3,6 +3,7 @@ package il.cshaifasweng.OCSFMediatorExample.entities;
 import java.io.Serializable;
 
 public class OrderRequest implements Serializable {
+    private static final long serialVersionUID = 1L;
     private Long customerId;
 
     public OrderRequest() {}

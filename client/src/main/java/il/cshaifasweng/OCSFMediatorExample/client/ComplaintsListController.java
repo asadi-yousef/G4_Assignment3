@@ -79,7 +79,7 @@ public class ComplaintsListController implements Initializable {
     @FXML
     private void handleBack() {
         try {
-            App.setRoot("employee_dashboard"); // adjust if different
+            App.setRoot("primary");
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

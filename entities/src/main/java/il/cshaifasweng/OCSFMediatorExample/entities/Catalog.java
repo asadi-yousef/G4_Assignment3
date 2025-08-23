@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Objects;
 
 public class Catalog implements Serializable {
+    private static final long serialVersionUID = 1L;
     private List<Product> products = new ArrayList<>();
 
 

@@ -31,7 +31,7 @@ public class AddProductController implements Initializable {
     @FXML private Label statusLabel;
     @FXML private Label discountInfoLabel;
 
-    // Callback functions
+    // Callbacks (optional)
     private Consumer<Product> onProductSaved;
     private Runnable onCancel;
 
@@ -40,6 +40,9 @@ public class AddProductController implements Initializable {
         setupValidation();
         setupDiscountListener();
         colorPicker.setValue(Color.WHITE);
+        if (discountField != null && discountField.getText().isBlank()) {
+            discountField.setText("0");
+        }
     }
 
     public void setCallbacks(Consumer<Product> onProductSaved, Runnable onCancel) {
@@ -75,7 +78,6 @@ public class AddProductController implements Initializable {
 
         Stage stage = (Stage) browseButton.getScene().getWindow();
         File selectedFile = fileChooser.showOpenDialog(stage);
-
         if (selectedFile != null) {
             imagePathField.setText(selectedFile.getAbsolutePath());
         }
@@ -90,17 +92,28 @@ public class AddProductController implements Initializable {
         saveButton.setDisable(true);
         showStatus("Creating product...", false);
 
-        Task<Product> createProductTask = new Task<Product>() {
+        Task<Product> createProductTask = new Task<>() {
             @Override
             protected Product call() throws Exception {
                 Product product = new Product();
                 product.setName(nameField.getText().trim());
                 product.setType(typeField.getText().trim());
                 product.setPrice(Double.parseDouble(priceField.getText().trim()));
-                product.setDiscountPercentage(Double.parseDouble(discountField.getText().trim()));
+
+                // Discount: default to 0 if empty, clamp to [0, 100]
+                double discount = 0.0;
+                String d = discountField.getText() == null ? "" : discountField.getText().trim();
+                if (!d.isEmpty()) {
+                    discount = Double.parseDouble(d);
+                }
+                discount = Math.max(0, Math.min(100, discount));
+                product.setDiscountPercentage(discount);
+
                 product.setColor(toHexString(colorPicker.getValue()));
 
-                String imagePath = processImagePath(imagePathField.getText().trim());
+                String rawImagePath = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
+                String imagePath = processImagePath(rawImagePath);
+                System.out.println("DEBUG save imagePath (ADD): " + imagePath);
                 product.setImagePath(imagePath);
 
                 sendProductToServer(product);
@@ -111,24 +124,22 @@ public class AddProductController implements Initializable {
         createProductTask.setOnSucceeded(e -> {
             Product product = createProductTask.getValue();
             showStatus("Product created and saved to server successfully!", false);
-
             if (onProductSaved != null) {
                 onProductSaved.accept(product);
             }
-
             clearForm();
             saveButton.setDisable(false);
         });
 
         createProductTask.setOnFailed(e -> {
             Throwable exception = createProductTask.getException();
-            showStatus("Failed to create product: " + exception.getMessage(), true);
+            showStatus("Failed to create product: " + (exception != null ? exception.getMessage() : "Unknown error"), true);
             saveButton.setDisable(false);
 
             Alert alert = new Alert(Alert.AlertType.ERROR);
             alert.setTitle("Error Creating Product");
             alert.setHeaderText("Failed to create the product");
-            alert.setContentText(exception.getMessage());
+            alert.setContentText(exception != null ? exception.getMessage() : "Unknown error");
             alert.showAndWait();
         });
 
@@ -141,11 +152,8 @@ public class AddProductController implements Initializable {
         try {
             Message msg = new Message("add_product", product, null);
             SimpleClient.getClient().sendToServer(msg);
-
             System.out.println("DEBUG: Sending product to server: " + product.getName());
-            Thread.sleep(1000);
-            System.out.println("DEBUG: Product saved successfully on server");
-
+            System.out.println("DEBUG: Product save request sent to server");
         } catch (Exception e) {
             System.err.println("Error sending product to server: " + e.getMessage());
             throw new Exception("Failed to save product to server: " + e.getMessage(), e);
@@ -171,7 +179,7 @@ public class AddProductController implements Initializable {
         }
         try {
             App.setRoot("primary");
-        }catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -182,11 +190,9 @@ public class AddProductController implements Initializable {
         if (nameField.getText().trim().isEmpty()) {
             errors.append("• Product name is required\n");
         }
-
         if (typeField.getText().trim().isEmpty()) {
             errors.append("• Product type is required\n");
         }
-
         if (priceField.getText().trim().isEmpty()) {
             errors.append("• Price is required\n");
         } else {
@@ -200,9 +206,11 @@ public class AddProductController implements Initializable {
             }
         }
 
-        if (!discountField.getText().trim().isEmpty()) {
+        // Discount is optional; if provided, validate the range
+        String d = discountField.getText() == null ? "" : discountField.getText().trim();
+        if (!d.isEmpty()) {
             try {
-                double discount = Double.parseDouble(discountField.getText().trim());
+                double discount = Double.parseDouble(d);
                 if (discount < 0 || discount > 100) {
                     errors.append("• Discount must be between 0 and 100\n");
                 }
@@ -219,38 +227,50 @@ public class AddProductController implements Initializable {
             alert.showAndWait();
             return false;
         }
-
         return true;
     }
 
+    /**
+     * Returns a path that JavaFX can load immediately.
+     * - If input starts with "file:", return as-is.
+     * - If input starts with "/" (classpath), return as-is (for seeded images).
+     * - Else, treat as raw filesystem path, copy into resources/images, and return a file: URL.
+     */
     private String processImagePath(String imagePath) throws IOException {
-        if (imagePath.isEmpty()) {
+        if (imagePath == null || imagePath.isEmpty()) {
             return "";
         }
 
+        // Already a file URL → use as-is
+        if (imagePath.startsWith("file:")) {
+            return imagePath;
+        }
+
+        // Classpath path (prepackaged) → keep as-is
         if (imagePath.startsWith("/")) {
             return imagePath;
         }
 
+        // Otherwise: treat as a raw filesystem path and copy
         File sourceFile = new File(imagePath);
-        if (sourceFile.exists()) {
-            File destDir = new File("src/main/resources/il/cshaifasweng/OCSFMediatorExample/client/images");
-            if (!destDir.exists()) {
-                destDir.mkdirs();
-            }
-
-            String fileName = sourceFile.getName();
-            File destFile = new File(destDir, fileName);
-
-            try (InputStream in = new FileInputStream(sourceFile);
-                 OutputStream out = new FileOutputStream(destFile)) {
-                in.transferTo(out);
-            }
-
-            return "/il/cshaifasweng/OCSFMediatorExample/client/images/" + fileName;
+        if (!sourceFile.exists()) {
+            // If the typed path doesn't exist, just store what was provided
+            return imagePath;
         }
 
-        return imagePath;
+        File destDir = new File("src/main/resources/il/cshaifasweng/OCSFMediatorExample/client/images");
+        if (!destDir.exists()) destDir.mkdirs();
+
+        String fileName = sourceFile.getName();
+        File destFile = new File(destDir, fileName);
+
+        try (InputStream in = new FileInputStream(sourceFile);
+             OutputStream out = new FileOutputStream(destFile)) {
+            in.transferTo(out);
+        }
+
+        // Return a file URL so JavaFX can load it immediately at runtime
+        return destFile.toURI().toString();
     }
 
     private void setupValidation() {
@@ -271,6 +291,8 @@ public class AddProductController implements Initializable {
                     } else {
                         priceField.setStyle("");
                     }
+                } else {
+                    priceField.setStyle("");
                 }
             } catch (NumberFormatException e) {
                 priceField.setStyle("-fx-border-color: red;");
@@ -309,7 +331,7 @@ public class AddProductController implements Initializable {
                 !typeField.getText().trim().isEmpty() ||
                 !imagePathField.getText().trim().isEmpty() ||
                 !priceField.getText().trim().isEmpty() ||
-                !discountField.getText().equals("0");
+                !(discountField.getText() != null && discountField.getText().trim().equals("0"));
     }
 
     private void clearForm() {
@@ -333,7 +355,7 @@ public class AddProductController implements Initializable {
             statusLabel.setVisible(true);
 
             if (!isError) {
-                Task<Void> hideTask = new Task<Void>() {
+                Task<Void> hideTask = new Task<>() {
                     @Override
                     protected Void call() throws Exception {
                         Thread.sleep(3000);

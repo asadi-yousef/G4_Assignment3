@@ -35,6 +35,13 @@
                   <Button onAction="#handleCart" text="My Cart" />
                   <Button onAction="#handleOrdersScreen" text="My Orders" />
                   <Button onAction="#handleComplaints" text="Complaints" />
+
+                  <!-- NEW: customer-only button (controller toggles visibility) -->
+                  <Button fx:id="makeCustomBouquetButton"
+                          text="Make a Custom Bouquet"
+                          onAction="#handleMakeCustomBouquet"
+                          visible="false" managed="false"/>
+
                   <Pane HBox.hgrow="ALWAYS" />
                   <Button onAction="#handleProfile" style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-background-radius: 8;" text="👤 Profile">
                      <font><Font name="System Bold" size="14.0" /></font>
@@ -67,6 +74,11 @@
                   <TextField fx:id="minPriceField" promptText="Min Price" prefWidth="100" />
                   <TextField fx:id="maxPriceField" promptText="Max Price" prefWidth="100" />
                   <Button fx:id="clearFiltersButton" onAction="#handleClearFilters" text="Clear Filters" />
+
+                  <!-- NEW: optional status label for custom mode -->
+                  <Label fx:id="customStatusLabel"
+                         text=""
+                         visible="false" managed="false"/>
                </children>
             </HBox>
 

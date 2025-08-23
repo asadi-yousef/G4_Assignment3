@@ -160,59 +160,48 @@ public class OrderController implements Initializable {
             }
             Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
 
-            String deliveryMethod = deliveryRadio.isSelected() ? "Delivery" :
-                    pickupRadio.isSelected() ? "Pickup" : null;
+            String deliveryMethod = deliveryRadio.isSelected() ? "Delivery"
+                    : (pickupRadio.isSelected() ? "Pickup" : null);
             if (deliveryMethod == null) {
                 showAlert("Missing Data", "Please select delivery or pickup.");
                 return;
             }
 
             String storeLocation = null;
+            LocalDateTime deliveryTime = null;
+            String recipientPhone = null;
+            String deliveryAddress = null;
+
             if ("Pickup".equals(deliveryMethod)) {
                 storeLocation = storeLocationChoice.getValue();
                 if (storeLocation == null) {
                     showAlert("Missing Data", "Please select a store location.");
                     return;
                 }
-            }
-
-            ZoneId israelZone = ZoneId.of("Asia/Jerusalem");
-
-            LocalDate date = deliveryDatePicker.getValue();
-            Integer hour = deliveryHourSpinner.getValue();
-            if (date == null || date.isBefore(LocalDate.now())) {
-                showAlert("Invalid Date", "Please select a valid delivery date.");
-                return;
-            }
-            LocalDateTime deliveryTime = date.atTime(hour + 3, 0);
-            //ZonedDateTime israelDateTime = deliveryTime.atZone(israelZone);
-            //deliveryTime = israelDateTime.toLocalDateTime();
-
-
-
-            String recipientPhone = null;
-            if ("Delivery".equals(deliveryMethod)) {
-                if (differentRecipientCheck.isSelected()) {
-                    recipientPhone = recipientPhoneField.getText();
-                    if (recipientPhone == null || recipientPhone.trim().isEmpty()) {
-                        showAlert("Missing Data", "Please enter the recipient's phone number.");
-                        return;
-                    }
-                } else {
-                    recipientPhone = customer.getPhone();
+            } else { // Delivery
+                LocalDate date = deliveryDatePicker.getValue();
+                Integer hour = deliveryHourSpinner.getValue();
+                if (date == null || date.isBefore(LocalDate.now())) {
+                    showAlert("Invalid Date", "Please select a valid delivery date.");
+                    return;
                 }
-            }
+                // No +3 offset here; if you need a timezone, handle it server-side with ZoneId.
+                deliveryTime = date.atTime(hour, 0);  // 0–23 hour is valid for LocalDateTime. :contentReference[oaicite:2]{index=2}
 
-            String deliveryAddress = null;
-            if ("Delivery".equals(deliveryMethod)) {
                 deliveryAddress = deliveryAddressField.getText();
                 if (deliveryAddress == null || deliveryAddress.trim().isEmpty()) {
                     showAlert("Missing Data", "Please enter the delivery address.");
                     return;
                 }
-            }
 
-            String orderNote = orderNoteField.getText();
+                recipientPhone = differentRecipientCheck.isSelected()
+                        ? recipientPhoneField.getText()
+                        : customer.getPhone();
+                if (recipientPhone == null || recipientPhone.trim().isEmpty()) {
+                    showAlert("Missing Data", "Please enter the recipient's phone number.");
+                    return;
+                }
+            }
 
             String paymentMethod = paymentMethodChoice.getValue();
             if (paymentMethod == null) {
@@ -221,6 +210,10 @@ public class OrderController implements Initializable {
             }
             String paymentDetails = null;
             if ("Saved Card".equals(paymentMethod)) {
+                if (customer.getCreditCard() == null || customer.getCreditCard().getCardNumber() == null) {
+                    showAlert("Missing Data", "No saved card on file.");
+                    return;
+                }
                 paymentDetails = customer.getCreditCard().getCardNumber();
             } else if ("New Card".equals(paymentMethod)) {
                 paymentDetails = newCardField.getText();
@@ -232,38 +225,31 @@ public class OrderController implements Initializable {
                 paymentDetails = "Cash on Delivery";
             }
 
-            // Verify client-side SessionManager cart is not empty.
-// (We won't set order items here. Server constructs items from DB cart.)
-            if (SessionManager.getInstance().getCart() == null || SessionManager.getInstance().getCart().isEmpty()) {
-                showAlert("Empty Cart", "Your cart is empty.");
-                return;
-            }
+            // ❌ Removed the SessionManager “empty cart” check here.
+            // The server is authoritative and already checks if the DB cart has items. :contentReference[oaicite:3]{index=3}
 
             Order order = new Order();
             order.setCustomer(customer);
             order.setDelivery("Delivery".equals(deliveryMethod));
             order.setStoreLocation(storeLocation);
             order.setOrderDate(LocalDateTime.now());
-            order.setDeliveryDateTime(deliveryTime);
-            order.setRecipientPhone(recipientPhone);
-            order.setDeliveryAddress(deliveryAddress);
-            order.setNote(orderNote);
+            order.setDeliveryDateTime(deliveryTime);       // null for Pickup is fine
+            order.setRecipientPhone(recipientPhone);       // null for Pickup
+            order.setDeliveryAddress(deliveryAddress);     // null for Pickup
+            order.setNote(orderNoteField.getText());
             order.setPaymentMethod(paymentMethod);
             order.setPaymentDetails(paymentDetails);
 
-
             placeOrderButton.setDisable(true);
             placeOrderButton.setText("Processing...");
-
-            // Send order to server
-            Message message = new Message("place_order", order, null);
-            SimpleClient.getClient().sendToServer(message);
+            SimpleClient.getClient().sendToServer(new Message("place_order", order, null));
 
         } catch (Exception ex) {
             showAlert("Error", "Failed to place order: " + ex.getMessage());
             ex.printStackTrace();
         }
     }
+
 
 
     @Subscribe
@@ -274,10 +260,12 @@ public class OrderController implements Initializable {
                 SessionManager.getInstance().clearCart();
                 goToCatalog();
             });
-        } else if (msg.getMessage().startsWith("order_error")) {
-            Platform.runLater(() -> showAlert("Error", msg.getMessage()));
+        } else if (msg.getMessage().equals("order_error")) {
+            String details = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Order failed.";
+            Platform.runLater(() -> showAlert("Error", details));
         }
     }
+
 
     private void goBackToCart() {
         try {
