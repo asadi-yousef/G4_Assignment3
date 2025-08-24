@@ -2,47 +2,80 @@ package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "order_items")
 public class OrderItem implements Serializable {
     private static final long serialVersionUID = 1L;
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "order_id")
     private Order order;
 
-    // Now optional: for bouquet-only order lines this is null
+    // Optional for bouquet-only lines
     @ManyToOne(fetch = FetchType.LAZY, optional = true)
     @JoinColumn(name = "product_id", nullable = true)
     private Product product;
 
-    // Optional: a custom bouquet owned by this order line
+    // Custom bouquet owned by this order line
     @OneToOne(fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "custom_bouquet_id")
     private CustomBouquet customBouquet;
 
     private int quantity;
 
-    public OrderItem() {}
+    /* --------- SNAPSHOT COLUMNS (persisted) --------- */
+    @Column(name = "name_snapshot", length = 255, nullable = false)
+    private String nameSnapshot;
 
+    @Column(name = "unit_price_snapshot", precision = 10, scale = 2, nullable = false)
+    private BigDecimal unitPriceSnapshot = BigDecimal.ZERO;
+
+    @Column(name = "image_path_snapshot", length = 500)
+    private String imagePathSnapshot;
+
+    public OrderItem() { }
+
+    // Product line
     public OrderItem(Order order, Product product, int quantity) {
         this.order = order;
         this.product = product;
-        this.quantity = quantity;
+        this.quantity = Math.max(1, quantity);
+        snapshotFromProduct(product);
     }
 
-    // Convenience constructor for bouquet orders
+    // Bouquet line
     public OrderItem(Order order, CustomBouquet customBouquet, int quantity) {
         this.order = order;
         this.customBouquet = customBouquet;
-        this.quantity = quantity;
+        this.quantity = Math.max(1, quantity);
+        snapshotFromBouquet(customBouquet);
     }
 
-    // Getters and setters
+    /* --------- Snapshot helpers --------- */
+
+    public void snapshotFromProduct(Product p) {
+        if (p == null) return;
+        this.nameSnapshot = p.getName();
+        this.unitPriceSnapshot = BigDecimal.valueOf(p.getPrice());
+        this.imagePathSnapshot = p.getImagePath();
+    }
+
+    public void snapshotFromBouquet(CustomBouquet bq) {
+        this.nameSnapshot = "Custom Bouquet";
+        this.unitPriceSnapshot = (bq != null && bq.getTotalPrice() != null)
+                ? bq.getTotalPrice()
+                : BigDecimal.ZERO;
+        // Optional icon kept for history (your UI uses a classpath image anyway)
+        this.imagePathSnapshot = "/il/cshaifasweng/OCSFMediatorExample/client/images/custombouquet.png";
+    }
+
+    /* --------- Getters/Setters --------- */
+
     public Long getId() { return id; }
 
     public Order getOrder() { return order; }
@@ -55,33 +88,40 @@ public class OrderItem implements Serializable {
     public void setCustomBouquet(CustomBouquet customBouquet) { this.customBouquet = customBouquet; }
 
     public int getQuantity() { return quantity; }
-    public void setQuantity(int quantity) { this.quantity = quantity; }
+    public void setQuantity(int quantity) { this.quantity = Math.max(1, quantity); }
 
-    /* ---------- UI-friendly, non-persistent helpers ---------- */
+    public String getNameSnapshot() { return nameSnapshot; }
+    public BigDecimal getUnitPriceSnapshot() { return unitPriceSnapshot; }
+    public String getImagePathSnapshot() { return imagePathSnapshot; }
+
+    /* ---------- UI-friendly helpers now prefer snapshots ---------- */
 
     @Transient
     public boolean isBouquet() { return customBouquet != null; }
 
     @Transient
     public String getDisplayName() {
-        if (isBouquet()) return "Custom Bouquet";
-        return product != null ? product.getName() : "";
+        return (nameSnapshot != null && !nameSnapshot.isEmpty())
+                ? nameSnapshot
+                : (isBouquet() ? "Custom Bouquet" : (product != null ? product.getName() : ""));
     }
 
     @Transient
     public double getDisplayUnitPrice() {
-        if (isBouquet()) return customBouquet != null ? customBouquet.getTotalPrice().doubleValue() : 0.0;
+        if (unitPriceSnapshot != null) return unitPriceSnapshot.doubleValue();
+        if (isBouquet()) return customBouquet != null && customBouquet.getTotalPrice() != null
+                ? customBouquet.getTotalPrice().doubleValue() : 0.0;
         return product != null ? product.getPrice() : 0.0;
     }
 
     @Transient
     public String getDisplayImagePath() {
+        if (imagePathSnapshot != null && !imagePathSnapshot.isEmpty()) return imagePathSnapshot;
         if (isBouquet()) {
             final String R = "/il/cshaifasweng/OCSFMediatorExample/client/images/custombouquet.png";
-            java.net.URL url = CartItem.class.getResource(R);   // use OrderItem.class inside OrderItem
-            return (url != null) ? url.toExternalForm() : R;     // URL for JavaFX Image; fallback to the path
+            java.net.URL url = OrderItem.class.getResource(R);
+            return (url != null) ? url.toExternalForm() : R;
         }
         return (product != null) ? product.getImagePath() : null;
     }
-
 }

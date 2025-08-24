@@ -12,7 +12,7 @@ public class CartItem implements Serializable {
 
     // Now optional: for bouquet-only items this is null
     @ManyToOne(fetch = FetchType.LAZY, optional = true)
-    @JoinColumn(name = "product_id", nullable = true)
+    @JoinColumn(name = "product_id")
     private Product product;
 
     @ManyToOne(fetch = FetchType.LAZY)

@@ -5,8 +5,7 @@ import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -16,8 +15,6 @@ import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 
-import java.util.List;
-import java.util.Objects;
 import java.util.function.Function;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
@@ -360,45 +357,143 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
+	@SuppressWarnings("unchecked")
 	private void handleDeleteProduct(Message msg, ConnectionToClient client, Session session) {
 		Transaction tx = null;
-		try{
+		try {
 			tx = session.beginTransaction();
-			Long id = (Long) msg.getObject();
-			Product product = session.get(Product.class, id);
 
-			if (product != null) {
-				product.deleteProduct();
-				session.flush();
-				tx.commit();
-
-				// Update catalog with write lock
-				catalogLock.writeLock().lock();
-				try {
-					catalog.getFlowers().remove(catalog.getProductById(id));
-				} finally {
-					catalogLock.writeLock().unlock();
-				}
-
-				sendToAllClients(msg);
-			} else {
+			Long productId = (Long) msg.getObject();
+			Product p = session.get(Product.class, productId);
+			if (p == null) {
 				if (tx != null && tx.isActive()) tx.rollback();
-				Message errorMsg = new Message("product_not_found", null, null);
-				client.sendToClient(errorMsg);
+				client.sendToClient(new Message("product_not_found", null, null));
+				return;
 			}
-		} catch (Exception e) {
-			if (tx != null && tx.isActive()) {
-				tx.rollback();
+
+			// A) CartItems that reference this Product directly
+			List<Long> cartItemsForProduct = session.createQuery("""
+            select ci.id
+              from CartItem ci
+             where ci.product.id = :pid
+        """, Long.class).setParameter("pid", productId).getResultList();
+
+			// B) Bouquets containing this Product as a flower (via CustomBouquetItem)
+			List<Long> bouquetIds = session.createQuery("""
+            select distinct cbi.bouquet.id
+              from CustomBouquetItem cbi
+             where cbi.flower.id = :pid
+        """, Long.class).setParameter("pid", productId).getResultList();
+
+			// Split bouquets into:
+			//  - deletable (not referenced by any OrderItem)
+			//  - protected (referenced by an OrderItem → must NOT delete; only null the flower ref)
+			List<Long> deletableBouquetIds = new java.util.ArrayList<>();
+			List<Long> protectedBouquetIds = java.util.Collections.emptyList();
+			if (!bouquetIds.isEmpty()) {
+				protectedBouquetIds = session.createQuery("""
+                select distinct oi.customBouquet.id
+                  from OrderItem oi
+                 where oi.customBouquet.id in (:bids)
+            """, Long.class).setParameterList("bids", bouquetIds).getResultList();
+
+				deletableBouquetIds.addAll(bouquetIds);
+				deletableBouquetIds.removeAll(protectedBouquetIds);
 			}
-			e.printStackTrace();
+
+			// C) CartItems that reference those deletable bouquets
+			List<Long> cartItemsForBouquets = java.util.Collections.emptyList();
+			if (!deletableBouquetIds.isEmpty()) {
+				cartItemsForBouquets = session.createQuery("""
+                select ci.id
+                  from CartItem ci
+                 where ci.customBouquet.id in (:bids)
+            """, Long.class).setParameterList("bids", deletableBouquetIds).getResultList();
+			}
+
+			// D) Delete cart items (product + bouquets)
+			if (!cartItemsForProduct.isEmpty()) {
+				session.createQuery("""
+                delete from CartItem ci
+                 where ci.id in (:ids)
+            """).setParameterList("ids", cartItemsForProduct).executeUpdate();
+			}
+			if (!cartItemsForBouquets.isEmpty()) {
+				session.createQuery("""
+                delete from CartItem ci
+                 where ci.id in (:ids)
+            """).setParameterList("ids", cartItemsForBouquets).executeUpdate();
+			}
+
+			// E) Delete bouquet items, then bouquets (bulk HQL doesn't cascade)
+			if (!deletableBouquetIds.isEmpty()) {
+				session.createQuery("""
+                delete from CustomBouquetItem cbi
+                 where cbi.bouquet.id in (:bids)
+            """).setParameterList("bids", deletableBouquetIds).executeUpdate();
+
+				session.createQuery("""
+                delete from CustomBouquet cb
+                 where cb.id in (:bids)
+            """).setParameterList("bids", deletableBouquetIds).executeUpdate();
+			}
+
+			// F) For protected bouquets (in orders), just null the flower FK so product delete won’t be blocked
+			if (!protectedBouquetIds.isEmpty()) {
+				session.createQuery("""
+                update CustomBouquetItem cbi
+                   set cbi.flower = null
+                 where cbi.flower.id = :pid
+                   and cbi.bouquet.id in (:bids)
+            """).setParameter("pid", productId)
+						.setParameterList("bids", protectedBouquetIds)
+						.executeUpdate();
+			}
+
+			// G) Detach product from historical OrderItems (snapshots will render history)
+			session.createQuery("""
+            update OrderItem oi
+               set oi.product = null
+             where oi.product.id = :pid
+        """).setParameter("pid", productId).executeUpdate();
+
+			// H) HARD delete the product row (bypass @SoftDelete)
+			session.createNativeQuery("DELETE FROM Products WHERE ID = :pid")
+					.setParameter("pid", productId)
+					.executeUpdate();
+
+			tx.commit();
+
+			// I) Update in-memory catalog cache
+			catalogLock.writeLock().lock();
 			try {
-				Message errorMsg = new Message("delete_failed", null, null);
-				client.sendToClient(errorMsg);
-			} catch (IOException ioException) {
-				ioException.printStackTrace();
+				catalog.getFlowers().remove(catalog.getProductById(productId));
+			} finally {
+				catalogLock.writeLock().unlock();
 			}
+
+			// J) Notify clients
+			sendToAllClients(new Message("delete_product", productId, null)); // PrimaryController
+
+			Map<String, Object> payload = new HashMap<>();
+			payload.put("productId", productId);
+			payload.put("removedCartItemIds",
+					java.util.stream.Stream.concat(cartItemsForProduct.stream(), cartItemsForBouquets.stream()).collect(Collectors.toList()));
+			payload.put("removedCount",
+					cartItemsForProduct.size() + cartItemsForBouquets.size());
+			payload.put("deletedBouquetIds", deletableBouquetIds);
+			payload.put("protectedBouquetIds", protectedBouquetIds); // FYI only
+			sendToAllClients(new Message("item_removed", payload, null)); // CartController
+
+		} catch (Exception e) {
+			if (tx != null && tx.isActive()) tx.rollback();
+			e.printStackTrace();
+			try { client.sendToClient(new Message("delete_failed", null, null)); } catch (IOException ignored) {}
 		}
 	}
+
+
+
 
 	private void handleAddProduct(Message msg, ConnectionToClient client, Session session) {
 		Transaction tx = null;
@@ -974,7 +1069,6 @@ public class SimpleServer extends AbstractServer {
 
 		try {
 			Order clientOrder = (Order) message.getObject();
-
 			if (clientOrder == null || clientOrder.getCustomer() == null) {
 				client.sendToClient(new Message("order_error", "Missing order or customer data", null));
 				return;
@@ -991,23 +1085,17 @@ public class SimpleServer extends AbstractServer {
 				return;
 			}
 
+			// 1) Fetch cart + items + product + bouquet (NO bouquet.items here)
 			Cart cart = em.createQuery(
-							"SELECT DISTINCT c FROM Cart c LEFT JOIN FETCH c.items i LEFT JOIN FETCH i.product WHERE c.customer.id = :cid",
-							Cart.class)
+							"SELECT DISTINCT c FROM Cart c " +
+									"LEFT JOIN FETCH c.items i " +
+									"LEFT JOIN FETCH i.product p " +
+									"LEFT JOIN FETCH i.customBouquet cb " +
+									"WHERE c.customer.id = :cid", Cart.class)
 					.setParameter("cid", managedCustomer.getId())
 					.getResultStream()
 					.findFirst()
 					.orElse(null);
-
-			System.out.println("DEBUG(handlePlaceOrder): fetched cart id=" + (cart != null ? cart.getId() : "null"));
-			if (cart != null) {
-				System.out.println("DEBUG(handlePlaceOrder): cart items = " + cart.getItems().size());
-				for (CartItem ci : cart.getItems()) {
-					String what = (ci.getProduct()!=null) ? ("pid="+ci.getProduct().getId())
-							: (ci.getCustomBouquet()!=null ? "customBouquet" : "none");
-					System.out.println("DEBUG: " + what + " qty=" + ci.getQuantity());
-				}
-			}
 
 			if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
 				em.getTransaction().rollback();
@@ -1015,12 +1103,30 @@ public class SimpleServer extends AbstractServer {
 				return;
 			}
 
-			// Create new managed Order and copy data
+			// 2) Fetch bouquet.items in a SECOND query to avoid MultipleBagFetchException
+			java.util.Set<Long> bouquetIds = new java.util.HashSet<>();
+			for (CartItem ci : cart.getItems()) {
+				if (ci.getCustomBouquet() != null && ci.getCustomBouquet().getId() != null) {
+					bouquetIds.add(ci.getCustomBouquet().getId());
+				}
+			}
+			if (!bouquetIds.isEmpty()) {
+				// One bag per query is fine
+				em.createQuery(
+								"SELECT DISTINCT cb FROM CustomBouquet cb " +
+										"LEFT JOIN FETCH cb.items cbi " +     // (bag) fetched here
+										"LEFT JOIN FETCH cbi.flower f " +
+										"WHERE cb.id IN :ids", CustomBouquet.class)
+						.setParameter("ids", bouquetIds)
+						.getResultList(); // populates the same managed cb instances
+			}
+
+			// 3) Build managed Order and copy fields
 			Order order = new Order();
 			order.setCustomer(managedCustomer);
 			order.setStoreLocation(clientOrder.getStoreLocation());
 			order.setDelivery(clientOrder.getDelivery());
-			order.setOrderDate(LocalDateTime.now());
+			order.setOrderDate(java.time.LocalDateTime.now());
 			order.setDeliveryDateTime(clientOrder.getDeliveryDateTime());
 			order.setRecipientPhone(clientOrder.getRecipientPhone());
 			order.setDeliveryAddress(clientOrder.getDeliveryAddress());
@@ -1028,41 +1134,44 @@ public class SimpleServer extends AbstractServer {
 			order.setPaymentMethod(clientOrder.getPaymentMethod());
 			order.setPaymentDetails(clientOrder.getPaymentDetails());
 
-			// Convert cart items -> order items (support product or bouquet)
-			for (CartItem cartItem : new ArrayList<>(cart.getItems())) {
+			// 4) Convert cart items -> order items, snapshotting
+			for (CartItem cartItem : new java.util.ArrayList<>(cart.getItems())) {
 				OrderItem oi = new OrderItem();
 				oi.setOrder(order);
-				oi.setQuantity(cartItem.getQuantity());
+				oi.setQuantity(Math.max(1, cartItem.getQuantity()));
 
 				if (cartItem.getProduct() != null) {
-					Product product = em.find(Product.class, cartItem.getProduct().getId()); // managed
+					Product product = em.find(Product.class, cartItem.getProduct().getId());
 					oi.setProduct(product);
+					if (product != null) {
+						oi.snapshotFromProduct(product); // name + price + image
+						// If you want discount-aware price, use product.getSalePrice()
+						// oi.setUnitPriceSnapshot(java.math.BigDecimal.valueOf(product.getSalePrice()));
+					}
 				} else if (cartItem.getCustomBouquet() != null) {
-					// clone bouquet for order (avoid orphanRemoval conflicts)
-					CustomBouquet copy = cloneBouquetForOrder(em, cartItem.getCustomBouquet(), managedCustomer);
+					// Clone the bouquet for the order (copies item snapshots, no live Product FK)
+					CustomBouquet copy = cloneBouquetForOrder(cartItem.getCustomBouquet(), managedCustomer);
 					oi.setCustomBouquet(copy);
+					oi.snapshotFromBouquet(copy);
 				}
+
 				order.getItems().add(oi);
 			}
 
-
+			// 5) Persist order (cascades persist to items / order-owned bouquet)
 			em.persist(order);
-			em.flush(); // make sure order id exists
+			em.flush();
 
-			// remove cart items (use managed instances)
-			for (CartItem ci : new ArrayList<>(cart.getItems())) {
+			// 6) Clear cart safely
+			for (CartItem ci : new java.util.ArrayList<>(cart.getItems())) {
 				cart.getItems().remove(ci);
-				if (!em.contains(ci)) {
-					ci = em.find(CartItem.class, ci.getId());
-				}
-				if (ci != null) {
-					em.remove(ci);
-				}
+				CartItem managedCI = em.contains(ci) ? ci : em.find(CartItem.class, ci.getId());
+				if (managedCI != null) em.remove(managedCI);
 			}
 
 			em.getTransaction().commit();
-
 			client.sendToClient(new Message("order_placed_successfully", order, null));
+
 		} catch (Exception e) {
 			if (em.getTransaction() != null && em.getTransaction().isActive()) {
 				em.getTransaction().rollback();
@@ -1070,7 +1179,7 @@ public class SimpleServer extends AbstractServer {
 			e.printStackTrace();
 			try {
 				client.sendToClient(new Message("order_error", "Failed to place order: " + e.getMessage(), null));
-			} catch (IOException ioException) {
+			} catch (java.io.IOException ioException) {
 				ioException.printStackTrace();
 			}
 		} finally {
@@ -1078,28 +1187,35 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-	/** Create a managed deep copy of a bouquet (with lines) for the order. */
-	private CustomBouquet cloneBouquetForOrder(EntityManager em, CustomBouquet src, Customer createdBy) {
-		CustomBouquet copy = new CustomBouquet(createdBy, src.getInstructions());
+
+	private CustomBouquet cloneBouquetForOrder(CustomBouquet src, Customer creator) {
+		if (src == null) return null;
+
+		CustomBouquet copy = new CustomBouquet();
+		copy.setCreatedBy(creator);
+		copy.setCreatedAt(src.getCreatedAt());
+		copy.setInstructions(src.getInstructions());
+
 		if (src.getItems() != null) {
 			for (CustomBouquetItem it : src.getItems()) {
-				CustomBouquetItem clone = new CustomBouquetItem();
-				clone.setBouquet(copy);
-				// point to the same flower product if it still exists
-				if (it.getFlower() != null && it.getFlower().getId() != null) {
-					Product managedFlower = em.find(Product.class, it.getFlower().getId());
-					clone.setFlower(managedFlower);
-				}
-				clone.setQuantity(it.getQuantity());
-				clone.setFlowerNameSnapshot(it.getFlowerNameSnapshot());
-				clone.setUnitPriceSnapshot(it.getUnitPriceSnapshot());
-				copy.getItems().add(clone);
+				CustomBouquetItem line = new CustomBouquetItem();
+				line.setBouquet(copy);
+				line.setFlower(null); // drop FK to Product; keep snapshots only
+				line.setFlowerNameSnapshot(it.getFlowerNameSnapshot());
+				line.setUnitPriceSnapshot(it.getUnitPriceSnapshot() != null ? it.getUnitPriceSnapshot() : java.math.BigDecimal.ZERO);
+				line.setQuantity(Math.max(0, it.getQuantity()));
+				copy.getItems().add(line);
 			}
 		}
+
 		copy.recomputeTotalPrice();
 		return copy;
 	}
 
+
+	private java.math.BigDecimal safe(java.math.BigDecimal v) {
+		return (v != null) ? v : java.math.BigDecimal.ZERO;
+	}
 
 	private Cart getOrCreateCartForCustomer(Customer customer) {
 		EntityManager em = emf.createEntityManager();

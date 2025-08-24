@@ -350,7 +350,6 @@ public class PrimaryController implements Initializable {
 					break;
 				}
 
-				case "delete_product_by_id":
 				case "delete_product": { // handle both just in case
 					Long id = safeCastLong(msg.getObject());
 					if (id != null) {
