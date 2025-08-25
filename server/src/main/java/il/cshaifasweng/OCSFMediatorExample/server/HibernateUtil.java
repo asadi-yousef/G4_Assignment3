@@ -1,28 +1,33 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
+
 import org.hibernate.SessionFactory;
-import org.hibernate.cfg.Configuration;
 
-public class HibernateUtil {
-    private static SessionFactory sessionFactory;
+public final class HibernateUtil {
+    private static volatile SessionFactory sessionFactory;
 
-    public static void setSessionFactory(SessionFactory factory) {
+    private HibernateUtil() {}
+
+    // Set once at startup from App.buildSessionFactoryFromCfg()
+    public static synchronized void setSessionFactory(SessionFactory factory) {
+        if (sessionFactory != null && !sessionFactory.isClosed()) {
+            sessionFactory.close();
+        }
         sessionFactory = factory;
     }
 
-    private static SessionFactory buildSessionFactory() {
-        try {
-            Configuration configuration = new Configuration().configure();
-            return new Configuration().configure().buildSessionFactory();
-        } catch (Throwable ex) {
-            throw new ExceptionInInitializerError(ex);
-        }
-    }
-
     public static SessionFactory getSessionFactory() {
+        if (sessionFactory == null) {
+            throw new IllegalStateException(
+                    "SessionFactory not initialized. Call HibernateUtil.setSessionFactory(...) at startup."
+            );
+        }
         return sessionFactory;
     }
 
-    public static void shutdown() {
-        getSessionFactory().close();
+    public static synchronized void shutdown() {
+        if (sessionFactory != null && !sessionFactory.isClosed()) {
+            sessionFactory.close();
+            sessionFactory = null;
+        }
     }
 }
