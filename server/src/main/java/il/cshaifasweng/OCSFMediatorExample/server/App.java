@@ -73,9 +73,9 @@ public class App {
                 ).getSingleResult();
 
                 if (productCount == null || productCount == 0L) {
-                    Product product1 = new Product("Roses", "Flower", 19.99, "Bouquet",
+                    Product product1 = new Product("Roses", "Flower", 19.99, "Red",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/roses.png");
-                    Product product2 = new Product("Tulips", "Flower", 14.50, "Bouquet",
+                    Product product2 = new Product("Tulips", "Flower", 14.50, "Purple",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/white tulip.png");
                     Product product3 = new Product("Pretty in Pink Lilies", "Bouquet", 17.25, "Pink",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/lilies.png");

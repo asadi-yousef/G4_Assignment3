@@ -21,6 +21,10 @@ public class Complaint implements Serializable {
     @Column(length = 100, nullable = false)
     private String text;
 
+    @JoinColumn(name="branch_id", nullable = true)
+    @ManyToOne(fetch = FetchType.EAGER)
+    private Branch branch;
+
     private LocalDateTime submittedAt;
 
     private boolean resolved = false;

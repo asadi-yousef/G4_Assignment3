@@ -1,10 +1,12 @@
 package il.cshaifasweng.OCSFMediatorExample.entities;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-public class OrdersReport extends Report{
+public class OrdersReport extends Report implements Serializable {
+    private static final long serialVersionUID = 1L;
     private int totalOrders;
     private int cancelledOrders;
     private int netOrders;

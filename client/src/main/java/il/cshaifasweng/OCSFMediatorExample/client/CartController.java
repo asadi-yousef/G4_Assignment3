@@ -15,15 +15,21 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URL;
+import java.util.Objects;
 import java.util.ResourceBundle;
 
 public class CartController implements Initializable {
 
-    @FXML private ListView<HBox> cartListView;
-    @FXML private Label totalLabel;
-    @FXML private Button backToCatalogButton;
-    @FXML private Button proceedToOrderButton;
+    @FXML
+    private ListView<HBox> cartListView;
+    @FXML
+    private Label totalLabel;
+    @FXML
+    private Button backToCatalogButton;
+    @FXML
+    private Button proceedToOrderButton;
 
     private Cart cart;
 
@@ -107,8 +113,66 @@ public class CartController implements Initializable {
             } catch (Exception e) {
                 showAlert("Error", "Failed to refresh cart.");
             }
+        } else if (msg.getMessage().equals("editProduct")) {
+            Product updated = safeCastProduct(msg.getObject());
+            if (updated != null) {
+                updateCartWithEditedProduct(updated);
+                renderCart(); // Rebuild the cart UI
+            } else {
+                System.err.println("[CartController] Received editProduct with no payload.");
+            }
+
         }
     }
+
+    private Product safeCastProduct(Object o) {
+        try {
+            return (Product) o;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Update all cart items and bouquets to reflect the edited product.
+     */
+    private void updateCartWithEditedProduct(Product updated) {
+        if (updated == null || this.cart == null || this.cart.getItems() == null) return;
+
+        boolean anyChange = false;
+
+        for (CartItem item : this.cart.getItems()) {
+            // 1) Plain product line
+            Product p = item.getProduct();
+            if (p != null && Objects.equals(p.getId(), updated.getId())) {
+                item.setProduct(updated);   // swap to the fresh product (name/price/images/etc.)
+                anyChange = true;
+            }
+
+            // 2) Bouquet line(s)
+            CustomBouquet bouquet = item.getCustomBouquet();
+            if (bouquet != null && bouquet.getItems() != null) {
+                boolean bouquetChanged = false;
+
+                for (CustomBouquetItem line : bouquet.getItems()) {
+                    Product flower = line.getFlower();
+                    if (flower != null && Objects.equals(flower.getId(), updated.getId())) {
+                        // keep the linkage to Product, but refresh snapshots so price/name show the edited values
+                        line.setFlower(updated);
+                        line.setFlowerNameSnapshot(updated.getName());
+                        line.setUnitPriceSnapshot(BigDecimal.valueOf(updated.getSalePrice()));
+                        bouquetChanged = true;
+                    }
+                }
+
+                if (bouquetChanged) {
+                    bouquet.recomputeTotalPrice(); // keeps total consistent with refreshed line snapshots
+                    anyChange = true;
+                }
+            }
+        }
+    }
+
 
     public void setCart(Cart cart) {
         this.cart = cart;
@@ -124,7 +188,7 @@ public class CartController implements Initializable {
 
             if (cart == null || cart.getItems().isEmpty()) {
                 proceedToOrderButton.setDisable(true);
-                totalLabel.setText("Total: $0.00");
+                totalLabel.setText("Total: ₪0.00");
                 return;
             }
 
@@ -134,7 +198,7 @@ public class CartController implements Initializable {
                 total += displayUnitPrice(item) * item.getQuantity();
             }
 
-            totalLabel.setText("Total: $" + String.format("%.2f", total));
+            totalLabel.setText("Total: ₪" + String.format("%.2f", total));
             proceedToOrderButton.setDisable(false);
         });
     }
@@ -150,11 +214,11 @@ public class CartController implements Initializable {
         final String nameText = displayName(item);
         final double unit = displayUnitPrice(item);
 
-        Label namePriceLabel = new Label(nameText + " - $" + String.format("%.2f", unit));
+        Label namePriceLabel = new Label(nameText + " - ₪" + String.format("%.2f", unit));
         namePriceLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #2c3e50; -fx-font-weight: bold;");
 
         // Per-item total label
-        Label totalItemLabel = new Label("$" + String.format("%.2f", unit * item.getQuantity()));
+        Label totalItemLabel = new Label("₪" + String.format("%.2f", unit * item.getQuantity()));
         totalItemLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #555;");
 
         Region spacer = new Region();
@@ -173,7 +237,7 @@ public class CartController implements Initializable {
             if (newVal != null && !newVal.equals(oldVal) && quantitySpinner.isFocused()) {
                 // Update per-item total label immediately (UI feedback)
                 double unitNow = displayUnitPrice(item);
-                totalItemLabel.setText("$" + String.format("%.2f", unitNow * newVal));
+                totalItemLabel.setText("₪" + String.format("%.2f", unitNow * newVal));
 
                 // Optimistic cart total update in UI
                 updateCartTotalPreview(item, newVal);
@@ -207,7 +271,7 @@ public class CartController implements Initializable {
                     : ci.getQuantity();
             total += displayUnitPrice(ci) * qty;
         }
-        totalLabel.setText("Total: $" + String.format("%.2f", total));
+        totalLabel.setText("Total: ₪" + String.format("%.2f", total));
     }
 
     private void updateCartItemQuantity(CartItem item, int newQuantity) {
@@ -299,7 +363,7 @@ public class CartController implements Initializable {
     /** Unit price for either a product item or a custom bouquet item. */
     private double displayUnitPrice(CartItem item) {
         if (item == null) return 0.0;
-        if (item.getProduct() != null) return item.getProduct().getPrice();
+        if (item.getProduct() != null) return item.getProduct().getSalePrice();
         if (item.getCustomBouquet() != null && item.getCustomBouquet().getTotalPrice() != null) {
             return item.getCustomBouquet().getTotalPrice().doubleValue();
         }

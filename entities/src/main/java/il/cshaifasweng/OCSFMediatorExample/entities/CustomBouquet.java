@@ -28,11 +28,7 @@ public class CustomBouquet implements Serializable {
     @Column(name = "instructions", length = 500)
     private String instructions;
 
-    @OneToMany(
-            mappedBy = "bouquet",
-            cascade = CascadeType.ALL,
-            orphanRemoval = true
-    )
+    @OneToMany(mappedBy = "bouquet", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CustomBouquetItem> items = new ArrayList<>();
 
     @Column(name = "total_price", precision = 10, scale = 2, nullable = false)

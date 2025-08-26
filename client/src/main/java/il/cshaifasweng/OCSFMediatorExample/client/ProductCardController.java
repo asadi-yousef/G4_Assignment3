@@ -64,16 +64,16 @@ public class ProductCardController {
         }
         priceBox.getChildren().clear();
         if (currentProduct.getDiscountPercentage() > 0) {
-            Text oldPriceText = new Text(String.format("$%.2f", currentProduct.getPrice()));
+            Text oldPriceText = new Text(String.format("₪%.2f", currentProduct.getPrice()));
             oldPriceText.setStrikethrough(true);
             oldPriceText.setFill(Color.GREY);
-            Label salePriceLabel = new Label(String.format("$%.2f", currentProduct.getSalePrice()));
+            Label salePriceLabel = new Label(String.format("₪%.2f", currentProduct.getSalePrice()));
             salePriceLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #c0392b;");
             salePriceLabel.setFont(new Font("Bell MT", 16));
             priceBox.getChildren().addAll(oldPriceText, salePriceLabel);
             saleBadge.setVisible(true);
         } else {
-            Label price = new Label(String.format("$%.2f", currentProduct.getPrice()));
+            Label price = new Label(String.format("₪%.2f", currentProduct.getPrice()));
             price.setFont(new Font("Bell MT", 16));
             priceBox.getChildren().add(price);
             saleBadge.setVisible(false);

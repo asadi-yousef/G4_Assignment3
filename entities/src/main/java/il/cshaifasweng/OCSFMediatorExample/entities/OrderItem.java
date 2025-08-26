@@ -61,7 +61,7 @@ public class OrderItem implements Serializable {
     public void snapshotFromProduct(Product p) {
         if (p == null) return;
         this.nameSnapshot = p.getName();
-        this.unitPriceSnapshot = BigDecimal.valueOf(p.getPrice());
+        this.unitPriceSnapshot = BigDecimal.valueOf(p.getSalePrice());
         this.imagePathSnapshot = p.getImagePath();
     }
 

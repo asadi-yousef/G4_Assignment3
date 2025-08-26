@@ -1,10 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
-import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
-import il.cshaifasweng.OCSFMediatorExample.entities.Order;
-import il.cshaifasweng.OCSFMediatorExample.entities.OrderItem;
-import il.cshaifasweng.OCSFMediatorExample.entities.Product;
-import il.cshaifasweng.OCSFMediatorExample.entities.Message;
+import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.scene.layout.VBox;
@@ -15,6 +11,7 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.net.URL;
+import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -75,23 +72,41 @@ public class OrderController implements Initializable {
     @FXML
     private VBox storeLocationSection;
 
+    private List<Branch> branches = new ArrayList<>();
+
+    private Customer currentCustomer;
+    private boolean isNetworkCustomer;
+
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this);
         }
 
-        // Initialize store locations
-        storeLocationChoice.getItems().addAll("Downtown", "Mall Branch", "Westside Store");
+        // Request branches from server
+        try {
+            SimpleClient.getClient().sendToServer(new Message("request_branches", null, null));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
+        // Resolve current customer + network-account capability
+        Customer current = (SessionManager.getInstance().getCurrentUser() instanceof Customer)
+                ? (Customer) SessionManager.getInstance().getCurrentUser()
+                : null;
+        boolean isNetworkCustomer = (current != null) && current.isNetworkAccount();
+
+        // Toggle group
         deliveryGroup = new ToggleGroup();
         deliveryRadio.setToggleGroup(deliveryGroup);
         pickupRadio.setToggleGroup(deliveryGroup);
 
-        // Spinner for hours 0-23, default noon (12)
-        deliveryHourSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 23, 12));
+        // Hours spinner 0..23 (default 12)
+        deliveryHourSpinner.setValueFactory(
+                new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 23, 12)
+        );
 
-        // Disable recipient phone unless checkbox is checked
+        // Recipient phone enabled only if different recipient is checked
         recipientPhoneField.setDisable(true);
         differentRecipientCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
             recipientPhoneField.setDisable(!newVal);
@@ -100,14 +115,31 @@ public class OrderController implements Initializable {
             }
         });
 
-        // Initially hide deliveryDetailsSection and show storeLocationSection (default pickup)
+        // Initial sections: default Pickup (as in your original)
         deliveryDetailsSection.setVisible(false);
         deliveryDetailsSection.setManaged(false);
 
         storeLocationSection.setVisible(true);
         storeLocationSection.setManaged(true);
 
-        // Listen to delivery method changes
+        // Store branch choice setup (no hard-coded items)
+        storeLocationChoice.getItems().clear();
+        storeLocationChoice.setDisable(!isNetworkCustomer);
+        storeLocationChoice.setValue(isNetworkCustomer ? "Select a branch" : "Your branch");
+
+        // If not a network account, lock to assigned branch immediately (if available)
+        if (!isNetworkCustomer) {
+            String assigned = getAssignedBranchName(current);
+            if (assigned != null && !assigned.isBlank()) {
+                storeLocationChoice.getItems().setAll(assigned);
+                storeLocationChoice.setValue(assigned);
+            } else {
+                storeLocationChoice.getItems().clear();
+                storeLocationChoice.setValue("No branch assigned");
+            }
+        }
+
+        // React to delivery/pickup changes
         deliveryGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
             if (newToggle == deliveryRadio) {
                 // Delivery selected
@@ -125,6 +157,11 @@ public class OrderController implements Initializable {
                 storeLocationSection.setVisible(true);
                 storeLocationSection.setManaged(true);
 
+                // Only network customers may pick a branch
+                storeLocationChoice.setDisable((SessionManager.getInstance().getCurrentUser() instanceof Customer)
+                        ? !((Customer) SessionManager.getInstance().getCurrentUser()).isNetworkAccount()
+                        : true);
+
                 // Clear delivery-specific fields
                 deliveryDatePicker.setValue(null);
                 differentRecipientCheck.setSelected(false);
@@ -133,24 +170,20 @@ public class OrderController implements Initializable {
             }
         });
 
-        // Payment method options
-        paymentMethodChoice.getItems().addAll("Saved Card", "New Card", "Pay Upon Delivery");
+        // Payment method setup
+        paymentMethodChoice.getItems().setAll("Saved Card", "New Card", "Pay Upon Delivery");
         paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            if ("New Card".equals(newVal)) {
-                newCardBox.setVisible(true);
-                newCardBox.setManaged(true);
-            } else {
-                newCardBox.setVisible(false);
-                newCardBox.setManaged(false);
-            }
+            boolean showNewCard = "New Card".equals(newVal);
+            newCardBox.setVisible(showNewCard);
+            newCardBox.setManaged(showNewCard);
         });
-
         newCardBox.setVisible(false);
         newCardBox.setManaged(false);
 
         placeOrderButton.setOnAction(e -> placeOrder());
         cancelButton.setOnAction(e -> goBackToCart());
     }
+
 
     private void placeOrder() {
         try {
@@ -159,6 +192,7 @@ public class OrderController implements Initializable {
                 return;
             }
             Customer customer = (Customer) SessionManager.getInstance().getCurrentUser();
+            boolean isNetworkCustomer = customer.isNetworkAccount();
 
             String deliveryMethod = deliveryRadio.isSelected() ? "Delivery"
                     : (pickupRadio.isSelected() ? "Pickup" : null);
@@ -173,20 +207,28 @@ public class OrderController implements Initializable {
             String deliveryAddress = null;
 
             if ("Pickup".equals(deliveryMethod)) {
-                storeLocation = storeLocationChoice.getValue();
-                if (storeLocation == null) {
-                    showAlert("Missing Data", "Please select a store location.");
-                    return;
+                if (isNetworkCustomer) {
+                    storeLocation = storeLocationChoice.getValue();
+                    if (storeLocation == null || storeLocation.isBlank()) {
+                        showAlert("Missing Data", "Please select a store branch.");
+                        return;
+                    }
+                } else {
+                    storeLocation = getAssignedBranchName(customer);
+                    if (storeLocation == null || storeLocation.isBlank()) {
+                        showAlert("Missing Data", "Your account is not linked to a branch.");
+                        return;
+                    }
                 }
-            } else { // Delivery
+            } else {
+                // Delivery
                 LocalDate date = deliveryDatePicker.getValue();
                 Integer hour = deliveryHourSpinner.getValue();
                 if (date == null || date.isBefore(LocalDate.now())) {
                     showAlert("Invalid Date", "Please select a valid delivery date.");
                     return;
                 }
-                // No +3 offset here; if you need a timezone, handle it server-side with ZoneId.
-                deliveryTime = date.atTime(hour, 0);  // 0–23 hour is valid for LocalDateTime. :contentReference[oaicite:2]{index=2}
+                deliveryTime = date.atTime(hour != null ? hour : 12, 0);
 
                 deliveryAddress = deliveryAddressField.getText();
                 if (deliveryAddress == null || deliveryAddress.trim().isEmpty()) {
@@ -225,9 +267,6 @@ public class OrderController implements Initializable {
                 paymentDetails = "Cash on Delivery";
             }
 
-            // ❌ Removed the SessionManager “empty cart” check here.
-            // The server is authoritative and already checks if the DB cart has items. :contentReference[oaicite:3]{index=3}
-
             Order order = new Order();
             order.setCustomer(customer);
             order.setDelivery("Delivery".equals(deliveryMethod));
@@ -252,6 +291,7 @@ public class OrderController implements Initializable {
 
 
 
+
     @Subscribe
     public void onServerResponse(Message msg) {
         if (msg.getMessage().equals("order_placed_successfully")) {
@@ -260,9 +300,89 @@ public class OrderController implements Initializable {
                 SessionManager.getInstance().clearCart();
                 goToCatalog();
             });
-        } else if (msg.getMessage().equals("order_error")) {
+            return;
+        }
+
+        if (msg.getMessage().equals("order_error")) {
             String details = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Order failed.";
             Platform.runLater(() -> showAlert("Error", details));
+            return;
+        }
+
+        if (msg.getMessage().equals("Branches")) {
+            Platform.runLater(() -> {
+                // Ensure local list exists
+                if (branches == null) branches = new ArrayList<>();
+                branches.clear();
+
+                // Safely copy Branch objects from payload
+                if (msg.getObject() instanceof List<?>) {
+                    for (Object o : (List<?>) msg.getObject()) {
+                        if (o instanceof Branch) branches.add((Branch) o);
+                    }
+                }
+
+                // Determine permission again (UI may have changed user state)
+                Customer current = (SessionManager.getInstance().getCurrentUser() instanceof Customer)
+                        ? (Customer) SessionManager.getInstance().getCurrentUser()
+                        : null;
+                boolean isNetworkCustomer = (current != null) && current.isNetworkAccount();
+
+                // Populate names
+                List<String> names = new ArrayList<>();
+                for (Branch b : branches) {
+                    if (b != null && b.getName() != null) names.add(b.getName());
+                }
+
+                if (isNetworkCustomer) {
+                    // Network account: user may choose any branch
+                    storeLocationChoice.getItems().setAll(names);
+
+                    String currentSelection = storeLocationChoice.getValue();
+                    if (currentSelection == null || !storeLocationChoice.getItems().contains(currentSelection)) {
+                        String assigned = getAssignedBranchName(current);
+                        if (assigned != null && storeLocationChoice.getItems().contains(assigned)) {
+                            storeLocationChoice.setValue(assigned);
+                        } else if (!storeLocationChoice.getItems().isEmpty()) {
+                            storeLocationChoice.setValue(storeLocationChoice.getItems().get(0));
+                        }
+                    }
+                    storeLocationChoice.setDisable(false);
+                    storeLocationChoice.setValue("Select a branch");
+                } else {
+                    // Non-network account: lock to assigned branch
+                    String assigned = getAssignedBranchName(current);
+                    if (assigned != null && !assigned.isBlank()) {
+                        storeLocationChoice.getItems().setAll(assigned);
+                        storeLocationChoice.setValue(assigned);
+                    } else {
+                        storeLocationChoice.getItems().clear();
+                        storeLocationChoice.setValue("No branch assigned");
+                    }
+                    storeLocationChoice.setDisable(true);
+                }
+            });
+        }
+    }
+
+    private String getAssignedBranchName(Customer current) {
+        try {
+            return (current != null && current.getBranch() != null)
+                    ? current.getBranch().getName()
+                    : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private Long getAssignedBranchId(Customer current) {
+        try {
+            return (current != null && current.getBranch() != null)
+                    ? current.getBranch().getId()
+                    : null;
+        } catch (Exception e) {
+            return null;
         }
     }
 

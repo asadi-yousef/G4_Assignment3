@@ -1,10 +1,12 @@
 package il.cshaifasweng.OCSFMediatorExample.entities;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
-public class IncomeReport extends Report{
+public class IncomeReport extends Report implements Serializable {
+    private static final long serialVersionUID = 1L;
     private BigDecimal TotalRevenue;
     private BigDecimal TotalExpenses;
     private BigDecimal NetProfit;

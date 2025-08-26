@@ -38,9 +38,6 @@ public class Customer extends User implements Serializable {
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private Cart cart;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "branch_id")
-    private Branch branch;
 
     public Customer() {
         super();
@@ -50,9 +47,8 @@ public class Customer extends User implements Serializable {
                     boolean isSubscribed, LocalDate subStartDate, LocalDate subExpDate, String email, String phone,
                     String address, String city, String country, String cardNumber,
                     int expirationMonth, int expirationYear, String cvv, Branch branch) {
-        super(name, username, password);
+        super(name, username, password,branch,isNetworkAccount);
         this.idNumber = idNumber;
-        this.isNetworkAccount = isNetworkAccount;
         this.email = email;
         this.phone = phone;
         this.address = address;
@@ -60,11 +56,8 @@ public class Customer extends User implements Serializable {
         this.country = country;
         this.creditCard = new CreditCard(cardNumber, expirationMonth, expirationYear, cvv, this);
         this.subscription = new Subscription(subStartDate, subExpDate, true, this);
-        this.branch = branch;
     }
 
-    public boolean isNetworkAccount() { return isNetworkAccount; }
-    public void setNetworkAccount(boolean networkAccount) { isNetworkAccount = networkAccount; }
 
     public void setIdNumber(String idNumber) {
         this.idNumber = idNumber;
@@ -104,10 +97,5 @@ public class Customer extends User implements Serializable {
     public void setCart(Cart cart) {
         this.cart = cart;
         if (cart != null) cart.setCustomer(this);
-    }
-
-    public Branch getBranch() { return branch; }
-    public void setBranch(Branch branch) {
-        this.branch = branch;
     }
 }

@@ -17,7 +17,7 @@ public class Order implements Serializable {
     @ManyToOne
     private Customer customer;
 
-    private String storeLocation;
+    private String branchName;
     private boolean delivery;
 
     private LocalDateTime orderDate;
@@ -34,12 +34,12 @@ public class Order implements Serializable {
 
     public Order() {}
 
-    public Order(Customer customer, String storeLocation, boolean delivery,
+    public Order(Customer customer, String branchName, boolean delivery,
                  LocalDateTime orderDate, LocalDateTime deliveryDateTime,
                  String recipientPhone, String deliveryAddress, String note,
                  String paymentMethod, String paymentDetails) {
         this.customer = customer;
-        this.storeLocation = storeLocation;
+        this.branchName = branchName;
         this.delivery = delivery;
         this.orderDate = orderDate;
         this.deliveryDateTime = deliveryDateTime;
@@ -62,10 +62,10 @@ public class Order implements Serializable {
     }
 
     public String getStoreLocation() {
-        return storeLocation;
+        return branchName;
     }
-    public void setStoreLocation(String storeLocation) {
-        this.storeLocation = storeLocation;
+    public void setStoreLocation(String branchName) {
+        this.branchName = branchName;
     }
 
     public boolean getDelivery() {

@@ -499,14 +499,17 @@ public class PrimaryController implements Initializable {
 			showAlert("Login Required", "Please login to add items to your cart.");
 			return;
 		}
-		try {
-			List<Object> payload = new ArrayList<>();
-			payload.add(currentUser);
-			Message message = new Message("add_to_cart", product.getId(), payload);
-			SimpleClient.getClient().sendToServer(message);
-			showAlert("Success", product.getName() + " was added to your cart!");
-		} catch (IOException e) {
-			showAlert("Error", "Failed to add item to cart.");
+		if(currentUser instanceof Customer) {
+			Customer customer = (Customer) currentUser;
+			try {
+				List<Object> payload = new ArrayList<>();
+				payload.add(customer);
+				Message message = new Message("add_to_cart", product.getId(), payload);
+				SimpleClient.getClient().sendToServer(message);
+				showAlert("Success", product.getName() + " was added to your cart!");
+			} catch (IOException e) {
+				showAlert("Error", "Failed to add item to cart.");
+			}
 		}
 	}
 
