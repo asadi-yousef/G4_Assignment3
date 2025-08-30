@@ -120,7 +120,6 @@ public class CartController implements Initializable {
 
             ///
             cartListView.getItems().clear();
-            double total = 0;
 
             if (cart == null || cart.getItems().isEmpty()) {
                 proceedToOrderButton.setDisable(true);
@@ -131,10 +130,10 @@ public class CartController implements Initializable {
             for (CartItem item : cart.getItems()) {
                 HBox itemBox = createCartItemBox(item);
                 cartListView.getItems().add(itemBox);
-                total += item.getProduct().getPrice() * item.getQuantity();
+
             }
 
-            totalLabel.setText("Total: $" + String.format("%.2f", total));
+            totalLabel.setText("Total: $" + String.format("%.2f", cart.getTotal()));
             proceedToOrderButton.setDisable(false);
         });
     }

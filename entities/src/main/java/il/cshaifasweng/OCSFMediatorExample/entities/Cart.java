@@ -47,6 +47,12 @@ public class Cart implements Serializable {
         CartItem newItem = new CartItem(product, this, quantity);
         items.add(newItem);
     }
+    public double getTotal() {
+        if (items == null) return 0.0;
+        return items.stream()
+                .mapToDouble(ci -> ci.getProduct().getPrice() * ci.getQuantity())
+                .sum();
+    }
 }
 
 

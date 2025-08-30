@@ -5,7 +5,9 @@ import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -625,21 +627,90 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
+	@SuppressWarnings("unchecked")
 	private void handleOrdersRequest(Message message, ConnectionToClient client) {
 		EntityManager em = emf.createEntityManager();
 		try {
-			User user = (User) message.getObjectList().get(0);
-			if (!(user instanceof Customer)) {
-				client.sendToClient(new Message("error", "User is not a customer", null));
+			Object criteriaObj = message.getObject();
+			User requester = null;
+			if (message.getObjectList() != null && !message.getObjectList().isEmpty()) {
+				Object p0 = message.getObjectList().get(0);
+				if (p0 instanceof User) {
+					// reattach to persistence context so LAZY fields can be used if needed
+					requester = em.find(User.class, ((User) p0).getId());
+				}
+			}
+
+			// --- Reports flow (criteria present) ---
+			if (criteriaObj instanceof Map) {
+				Map<String, Object> criteria = (Map<String, Object>) criteriaObj;
+				String branch = (String) criteria.get("branch"); // null => all branches
+				LocalDateTime from = (LocalDateTime) criteria.get("from");
+				LocalDateTime to   = (LocalDateTime) criteria.get("to");
+
+				boolean isSys = hasRole(requester, "SYSTEM_MANAGER") || hasRole(requester, "system_manager");
+				boolean isMgr = hasRole(requester, "MANAGER") || hasRole(requester, "manager");
+
+				if (!isSys && !isMgr) {
+					client.sendToClient(new Message("orders_data_report", List.of(), null));
+					System.out.println("DEBUG: orders_data_report sent (empty) due to role check fail");
+					return;
+				}
+
+				// Branch manager — force branch and clamp to current month
+				if (isMgr && !isSys) {
+					String myBranch = getUserBranchName(requester);
+					branch = myBranch;
+
+					LocalDate today = LocalDate.now();
+					LocalDateTime first = today.withDayOfMonth(1).atStartOfDay();
+					LocalDateTime nextMonth = today.plusMonths(1).withDayOfMonth(1).atStartOfDay();
+
+					if (from == null || from.isBefore(first)) from = first;
+					if (to == null || !to.isBefore(nextMonth)) to = nextMonth;
+				}
+
+				// JPQL with optional filters; fetch items + product to avoid N+1/lazy issues
+				String jpql = """
+                SELECT DISTINCT o
+                FROM Order o
+                LEFT JOIN FETCH o.items i
+                LEFT JOIN FETCH i.product p
+                WHERE (:branch IS NULL OR o.storeLocation = :branch)
+                  AND (:from   IS NULL OR o.orderDate >= :from)
+                  AND (:to     IS NULL OR o.orderDate  < :to)
+                ORDER BY o.orderDate ASC
+            """;
+
+				var q = em.createQuery(jpql, Order.class);
+				q.setParameter("branch", branch);
+				q.setParameter("from", from);
+				q.setParameter("to", to);
+
+				List<Order> results = q.getResultList();
+				client.sendToClient(new Message("orders_data_report", results, null));
+				System.out.println("DEBUG: orders_data_report size=" + results.size());
 				return;
 			}
-			Customer customer = em.find(Customer.class, user.getId());
 
-			List<Order> orders = em.createQuery("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.customer.id = :cid", Order.class)
-					.setParameter("cid", customer.getId())
-					.getResultList();
+			// --- Backward compatibility (old Orders screen): customer-only ---
+			if (requester instanceof Customer) {
+				Customer customer = em.find(Customer.class, requester.getId());
 
-			client.sendToClient(new Message("orders_data", orders, null));
+				List<Order> orders = em.createQuery(
+								"SELECT DISTINCT o FROM Order o " +
+										"LEFT JOIN FETCH o.items i " +
+										"LEFT JOIN FETCH i.product " +
+										"WHERE o.customer.id = :cid " +
+										"ORDER BY o.orderDate ASC", Order.class)
+						.setParameter("cid", customer.getId())
+						.getResultList();
+
+				client.sendToClient(new Message("orders_data", orders, null));
+			} else {
+				client.sendToClient(new Message("orders_data", List.of(), null));
+			}
+
 		} catch (Exception e) {
 			e.printStackTrace();
 			try {
@@ -650,6 +721,28 @@ public class SimpleServer extends AbstractServer {
 		} finally {
 			em.close();
 		}
+	}
+
+	/* --- tiny helpers on the server (same spirit as client) --- */
+
+	private boolean hasRole(User u, String role) {
+		if (u == null) return false;
+		try {
+			var m = u.getClass().getMethod("getRole");
+			Object r = m.invoke(u);
+			return r != null && role.equalsIgnoreCase(r.toString());
+		} catch (Exception ignored) { return false; }
+	}
+
+	private String getUserBranchName(User u) {
+		if (u == null) return null;
+		for (String mName : List.of("getBranchName","getStoreName","getBranch_name")) {
+			try {
+				Object v = u.getClass().getMethod(mName).invoke(u);
+				if (v != null) return v.toString();
+			} catch (Exception ignored) {}
+		}
+		return null;
 	}
 
 

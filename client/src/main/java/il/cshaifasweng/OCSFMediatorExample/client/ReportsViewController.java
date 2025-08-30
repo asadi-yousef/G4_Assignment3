@@ -10,7 +10,8 @@ import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
 import org.greenrobot.eventbus.EventBus;
 import javafx.scene.control.DateCell;
-
+import org.greenrobot.eventbus.Subscribe;
+import java.util.stream.Collectors;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -19,6 +20,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+
 
 public class ReportsViewController implements Initializable {
 
@@ -32,12 +34,20 @@ public class ReportsViewController implements Initializable {
     @FXML private TextArea reportOutput;
     @FXML private BarChart<String, Number> barChart;
     @FXML private Button backToCatalogButton;
+    private String pendingType;
+    private String pendingBranch;
+    private LocalDate pendingStart, pendingEnd;
+    private boolean waitingForOrders = false;
 
     private ToggleGroup reportTypeGroup;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         // Role gate (same logic as before)
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this);
+        }
+
         if (!(isSystemManager()||isBranchManager())) {
             showInfo("Permission Denied", "You do not have permission to view reports.");
             return;
@@ -100,7 +110,7 @@ public class ReportsViewController implements Initializable {
 
     @FXML
     private void onGenerate() {
-        // Allow roles: SYSTEM_MANAGER or BRANCH_MANAGER
+        System.out.println("DEBUG: onGenerate clicked");
         if (!(isSystemManager() || isBranchManager())) {
             showInfo("Permission Denied", "You do not have permission to view reports.");
             return;
@@ -109,7 +119,6 @@ public class ReportsViewController implements Initializable {
         String branch = Optional.ofNullable(branchComboBox.getValue()).orElse("All Branches");
         LocalDate start = startDatePicker.getValue();
         LocalDate end   = endDatePicker.getValue();
-
         if (start == null || end == null) { showInfo("Validation","Please pick start and end dates."); return; }
         if (end.isBefore(start)) { showInfo("Validation","End date cannot be before start date."); return; }
 
@@ -128,39 +137,84 @@ public class ReportsViewController implements Initializable {
             }
         }
 
+        // Clear UI and show a fetching message
         clearChart();
-        reportOutput.clear();
+        reportOutput.setText("Fetching orders for " + branch + " (" + start + " → " + end + ")...");
 
-        if (incomeReportBtn.isSelected()) {
-            IncomeReport r = new IncomeReport(
-                    0, branch, 0L,
-                    start.atStartOfDay(), end.plusDays(1).atStartOfDay(),
-                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0
-            );
-            r.generate();
-            renderIncomeReport(r);
+        // Build criteria for server
+        Map<String, Object> criteria = new HashMap<>();
+        criteria.put("branch", "All Branches".equalsIgnoreCase(branch) ? null : branch);
+        criteria.put("from", start.atStartOfDay());
+        criteria.put("to",   end.plusDays(1).atStartOfDay()); // exclusive end
 
-        } else if (ordersReportBtn.isSelected()) {
-            OrdersReport r = new OrdersReport(
-                    0, branch, 0L,
-                    start.atStartOfDay(), end.plusDays(1).atStartOfDay(),
-                    0, 0, 0, new HashMap<>()
-            );
-            r.generate();
-            renderOrdersReport(r);
+        // Include current user in payload if your server expects it (mirrors cart pattern)
+        List<Object> payload = new ArrayList<>();
+        payload.add(SessionManager.getInstance().getCurrentUser());
 
-        } else if (complaintsReportBtn.isSelected()) {
-            ComplaintsReport r = new ComplaintsReport(
-                    0, branch, 0L,
-                    start.atStartOfDay(), end.plusDays(1).atStartOfDay(),
-                    new HashMap<>(), 0, 0, 0, null
-            );
-            r.generate();
-            renderComplaintsReport(r);
+        try {
+            if (!SimpleClient.getClient().isConnected()) {
+                SimpleClient.getClient().openConnection();
+            }
+            SimpleClient.getClient().sendToServer(new Message("request_orders", criteria, payload));
+        } catch (IOException e) {
+            showInfo("Connection Error", "Failed to request orders from server.");
         }
     }
 
     // ---------- RENDERERS ----------
+    @Subscribe
+    public void onMessageFromServer(Message msg) {
+        if (msg == null || msg.getMessage() == null) return;
+        String kind = msg.getMessage();
+        if (!"orders_data_report".equals(kind) && !"orders_data".equals(kind)) return;
+
+        if (!"orders_data_report".equals(msg.getMessage())) return;
+
+        // Always switch to FX thread
+        Platform.runLater(() -> {
+            // Defensive cast
+            System.out.println("DEBUG: "+kind+ "received");
+            List<Order> orders = new ArrayList<>();
+            Object obj = msg.getObject();
+            if (obj instanceof List<?>) {
+                for (Object o : (List<?>) obj) {
+                    if (o instanceof Order) orders.add((Order) o);
+                }
+            }
+
+            // Client-side safety filter (in case server didn't filter):
+            String branch = Optional.ofNullable(branchComboBox.getValue()).orElse("All Branches");
+            LocalDate start = startDatePicker.getValue();
+            LocalDate end   = endDatePicker.getValue();
+            LocalDateTime from = start != null ? start.atStartOfDay() : null;
+            LocalDateTime to   = end != null ? end.plusDays(1).atStartOfDay() : null;
+
+            orders = orders.stream()
+                    .filter(o -> {
+                        LocalDateTime od = o.getOrderDate();
+                        boolean inTime = (od == null) ||
+                                ((from == null || !od.isBefore(from)) && (to == null || od.isBefore(to)));
+                        boolean inBranch = "All Branches".equalsIgnoreCase(branch)
+                                || Objects.equals(branch, safe(o.getStoreLocation()));
+                        return inTime && inBranch;
+                    })
+                    .collect(Collectors.toList());
+
+            if (orders.isEmpty()) {
+                clearChart();
+                reportOutput.setText("No orders found for the selected filters.");
+                return;
+            }
+            if (incomeReportBtn.isSelected()) {
+                renderIncomeFromOrders(orders, branch, from, to);
+            } else if (ordersReportBtn.isSelected()) {
+                renderOrdersFromOrders(orders, branch, from, to);
+            } else if (complaintsReportBtn.isSelected()) {
+                reportOutput.setText("Complaints report is not wired to server data yet.");
+            }
+        });
+    }
+
 
     private void renderIncomeReport(IncomeReport r) {
         // Chart: Revenue vs Expenses vs Net Profit
@@ -293,6 +347,96 @@ public class ReportsViewController implements Initializable {
         }
         return null;
     }
+    private String safe(String s) { return s == null ? "" : s; }
+
+    private void renderIncomeFromOrders(List<Order> orders, String branch, LocalDateTime from, LocalDateTime to) {
+        BigDecimal revenue = BigDecimal.ZERO;
+
+        for (Order o : orders) {
+            double orderTotal = 0.0;
+
+            // Prefer Order.getTotal() if you added it
+            try {
+                orderTotal = o.getTotal(); // <- now that you set it on the server
+            } catch (Throwable ignored) { /* fallback below */ }
+
+            if (orderTotal <= 0.0 && o.getItems() != null) {
+                for (OrderItem it : o.getItems()) {
+                    double price = 0.0;
+                    int qty = 0;
+                    try { price = it.getProduct().getPrice(); } catch (Throwable ignored) {}
+                    try { qty   = it.getQuantity(); }          catch (Throwable ignored) {}
+                    orderTotal += price * qty;
+                }
+            }
+            revenue = revenue.add(BigDecimal.valueOf(orderTotal));
+        }
+
+        BigDecimal expenses = BigDecimal.ZERO; // replace when you track COGS/expenses
+        BigDecimal net = revenue.subtract(expenses);
+
+        // days in [from, to) — avoid divide-by-zero
+        long days = 1;
+        if (from != null && to != null) {
+            long d = java.time.temporal.ChronoUnit.DAYS.between(from.toLocalDate(), to.toLocalDate());
+            if (d > 0) days = d;
+        }
+        BigDecimal avgDaily = net.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
+
+        int transactions = orders.size();
+
+        IncomeReport r = new IncomeReport(
+                0, branch, 0L,
+                (from != null ? from : LocalDate.now().atStartOfDay()),
+                (to   != null ? to   : LocalDate.now().plusDays(1).atStartOfDay()),
+                revenue,
+                expenses,
+                net,
+                avgDaily,
+                transactions
+        );
+
+        clearChart();
+        renderIncomeReport(r);
+    }
+
+    private void renderOrdersFromOrders(List<Order> orders, String branch, LocalDateTime from, LocalDateTime to) {
+        int totalOrders = orders.size();
+
+        // If you have cancellation status, compute it here
+        int cancelled = 0; // e.g., (int) orders.stream().filter(o -> "CANCELLED".equalsIgnoreCase(o.getStatus())).count();
+        int netOrders = totalOrders - cancelled;
+
+        Map<String,Integer> hist = new LinkedHashMap<>();
+        for (Order o : orders) {
+            if (o.getItems() == null) continue;
+            for (OrderItem it : o.getItems()) {
+                String key = (it.getProduct() != null && it.getProduct().getName() != null)
+                        ? it.getProduct().getName()
+                        : "Unknown";
+
+                int qty = 0;
+                try { qty = it.getQuantity(); } catch (Throwable ignored) {}
+                hist.merge(key, qty, Integer::sum);
+            }
+        }
+
+
+        // Build a DTO and display with your existing renderer
+        OrdersReport r = new OrdersReport(
+                0, branch, 0L,
+                from != null ? from : LocalDate.now().atStartOfDay(),
+                to   != null ? to   : LocalDate.now().plusDays(1).atStartOfDay(),
+                totalOrders,
+                cancelled,
+                netOrders,
+                hist
+        );
+
+        clearChart();
+        renderOrdersReport(r);
+    }
+
 
     @FXML
     public void handleBackToCatalog(ActionEvent event) {

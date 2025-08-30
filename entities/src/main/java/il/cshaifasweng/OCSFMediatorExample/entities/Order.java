@@ -19,6 +19,7 @@ public class Order implements Serializable {
 
     private String storeLocation;
     private boolean delivery;
+    private double total;
 
     private LocalDateTime orderDate;
     private LocalDateTime deliveryDateTime; // combines date & hour
@@ -129,5 +130,25 @@ public class Order implements Serializable {
     }
     public void setItems(List<OrderItem> items) {
         this.items = items;
+    }
+
+    public double getTotal() { return total; }
+    public void setTotal(double total) { this.total = total; }
+
+    public void recomputeTotal() {
+        double sum = 0.0;
+        if (items != null) {
+            for (OrderItem it : items) {
+                // assumes OrderItem has getProduct().getPrice() and getQuantity()
+                sum += it.getProduct().getPrice() * it.getQuantity();
+            }
+        }
+        this.total = sum;
+    }
+
+    @PrePersist
+    @PreUpdate
+    private void onPersistOrUpdate() {
+        recomputeTotal();
     }
 }
