@@ -16,6 +16,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.Map;
+
 
 public class SimpleServer extends AbstractServer {
 
@@ -32,19 +36,42 @@ public class SimpleServer extends AbstractServer {
 
     public SimpleServer(int port) {
         super(port);
+
+        // --- DEBUG: list all mapped entities so we can confirm Complaint is registered ---
+        try {
+            var sf = HibernateUtil.getSessionFactory();
+            System.out.println("=== Hibernate mapped entities ===");
+            sf.getMetamodel().getEntities().forEach(e ->
+                    System.out.println(" - " + e.getName() + "  (" + e.getJavaType().getName() + ")")
+            );
+            boolean complaintMapped = sf.getMetamodel().getEntities().stream()
+                    .anyMatch(e -> "Complaint".equals(e.getName())
+                            || e.getJavaType().getName().endsWith(".Complaint"));
+            if (!complaintMapped) {
+                System.err.println("WARNING: Complaint entity is NOT mapped. " +
+                        "Ensure the server is loading the correct hibernate.cfg.xml " +
+                        "and that the entities module with Complaint.class is on the server classpath.");
+            }
+            System.out.println("=================================");
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        // -------------------------------------------------------------------------------
+
         initCaches(); // warm user cache before catalog
 
         // Initialize catalog snapshot once at startup
         catalogLock.writeLock().lock();
         try {
             try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-                catalog.setFlowers(getListFromDB(session,Product.class));
+                catalog.setFlowers(getListFromDB(session, Product.class));
                 System.out.println("number of products in catalog: " + catalog.getFlowers().size());
             }
         } finally {
             catalogLock.writeLock().unlock();
         }
     }
+
 
     @Override
     protected void clientConnected(ConnectionToClient client) {
@@ -93,6 +120,10 @@ public class SimpleServer extends AbstractServer {
             if (msg instanceof Message) {
                 Message m = (Message) msg;
                 String key = m.getMessage();
+                System.out.println("[RX] key=" + key +
+                        " obj=" + (m.getObject()==null?"null":m.getObject().getClass().getSimpleName()) +
+                        " listSize=" + (m.getObjectList()==null?0:m.getObjectList().size()));
+
 
                 if ("register".equals(key)) {
                     handleUserRegistration(m, client, session);
@@ -125,6 +156,19 @@ public class SimpleServer extends AbstractServer {
                 } else if (key != null && key.startsWith("add_custom_bouquet_to_cart")) {
                     handleAddCustomBouquetToCart(m, client, session);
                 }
+                // === Complaint routes ===
+                // === Complaint routes ===
+                else if ("submit_complaint".equals(key)) {
+                    handleSubmitComplaint(m, client, session);
+                } else if ("get_complaints_for_branch".equals(key) || "get_all_complaints".equals(key)) {
+                    // unified: employees see all unresolved complaints
+                    handleGetAllComplaints(m, client, session);
+                } else if ("resolve_complaint".equals(key)) {
+                    handleResolveComplaint(m, client, session);
+                }
+                else {
+                    System.out.println("[WARN] Unhandled key: " + key);
+                }
             }
 
             // non-Message signals (kept as-is)
@@ -146,6 +190,185 @@ public class SimpleServer extends AbstractServer {
     }
 
     /* ----------------------- Handlers (all receive Session) ----------------------- */
+
+
+    @SuppressWarnings("unchecked")
+    private void handleSubmitComplaint(Message m, ConnectionToClient client, Session session) {
+        System.out.println("[SubmitComplaint] raw obj=" +
+                (m.getObject()==null?"null":m.getObject().getClass().getName()) +
+                " list=" + (m.getObjectList()==null?"null":m.getObjectList().stream()
+                .map(o -> o==null?"null":o.getClass().getName())
+                .collect(java.util.stream.Collectors.joining(", "))));
+
+        Transaction tx = session.beginTransaction();
+        try {
+            Long customerId = null;
+            Long orderId    = null;   // optional
+            String text     = null;
+
+            // ---- Accept BOTH payload styles ----
+            if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
+                Object p0 = m.getObjectList().get(0);
+
+                // Style A: Map { text, customerId, orderId? }
+                if (p0 instanceof Map) {
+                    Map<String,Object> p = (Map<String,Object>) p0;
+                    text = Objects.toString(p.get("text"), "").trim();
+
+                    Object cid = p.get("customerId");
+                    if (cid instanceof Number) customerId = ((Number) cid).longValue();
+                    else if (cid instanceof String && !((String) cid).isBlank())
+                        customerId = Long.valueOf((String) cid);
+
+                    Object oid = p.get("orderId");
+                    if (oid instanceof Number) orderId = ((Number) oid).longValue();
+                    else if (oid instanceof String && !((String) oid).isBlank())
+                        orderId = Long.valueOf((String) oid);
+                }
+                // Style B: [Complaint, Customer, Order?]
+                else if (p0 instanceof Complaint) {
+                    Complaint incoming = (Complaint) p0;
+                    text = Optional.ofNullable(incoming.getText()).orElse("").trim();
+
+                    if (m.getObjectList().size() > 1 && m.getObjectList().get(1) instanceof Customer) {
+                        customerId = ((Customer) m.getObjectList().get(1)).getId();
+                    }
+                    if (m.getObjectList().size() > 2 && m.getObjectList().get(2) instanceof Order) {
+                        orderId = ((Order) m.getObjectList().get(2)).getId();
+                    }
+                }
+            }
+
+            // ---- Basic validation (no 14-day rule, order optional) ----
+            if (text == null || text.isBlank()) {
+                tx.rollback();
+                client.sendToClient(new Message("complaint_error", "Complaint text empty", null));
+                return;
+            }
+            if (customerId == null) {
+                tx.rollback();
+                client.sendToClient(new Message("complaint_error", "Missing customerId", null));
+                return;
+            }
+
+            Customer customer = session.get(Customer.class, customerId);
+            if (customer == null) {
+                tx.rollback();
+                client.sendToClient(new Message("complaint_error", "Customer not found", null));
+                return;
+            }
+
+            Order order = (orderId != null) ? session.get(Order.class, orderId) : null;
+
+            // ---- Persist complaint ----
+            Complaint c = new Complaint();
+            c.setCustomer(customer);
+            c.setOrder(order); // nullable (website issue etc.)
+            c.setText(text.length() > 120 ? text.substring(0, 120) : text);
+            c.setSubmittedAt(java.time.LocalDateTime.now());
+            c.setDeadline(c.getSubmittedAt().plusHours(24));
+            c.setResolved(false);
+            c.setBranch(customer.getBranch()); // optional snapshot
+
+            session.persist(c);
+            tx.commit();
+
+            client.sendToClient(new Message("complaint_submitted", c, null));
+            // optional: nudge employee UIs to refresh
+            try { sendToAllClients(new Message("complaints_refresh", null, null)); } catch (Exception ignored) {}
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("complaint_error", "Exception: " + e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+
+    /** Return ALL unresolved complaints (no branch filter), newest first. */
+    private void handleGetAllComplaints(Message m, ConnectionToClient client, Session session) {
+        try {
+            String hql = "select c from Complaint c " +
+                    "left join fetch c.customer " +
+                    "left join fetch c.order " +
+                    "order by c.submittedAt desc";
+            var list = session.createQuery(hql, Complaint.class).getResultList();
+            list.removeIf(Complaint::isResolved);
+
+            System.out.println("[Complaints] Fetched " + list.size() + " (unresolved only=true)");
+            client.sendToClient(new Message("complaints_list", list, null));
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("complaints_error", "Failed to fetch complaints", null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+
+
+    /** Mark a complaint as resolved, set responder/response/compensation, and notify client. */
+    private void handleResolveComplaint(Message m, ConnectionToClient client, Session session) {
+        Transaction tx = session.beginTransaction();
+        try {
+            // Expecting objectList: [complaintId(Number or Complaint), (optional) Employee, (optional) String responseText, (optional) Number/BigDecimal compensation]
+            Long complaintId = null;
+            Employee responder = null;
+            String responseText = null;
+            BigDecimal compensation = null;
+
+            if (m.getObjectList() != null) {
+                if (m.getObjectList().size() > 0) {
+                    Object idObj = m.getObjectList().get(0);
+                    if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
+                    else if (idObj instanceof Complaint && ((Complaint) idObj).getId() != 0) {
+                        complaintId = (long) ((Complaint) idObj).getId();
+                    }
+                }
+                if (m.getObjectList().size() > 1 && m.getObjectList().get(1) instanceof Employee) {
+                    responder = session.get(Employee.class, ((Employee) m.getObjectList().get(1)).getId());
+                }
+                if (m.getObjectList().size() > 2 && m.getObjectList().get(2) instanceof String) {
+                    responseText = (String) m.getObjectList().get(2);
+                }
+                if (m.getObjectList().size() > 3) {
+                    Object comp = m.getObjectList().get(3);
+                    if (comp instanceof BigDecimal) compensation = (BigDecimal) comp;
+                    else if (comp instanceof Number) compensation = BigDecimal.valueOf(((Number) comp).doubleValue());
+                }
+            }
+
+            if (complaintId == null) {
+                tx.rollback();
+                client.sendToClient(new Message("complaint_resolve_error", "Missing complaint id", null));
+                return;
+            }
+
+            Complaint c = session.get(Complaint.class, complaintId);
+            if (c == null) {
+                tx.rollback();
+                client.sendToClient(new Message("complaint_resolve_error", "Complaint not found", null));
+                return;
+            }
+
+            c.setResolved(true);
+            c.setResolvedAt(LocalDateTime.now());
+            if (responseText != null) c.setResponseText(responseText);
+            if (compensation != null) c.setCompensationAmount(compensation);
+            if (responder != null) c.setResponder(responder);
+
+            session.merge(c);
+            tx.commit();
+
+            client.sendToClient(new Message("complaint_resolved", c, null));
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("complaint_resolve_error", "Exception: " + e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+
 
     private void handleAddCustomBouquetToCart(Message message, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();

@@ -4,64 +4,60 @@ import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
-import org.hibernate.HibernateException;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Scanner;
 
 public class App {
 
-    private static org.hibernate.SessionFactory buildSessionFactoryFromCfg() {
-        org.hibernate.cfg.Configuration cfg = new org.hibernate.cfg.Configuration().configure(); // loads hibernate.cfg.xml
+    private static SessionFactory buildSessionFactoryFromCfg() {
+        // Loads hibernate.cfg.xml from classpath
+        Configuration cfg = new Configuration().configure();
 
-        // Optional: allow runtime password override
+        // Optional: allow runtime password override (kept from your version)
         System.out.print("Please enter your MySQL password: ");
         String pw = new java.util.Scanner(System.in).nextLine();
         if (pw != null && !pw.isEmpty()) {
             cfg.setProperty("hibernate.connection.password", pw);
         }
 
-        // Register ALL annotated entities (belt & suspenders with XML <mapping/>)
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Product.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Customer.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.User.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Employee.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Cart.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.CartItem.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Branch.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.CreditCard.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Subscription.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Order.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.OrderItem.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Report.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.OrdersReport.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.IncomeReport.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.ComplaintsReport.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.OrderRequest.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.CustomBouquet.class);
-        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.CustomBouquetItem.class);
+        // Register ALL annotated entities explicitly
+        cfg.addAnnotatedClass(Product.class);
+        cfg.addAnnotatedClass(Customer.class);
+        cfg.addAnnotatedClass(User.class);
+        cfg.addAnnotatedClass(Employee.class);
+        cfg.addAnnotatedClass(Cart.class);
+        cfg.addAnnotatedClass(CartItem.class);
+        cfg.addAnnotatedClass(Branch.class);
+        cfg.addAnnotatedClass(CreditCard.class);
+        cfg.addAnnotatedClass(Subscription.class);
+        cfg.addAnnotatedClass(Order.class);
+        cfg.addAnnotatedClass(OrderItem.class);
+        cfg.addAnnotatedClass(Report.class);
+        cfg.addAnnotatedClass(OrdersReport.class);
+        cfg.addAnnotatedClass(IncomeReport.class);
+        cfg.addAnnotatedClass(ComplaintsReport.class);
+        cfg.addAnnotatedClass(OrderRequest.class);
+        cfg.addAnnotatedClass(CustomBouquet.class);
+        cfg.addAnnotatedClass(CustomBouquetItem.class);
+        // 👇 IMPORTANT: Complaint must be mapped
+        cfg.addAnnotatedClass(Complaint.class);
 
-        org.hibernate.service.ServiceRegistry registry =
-                new org.hibernate.boot.registry.StandardServiceRegistryBuilder()
-                        .applySettings(cfg.getProperties())
-                        .build();
+        ServiceRegistry registry = new StandardServiceRegistryBuilder()
+                .applySettings(cfg.getProperties())
+                .build();
 
         return cfg.buildSessionFactory(registry);
     }
 
-
     public static void main(String[] args) throws IOException {
-        // Build SessionFactory from hibernate.cfg.xml
+        // Build SessionFactory and make it available globally
         SessionFactory sessionFactory = buildSessionFactoryFromCfg();
-
-        // Make it available to the rest of the app
         HibernateUtil.setSessionFactory(sessionFactory);
 
-        // Start server on port 3000 (this is your app server port, not MySQL)
+        // Start the server (port 3000 as in your code)
         SimpleServer server = new SimpleServer(3000);
 
         // ---- Seed DB if empty (single transaction, commit will flush) ----
@@ -137,12 +133,18 @@ public class App {
 
         // Warm caches and start listening
         server.initCaches();
-        server.listen();
+        try {
+            server.listen();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
         // Clean shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             HibernateUtil.shutdown();
-            com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
+            try {
+                com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
+            } catch (Throwable ignored) {}
         }));
     }
 }
