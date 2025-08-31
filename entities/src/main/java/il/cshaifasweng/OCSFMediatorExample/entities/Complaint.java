@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "complaints")
 public class Complaint implements Serializable {
-
+    private static final long serialVersionUID = 1L;
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
@@ -20,6 +20,10 @@ public class Complaint implements Serializable {
 
     @Column(length = 100, nullable = false)
     private String text;
+
+    @JoinColumn(name="branch_id", nullable = true)
+    @ManyToOne(fetch = FetchType.EAGER)
+    private Branch branch;
 
     private LocalDateTime submittedAt;
 

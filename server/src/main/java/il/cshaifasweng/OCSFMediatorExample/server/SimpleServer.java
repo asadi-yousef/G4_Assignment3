@@ -3,49 +3,44 @@ package il.cshaifasweng.OCSFMediatorExample.server;
 import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
 
 import org.hibernate.Session;
-import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.function.Function;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.EntityManagerFactory;
-import jakarta.persistence.Persistence;
+import java.io.IOException;
 import java.time.LocalDateTime;
-
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 public class SimpleServer extends AbstractServer {
-	// Thread-safe collection for subscribers
+
+	// ---- Subscribers (thread-safe) ----
 	private static final CopyOnWriteArrayList<SubscribedClient> subscribersList = new CopyOnWriteArrayList<>();
 
+	// ---- In-memory catalog snapshot + lock ----
 	private static volatile Catalog catalog = new Catalog(new ArrayList<>());
 	private static final ReentrantReadWriteLock catalogLock = new ReentrantReadWriteLock();
 
-	// Use ConcurrentHashMap for thread-safe cache
+	// ---- Caches + per-username locks ----
 	private static final ConcurrentHashMap<String, User> userCache = new ConcurrentHashMap<>();
-
-	private static EntityManagerFactory emf = Persistence.createEntityManagerFactory("my-persistence-unit");
+	private static final ConcurrentHashMap<String, Object> usernameLocks = new ConcurrentHashMap<>();
 
 	public SimpleServer(int port) {
 		super(port);
-		initCaches(); // Initialize caches before loading catalog
+		initCaches(); // warm user cache before catalog
 
+		// Initialize catalog snapshot once at startup
 		catalogLock.writeLock().lock();
 		try {
-			catalog.setFlowers(getListFromDB(Product.class));
-			System.out.println("number of products in catalog: " + catalog.getFlowers().size());
+			try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+				catalog.setFlowers(getListFromDB(session,Product.class));
+				System.out.println("number of products in catalog: " + catalog.getFlowers().size());
+			}
 		} finally {
 			catalogLock.writeLock().unlock();
 		}
@@ -54,129 +49,177 @@ public class SimpleServer extends AbstractServer {
 	@Override
 	protected void clientConnected(ConnectionToClient client) {
 		super.clientConnected(client);
-		// CopyOnWriteArrayList is thread-safe, no synchronization needed
 		subscribersList.add(new SubscribedClient(client));
 	}
 
-	public <T> List<T> getListFromDB(Class<T> entityClass) {
-		List<T> resultList;
-		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-			resultList = session.createQuery("from " + entityClass.getSimpleName(), entityClass).list();
+	/* ----------------------- Generic DB helpers (session passed in) ----------------------- */
+
+	public <T> List<T> getListFromDB(Session session, Class<T> entityClass) {
+		Transaction tx = session.getTransaction().isActive() ? session.getTransaction() : session.beginTransaction();
+		try {
+			List<T> list = session.createQuery("from " + entityClass.getSimpleName(), entityClass).list();
+			// read-only tx: commit for portability/consistency
+			if (tx.isActive()) tx.commit();
+			return list;
 		} catch (Exception e) {
+			if (tx.isActive()) tx.rollback();
 			e.printStackTrace();
-			resultList = new ArrayList<>();
+			return new ArrayList<>();
 		}
-		return resultList;
 	}
 
-	public <T, K> void loadToCache(Class<T> entityClass, ConcurrentHashMap<K,T> cache, Function<T, K> keyExtractor) {
-		List<T> entities = getListFromDB(entityClass);
-		cache.clear(); // Clear existing entries
+	public <T, K> void loadToCache(Session session, Class<T> entityClass, ConcurrentHashMap<K, T> cache, Function<T, K> keyExtractor) {
+		List<T> entities = getListFromDB(session, entityClass);
+		cache.clear();
 		for (T entity : entities) {
 			cache.put(keyExtractor.apply(entity), entity);
 		}
 	}
 
-	public void initCaches(){
-		loadToCache(User.class, userCache, User::getUsername);
+	public void initCaches() {
+		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+			loadToCache(session, User.class, userCache, User::getUsername);
+		}
 	}
+
+	/* ----------------------- Request dispatch ----------------------- */
 
 	@Override
 	protected void handleMessageFromClient(Object msg, ConnectionToClient client) {
-		if (msg == null) {
-			return; // Guard against null messages
-		}
+		if (msg == null) return;
 
-		String msgString = msg.toString();
-
-		// Create a new session for each request to avoid sharing sessions
 		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-			if(msg instanceof Message) {
-				Message message = (Message) msg;
-				if(Objects.equals(message.getMessage(), "register")) {
-					handleUserRegistration(message, client, session);
-				}
-				else if(msgString.startsWith("add_product")) {
-					handleAddProduct(message, client, session);
-				}
-				else if (msgString.startsWith("editProduct")) {
-					handleProductEdit(message);
-				}
-				else if(msgString.startsWith("delete_product")) {
-					handleDeleteProduct(message, client, session);
-				}
-				else if(msgString.startsWith("add_to_cart")) {
-					handleAddToCart(message, client);
-				}
-				else if(msgString.startsWith("remove_cart_item")) {
-					handleRemoveFromCart(message, client);
-				}
-				else if(msgString.startsWith("request_cart")) {
-					handleCartRequest(message, client);
-				}
-				else if(msgString.startsWith("request_orders")) {
-					handleOrdersRequest(message,client);
-				}
-				else if(msgString.equals("request_customer_data")) {
-					handleCustomerDataRequest(message, client, session);
-				}
-				else if(msgString.equals("update_profile")) {
-					handleProfileUpdate(message, client, session);
-				}
-				else if(msgString.startsWith("place_order")){
-					handlePlaceOrder(message, client);
-				}
-				else if(msgString.startsWith("update_cart_item_quantity"))
-				{
-					handleUpdateCartItemQuantity(message, client);
-				}
-				else if (msgString.startsWith("request_branches")) {
-					System.out.println("request_Branches");
-					handleBranchesRequest(message, client);
-				}
-				else if (msgString.equals("check existence")) {
-					handleUserAuthentication(message, client, session);
-				}
-				else if(msgString.startsWith("cancel_order")) {
-					handleCancelOrder(message, client);
-				}
+			// one session per incoming message; pass it to all handlers
+			if (msg instanceof Message) {
+				Message m = (Message) msg;
+				String key = m.getMessage();
 
+				if ("register".equals(key)) {
+					handleUserRegistration(m, client, session);
+				} else if (key != null && key.startsWith("add_product")) {
+					handleAddProduct(m, client, session);
+				} else if (key != null && key.startsWith("editProduct")) {
+					handleProductEdit(m, client, session);
+				} else if (key != null && key.startsWith("delete_product")) {
+					handleDeleteProduct(m, client, session);
+				} else if (key != null && key.startsWith("add_to_cart")) {
+					handleAddToCart(m, client, session);
+				} else if (key != null && key.startsWith("remove_cart_item")) {
+					handleRemoveFromCart(m, client, session);
+				} else if (key != null && key.startsWith("request_cart")) {
+					handleCartRequest(m, client, session);
+				} else if (key != null && key.startsWith("request_orders")) {
+					handleOrdersRequest(m, client, session);
+				} else if ("request_customer_data".equals(key)) {
+					handleCustomerDataRequest(m, client, session);
+				} else if ("update_profile".equals(key)) {
+					handleProfileUpdate(m, client, session);
+				} else if (key != null && key.startsWith("place_order")) {
+					handlePlaceOrder(m, client, session);
+				} else if (key != null && key.startsWith("update_cart_item_quantity")) {
+					handleUpdateCartItemQuantity(m, client, session);
+				} else if (key != null && key.startsWith("request_branches")) {
+					handleBranchesRequest(m, client, session);
+				} else if ("check existence".equals(key)) {
+					handleUserAuthentication(m, client, session);
+				} else if (key != null && key.startsWith("add_custom_bouquet_to_cart")) {
+					handleAddCustomBouquetToCart(m, client, session);
+				}
 			}
 
-			if (msgString.equals("request_catalog")) {
+			// non-Message signals (kept as-is)
+			String msgString = msg.toString();
+			if ("request_catalog".equals(msgString)) {
 				handleCatalogRequest(client);
-			}
-			else if (msgString.startsWith("remove client")) {
+			} else if (msgString.startsWith("remove client")) {
 				handleClientRemoval(client);
 				System.out.println("removed subscribed client");
 			}
-
 		} catch (Exception e) {
 			e.printStackTrace();
-			// Send error response to client
 			try {
-				Message errorMsg = new Message("server_error", null, null);
-				client.sendToClient(errorMsg);
+				client.sendToClient(new Message("server_error", null, null));
 			} catch (IOException ioException) {
 				ioException.printStackTrace();
 			}
 		}
 	}
 
-	private void handleBranchesRequest(Message msg, ConnectionToClient client) throws IOException {
-		List<Branch> branches = getListFromDB(Branch.class);
+	/* ----------------------- Handlers (all receive Session) ----------------------- */
+
+	private void handleAddCustomBouquetToCart(Message message, ConnectionToClient client, Session session) {
+		Transaction tx = session.beginTransaction();
+		try {
+			User user = (User) message.getObjectList().get(0);
+			if (!(user instanceof Customer)) {
+				client.sendToClient(new Message("error", "User is not a customer", null));
+				tx.rollback();
+				return;
+			}
+			CustomBouquet bouquet = (CustomBouquet) message.getObject();
+
+			Customer managedCustomer = session.get(Customer.class, ((Customer) user).getId());
+			if (managedCustomer == null) {
+				tx.rollback();
+				client.sendToClient(new Message("error", "Customer not found", null));
+				return;
+			}
+
+			Cart cart = session.createQuery(
+							"SELECT DISTINCT c FROM Cart c LEFT JOIN FETCH c.items WHERE c.customer.id = :uid",
+							Cart.class).setParameter("uid", managedCustomer.getId())
+					.uniqueResultOptional().orElse(null);
+			if (cart == null) {
+				cart = new Cart(managedCustomer);
+				session.persist(cart);
+				managedCustomer.setCart(cart);
+			}
+
+			bouquet.setCreatedBy(managedCustomer);
+			if (bouquet.getItems() != null) {
+				for (CustomBouquetItem it : bouquet.getItems()) {
+					it.setBouquet(bouquet);
+				}
+			}
+			bouquet.recomputeTotalPrice();
+
+			CartItem newItem = new CartItem();
+			newItem.setCart(cart);
+			newItem.setCustomBouquet(bouquet);
+			newItem.setQuantity(1);
+
+			session.persist(newItem);
+			cart.getItems().add(newItem);
+
+			session.merge(cart);
+			tx.commit();
+
+			// Refresh view using a short new session (read-only)
+			try (Session s2 = HibernateUtil.getSessionFactory().openSession()) {
+				Cart refreshed = fetchCartWithEverything(s2, cart.getId());
+				client.sendToClient(new Message("cart_data", refreshed, null));
+			}
+		} catch (Exception e) {
+			if (tx.isActive()) tx.rollback();
+			e.printStackTrace();
+			try { client.sendToClient(new Message("error", "Failed to add custom bouquet to cart", null)); }
+			catch (IOException ignored) {}
+		}
+	}
+
+	private void handleBranchesRequest(Message msg, ConnectionToClient client, Session session) throws IOException {
+		List<Branch> branches = getListFromDB(session, Branch.class);
 		for (Branch branch : branches) {
 			System.out.println("Branch: " + branch.getName());
 		}
-		client.sendToClient(new Message("Branches",branches,null));
+		client.sendToClient(new Message("Branches", branches, null));
 	}
+
 	private void handleCustomerDataRequest(Message message, ConnectionToClient client, Session session) {
 		try {
-			// Check if the message has a payload - it should be the User object
 			Object payload = message.getObject();
 			User user = null;
 
-			// Handle different payload types
 			if (payload instanceof User) {
 				user = (User) payload;
 			} else if (payload instanceof java.util.List) {
@@ -191,19 +234,11 @@ public class SimpleServer extends AbstractServer {
 				return;
 			}
 
-			// Since Customer extends User, we need to get the Customer by the same ID
-			Customer customer = null;
+			Customer customer = (user instanceof Customer)
+					? (Customer) user
+					: session.get(Customer.class, user.getId());
 
-			if (user instanceof Customer) {
-				// User is already a Customer, just cast it
-				customer = (Customer) user;
-			} else {
-				// User is not a Customer, try to find Customer with same ID
-				customer = session.get(Customer.class, user.getId());
-			}
-
-			Message response = new Message("customer_data_response", customer, null);
-			client.sendToClient(response);
+			client.sendToClient(new Message("customer_data_response", customer, null));
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -216,118 +251,171 @@ public class SimpleServer extends AbstractServer {
 	}
 
 	private void handleProfileUpdate(Message message, ConnectionToClient client, Session session) {
+		Transaction tx = session.beginTransaction();
 		try {
 			Object payload = message.getObject();
 			User user = null;
 			Customer customer = null;
 
-			// Handle different payload types
 			if (payload instanceof User) {
 				user = (User) payload;
-				if (user instanceof Customer) {
-					customer = (Customer) user;
-				}
+				if (user instanceof Customer) customer = (Customer) user;
 			} else if (payload instanceof java.util.List) {
 				java.util.List<?> list = (java.util.List<?>) payload;
-				if (!list.isEmpty()) {
-					if (list.get(0) instanceof User) {
-						user = (User) list.get(0);
-					}
-					if (list.size() > 1 && list.get(1) instanceof Customer) {
-						customer = (Customer) list.get(1);
-					}
-				}
+				if (!list.isEmpty() && list.get(0) instanceof User) user = (User) list.get(0);
+				if (list.size() > 1 && list.get(1) instanceof Customer) customer = (Customer) list.get(1);
 			}
 
 			if (user == null) {
 				client.sendToClient(new Message("profile_update_failed", "Invalid user data", null));
+				tx.rollback();
 				return;
 			}
 
-			// Start transaction
-			session.beginTransaction();
-
-			// Update user
 			session.merge(user);
+			if (customer != null) session.merge(customer);
+			tx.commit();
 
-			// Update customer if exists
-			if (customer != null) {
-				session.merge(customer);
-			}
-
-			// Commit transaction
-			session.getTransaction().commit();
-
-			Message response = new Message("profile_updated_success", null, null);
-			client.sendToClient(response);
-
+			client.sendToClient(new Message("profile_updated_success", null, null));
 		} catch (Exception e) {
-			// Rollback transaction on error
-			if (session.getTransaction() != null && session.getTransaction().isActive()) {
-				session.getTransaction().rollback();
-			}
+			if (tx.isActive()) tx.rollback();
 			e.printStackTrace();
 			try {
-				client.sendToClient(new Message("profile_update_failed", "Database update failed: " + e.getMessage(), null));
-			} catch (IOException ioException) {
-				ioException.printStackTrace();
-			}
+				client.sendToClient(new Message("profile_update_failed",
+						"Database update failed: " + e.getMessage(), null));
+			} catch (IOException ignored) {}
 		}
 	}
 
-
+	@SuppressWarnings("unchecked")
 	private void handleDeleteProduct(Message msg, ConnectionToClient client, Session session) {
-		Transaction tx = null;
-		try{
-			tx = session.beginTransaction();
-			Long id = (Long) msg.getObject();
-			Product product = session.get(Product.class, id);
-
-			if (product != null) {
-				session.delete(product);
-				session.flush();
-				tx.commit();
-
-				// Update catalog with write lock
-				catalogLock.writeLock().lock();
-				try {
-					catalog.getFlowers().remove(catalog.getProductById(id));
-				} finally {
-					catalogLock.writeLock().unlock();
-				}
-
-				sendToAllClients(msg);
-			} else {
+		Transaction tx = session.beginTransaction();
+		try {
+			Long productId = (Long) msg.getObject();
+			Product p = session.get(Product.class, productId);
+			if (p == null) {
 				tx.rollback();
-				Message errorMsg = new Message("product_not_found", null, null);
-				client.sendToClient(errorMsg);
+				client.sendToClient(new Message("product_not_found", null, null));
+				return;
 			}
-		} catch (Exception e) {
-			if (tx != null) {
-				tx.rollback();
+
+			// A) CartItems referencing product
+			List<Long> cartItemsForProduct = session.createQuery("""
+                select ci.id
+                  from CartItem ci
+                 where ci.product.id = :pid
+            """, Long.class).setParameter("pid", productId).getResultList();
+
+			// B) Bouquets containing product via CustomBouquetItem
+			List<Long> bouquetIds = session.createQuery("""
+                select distinct cbi.bouquet.id
+                  from CustomBouquetItem cbi
+                 where cbi.flower.id = :pid
+            """, Long.class).setParameter("pid", productId).getResultList();
+
+			List<Long> deletableBouquetIds = new ArrayList<>();
+			List<Long> protectedBouquetIds = Collections.emptyList();
+
+			if (!bouquetIds.isEmpty()) {
+				protectedBouquetIds = session.createQuery("""
+                    select distinct oi.customBouquet.id
+                      from OrderItem oi
+                     where oi.customBouquet.id in (:bids)
+                """, Long.class).setParameterList("bids", bouquetIds).getResultList();
+
+				deletableBouquetIds.addAll(bouquetIds);
+				deletableBouquetIds.removeAll(protectedBouquetIds);
 			}
-			e.printStackTrace();
+
+			// C) CartItems for deletable bouquets
+			List<Long> cartItemsForBouquets = Collections.emptyList();
+			if (!deletableBouquetIds.isEmpty()) {
+				cartItemsForBouquets = session.createQuery("""
+                    select ci.id
+                      from CartItem ci
+                     where ci.customBouquet.id in (:bids)
+                """, Long.class).setParameterList("bids", deletableBouquetIds).getResultList();
+			}
+
+			// D) Delete cart items (product + bouquets)
+			if (!cartItemsForProduct.isEmpty()) {
+				session.createQuery("delete from CartItem ci where ci.id in (:ids)")
+						.setParameterList("ids", cartItemsForProduct).executeUpdate();
+			}
+			if (!cartItemsForBouquets.isEmpty()) {
+				session.createQuery("delete from CartItem ci where ci.id in (:ids)")
+						.setParameterList("ids", cartItemsForBouquets).executeUpdate();
+			}
+
+			// E) Delete bouquet items, then bouquets (for deletable)
+			if (!deletableBouquetIds.isEmpty()) {
+				session.createQuery("delete from CustomBouquetItem cbi where cbi.bouquet.id in (:bids)")
+						.setParameterList("bids", deletableBouquetIds).executeUpdate();
+
+				session.createQuery("delete from CustomBouquet cb where cb.id in (:bids)")
+						.setParameterList("bids", deletableBouquetIds).executeUpdate();
+			}
+
+			// F) For protected bouquets, null the flower FK
+			if (!protectedBouquetIds.isEmpty()) {
+				session.createQuery("""
+                    update CustomBouquetItem cbi
+                       set cbi.flower = null
+                     where cbi.flower.id = :pid
+                       and cbi.bouquet.id in (:bids)
+                """).setParameter("pid", productId)
+						.setParameterList("bids", protectedBouquetIds)
+						.executeUpdate();
+			}
+
+			// G) Detach product from historical OrderItems
+			session.createQuery("update OrderItem oi set oi.product = null where oi.product.id = :pid")
+					.setParameter("pid", productId)
+					.executeUpdate();
+
+			// H) HARD delete the product row
+			session.createNativeQuery("DELETE FROM Products WHERE ID = :pid")
+					.setParameter("pid", productId)
+					.executeUpdate();
+
+			tx.commit();
+
+			// I) Update in-memory catalog cache
+			catalogLock.writeLock().lock();
 			try {
-				Message errorMsg = new Message("delete_failed", null, null);
-				client.sendToClient(errorMsg);
-			} catch (IOException ioException) {
-				ioException.printStackTrace();
+				catalog.getFlowers().remove(catalog.getProductById(productId));
+			} finally {
+				catalogLock.writeLock().unlock();
 			}
+
+			// J) Notify clients
+			sendToAllClients(new Message("delete_product", productId, null));
+
+			Map<String, Object> payload = new HashMap<>();
+			payload.put("productId", productId);
+			payload.put("removedCartItemIds",
+					java.util.stream.Stream.concat(cartItemsForProduct.stream(), cartItemsForBouquets.stream())
+							.collect(Collectors.toList()));
+			payload.put("removedCount", cartItemsForProduct.size() + cartItemsForBouquets.size());
+			payload.put("deletedBouquetIds", deletableBouquetIds);
+			payload.put("protectedBouquetIds", protectedBouquetIds);
+			sendToAllClients(new Message("item_removed", payload, null));
+
+		} catch (Exception e) {
+			if (tx.isActive()) tx.rollback();
+			e.printStackTrace();
+			try { client.sendToClient(new Message("delete_failed", null, null)); } catch (IOException ignored) {}
 		}
 	}
 
 	private void handleAddProduct(Message msg, ConnectionToClient client, Session session) {
-		Transaction tx = null;
+		Transaction tx = session.beginTransaction();
 		try {
-			tx = session.beginTransaction();
 			Product product = (Product) msg.getObject();
 			session.save(product);
-			session.flush();
 			tx.commit();
 
-			Message message = new Message("add_product", product, null);
-
-			// Update catalog with write lock
+			// update in-memory snapshot
 			catalogLock.writeLock().lock();
 			try {
 				catalog.getFlowers().add(product);
@@ -335,152 +423,168 @@ public class SimpleServer extends AbstractServer {
 				catalogLock.writeLock().unlock();
 			}
 
-			sendToAllClients(message);
+			sendToAllClients(new Message("add_product", product, null));
 		} catch (Exception e) {
-			if (tx != null) {
-				tx.rollback();
-			}
+			if (tx.isActive()) tx.rollback();
 			e.printStackTrace();
-			try {
-				Message errorMsg = new Message("add_failed", null, null);
-				client.sendToClient(errorMsg);
-			} catch (IOException ioException) {
-				ioException.printStackTrace();
-			}
+			try { client.sendToClient(new Message("add_failed", null, null)); }
+			catch (IOException ignored) {}
 		}
 	}
-	private boolean checkExistence(String username) {
-		if(userCache.containsKey(username)) {
-			return true;
-		}
-		return false;
-	}
-	private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
-		String username = ((User)(msg.getObject())).getUsername();
-		if(checkExistence(username)) {
-			Message errorMsg = new Message("user already exists", msg.getObject(), null);
-			client.sendToClient(errorMsg);
-		}
-		else {
-			Transaction tx = null;
-			try {
-				tx = session.beginTransaction();
-				User user = (User) msg.getObject();
 
-				// First save to database
+	private boolean checkExistence(String username) {
+		return userCache.containsKey(username);
+	}
+
+	private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
+		String username = ((User) (msg.getObject())).getUsername();
+		final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
+
+		synchronized (lock) {
+			if (checkExistence(username)) {
+				client.sendToClient(new Message("user already exists", msg.getObject(), null));
+				return;
+			}
+			Transaction tx = session.beginTransaction();
+			try {
+				User user = (User) msg.getObject();
 				session.save(user);
-				session.flush();
 				tx.commit();
 
-				// Only update cache after successful database save
-				userCache.put(user.getUsername(), user);
-
-				Message message = new Message("registered", null, null);
-				client.sendToClient(message);
+				userCache.putIfAbsent(user.getUsername(), user);
+				client.sendToClient(new Message("registered", null, null));
 			} catch (Exception e) {
-				if (tx != null) {
-					tx.rollback();
-				}
-				// Don't update cache if database save failed
-				try {
-					Message errorMessage = new Message("registration_failed", null, null);
-					client.sendToClient(errorMessage);
-				} catch (IOException ioException) {
-					ioException.printStackTrace();
-				}
+				if (tx.isActive()) tx.rollback();
+				try { client.sendToClient(new Message("registration_failed", null, null)); }
+				catch (IOException ignored) {}
 				e.printStackTrace();
 			}
 		}
 	}
 
 	private void handleCatalogRequest(ConnectionToClient client) {
-		catalogLock.readLock().lock();
 		try {
-			// Create a defensive copy to avoid sharing mutable state
-			Catalog catalogCopy = new Catalog(catalog.getFlowers());
-			List<Product> tmp = catalogCopy.getFlowers();
-			for(Product p : tmp) {
-				System.out.println("Color: " + p.getColor());
-			}
-			Message message = new Message("catalog", catalogCopy, null);
+			Message message = new Message("catalog", catalog, null);
 			client.sendToClient(message);
 		} catch (IOException e) {
 			e.printStackTrace();
-		} finally {
-			catalogLock.readLock().unlock();
 		}
 	}
 
-	private void handleProductEdit(Message msg) {
-		String msgString = msg.getMessage();
-		Product product = (Product)(msg.getObject());
-		if (product != null) {
+	private void handleProductEdit(Message msg, ConnectionToClient client, Session session) {
+		Product product = (Product) msg.getObject();
+		if (product == null) return;
+
+		boolean updateSuccess = updateProduct(session, product.getId(),
+				product.getName(), product.getColor(), product.getPrice(),
+				product.getDiscountPercentage(), product.getType(), product.getImagePath());
+
+		if (updateSuccess) {
+			// refresh in-memory catalog + propagate to open carts
+			catalogLock.writeLock().lock();
 			try {
-
-				Long productId = product.getId();
-				double newPrice = product.getPrice();
-				double newDiscountPercentage = product.getDiscountPercentage();
-				String newProductName = product.getName();
-				String newType = product.getType();
-				String newImagePath = product.getImagePath();
-				String newColor = product.getColor();
-
-				// Update database first
-				boolean updateSuccess = updateProduct(productId, newProductName, newColor ,newPrice, newDiscountPercentage,newType, newImagePath);
-
-				if (updateSuccess) {
-					// Update catalog with write lock only if database update succeeded
-					catalogLock.writeLock().lock();
-					try {
-						catalog.setFlowers(getListFromDB(Product.class));
-						Message message = new Message(msgString, null, null);
-						sendToAllClients(message);
-					} finally {
-						catalogLock.writeLock().unlock();
-					}
-				}
-			} catch (NumberFormatException e) {
-				e.printStackTrace();
+				catalog.setFlowers(getListFromDB(session, Product.class));
+			} finally {
+				catalogLock.writeLock().unlock();
 			}
+			propagateProductEditToOpenCarts(session, product.getId());
+
+			try { sendToAllClients(new Message(msg.getMessage(), product, null)); }
+			catch (Exception ignored) {}
+		}
+	}
+
+	private void propagateProductEditToOpenCarts(Session session, Long productId) {
+		if (productId == null) return;
+		Transaction tx = session.beginTransaction();
+		try {
+			Product managed = session.get(Product.class, productId);
+			if (managed == null) {
+				tx.rollback();
+				return;
+			}
+
+			List<Long> affectedCartIds = session.createQuery("""
+                select distinct ci.cart.id
+                  from CartItem ci
+                  left join ci.customBouquet cb
+                  left join cb.items cbi
+                 where (ci.product.id = :pid)
+                    or (cbi.flower.id = :pid)
+            """, Long.class).setParameter("pid", productId).getResultList();
+
+			if (!affectedCartIds.isEmpty()) {
+				java.math.BigDecimal newUnit = java.math.BigDecimal.valueOf(managed.getSalePrice());
+
+				for (Long cid : affectedCartIds) {
+					Cart cart = fetchCartWithEverything(session, cid);
+					boolean cartChanged = false;
+
+					for (CartItem ci : cart.getItems()) {
+						if (ci.getProduct() != null && Objects.equals(ci.getProduct().getId(), productId)) {
+							ci.setProduct(managed);
+							cartChanged = true;
+						}
+						CustomBouquet cb = ci.getCustomBouquet();
+						if (cb != null && cb.getItems() != null) {
+							boolean bouquetChanged = false;
+							for (CustomBouquetItem line : cb.getItems()) {
+								Product f = line.getFlower();
+								if (f != null && Objects.equals(f.getId(), productId)) {
+									line.setFlower(managed);
+									line.setFlowerNameSnapshot(managed.getName());
+									line.setUnitPriceSnapshot(newUnit);
+									bouquetChanged = true;
+								}
+							}
+							if (bouquetChanged) {
+								cb.recomputeTotalPrice();
+								session.merge(cb);
+								cartChanged = true;
+							}
+						}
+					}
+					if (cartChanged) session.merge(cart);
+				}
+			}
+			tx.commit();
+		} catch (Exception e) {
+			if (tx.isActive()) tx.rollback();
+			e.printStackTrace();
 		}
 	}
 
 	private void handleClientRemoval(ConnectionToClient client) {
-		// CopyOnWriteArrayList provides thread-safe removal
 		subscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
 	}
 
 	private void handleUserAuthentication(Message msg, ConnectionToClient client, Session session) throws Exception {
 		try {
+			@SuppressWarnings("unchecked")
 			List<String> info = (List<String>) msg.getObject();
 			String username = info.get(0);
 			String password = info.get(1);
 
-			// Use thread-safe cache lookup
 			User user = userCache.get(username);
 
-			if(user == null) {
+			if (user == null) {
 				System.out.println("user not found");
-				Message message = new Message("incorrect", null, null);
-				client.sendToClient(message);
+				client.sendToClient(new Message("incorrect", null, null));
 			} else {
-				if(user.getPassword().equals(password)) {
+				if (user.getPassword().equals(password)) {
 					System.out.println(user.getUsername());
 					System.out.println(user.getPassword());
-					Message message = new Message("correct", user, null);
-					client.sendToClient(message);
+					client.sendToClient(new Message("correct", user, null));
 				} else {
 					System.out.println("Incorrect password");
-					Message message = new Message("incorrect", null, null);
-					client.sendToClient(message);
+					client.sendToClient(new Message("incorrect", null, null));
 				}
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
 			try {
 				System.out.println(e.getMessage());
-				Message errorMessage = new Message("authentication_error", null, null);
-				client.sendToClient(errorMessage);
+				client.sendToClient(new Message("authentication_error", null, null));
 			} catch (IOException ioException) {
 				System.out.println(ioException.getMessage());
 				ioException.printStackTrace();
@@ -488,12 +592,11 @@ public class SimpleServer extends AbstractServer {
 		}
 	}
 
-	public boolean updateProduct(Long productId, String newProductName,String newColor, double newPrice, double newDiscount,String newType, String newImagePath) {
+	public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,
+								 double newPrice, double newDiscount, String newType, String newImagePath) {
 		catalogLock.writeLock().lock();
-		Transaction tx = null;
-		try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-			tx = session.beginTransaction();
-
+		Transaction tx = session.beginTransaction();
+		try {
 			Product product = session.get(Product.class, productId);
 			if (product != null) {
 				product.setPrice(newPrice);
@@ -504,359 +607,366 @@ public class SimpleServer extends AbstractServer {
 				product.setColor(newColor);
 				session.update(product);
 				tx.commit();
-				catalogLock.writeLock().unlock();
 				return true;
 			} else {
 				System.out.println("Product not found with ID: " + productId);
-				if (tx != null) {
-					tx.rollback();
-				}
-				catalogLock.writeLock().unlock();
+				tx.rollback();
 				return false;
 			}
 		} catch (Exception e) {
-			if (tx != null) {
-				tx.rollback();
-			}
-			catalogLock.writeLock().unlock();
+			if (tx.isActive()) tx.rollback();
 			e.printStackTrace();
 			return false;
+		} finally {
+			catalogLock.writeLock().unlock();
 		}
 	}
 
-	private void handleAddToCart(Message message, ConnectionToClient client) {
-		EntityManager em = emf.createEntityManager();
-
+	private void handleAddToCart(Message message, ConnectionToClient client, Session session) {
+		Transaction tx = session.beginTransaction();
 		try {
 			Long productId = (Long) message.getObject();
-			User user = (User) message.getObjectList().get(0);
+			Customer customer = (Customer) message.getObjectList().get(0);
 
-			if (!(user instanceof Customer)) {
-				client.sendToClient(new Message("error", "User is not a customer", null));
-				return;
-			}
+			Customer managedCustomer = session.get(Customer.class, customer.getId());
+			Product product = session.get(Product.class, productId);
 
-			em.getTransaction().begin();
-
-			Customer customer = em.find(Customer.class, ((Customer) user).getId());
-			Product product = em.find(Product.class, productId);
-
-			if (customer == null || product == null) {
-				em.getTransaction().rollback();
+			if (managedCustomer == null || product == null) {
+				tx.rollback();
 				client.sendToClient(new Message("error", "Customer or product not found", null));
 				return;
 			}
 
-			Cart cart = customer.getCart();
+			Cart cart = managedCustomer.getCart();
 			if (cart == null) {
-				cart = new Cart(customer);
-				em.persist(cart);
-				customer.setCart(cart);
+				cart = new Cart(managedCustomer);
+				session.persist(cart);
+				managedCustomer.setCart(cart);
 			}
 
 			CartItem existingItem = cart.getItems().stream()
-					.filter(ci -> ci.getProduct().getId().equals(productId))
-					.findFirst()
-					.orElse(null);
+					.filter(ci -> ci.getProduct() != null && Objects.equals(ci.getProduct().getId(), productId))
+					.findFirst().orElse(null);
 
 			if (existingItem != null) {
 				existingItem.setQuantity(existingItem.getQuantity() + 1);
 			} else {
 				CartItem newItem = new CartItem(product, cart, 1);
 				cart.getItems().add(newItem);
-				em.persist(newItem);
+				session.persist(newItem);
 			}
 
-			em.merge(cart);
-			em.getTransaction().commit();
+			session.merge(cart);
+			tx.commit();
 
-			// Re-fetch cart fully loaded
-			em.getTransaction().begin();
-			Cart refreshedCart = em.createQuery(
-							"SELECT DISTINCT c FROM Cart c " +
-									"LEFT JOIN FETCH c.items i " +
-									"LEFT JOIN FETCH i.product " +
-									"WHERE c.id = :cid", Cart.class)
-					.setParameter("cid", cart.getId())
-					.getSingleResult();
-			em.getTransaction().commit();
-
-			client.sendToClient(new Message("cart_data", refreshedCart, null));
-
+			try (Session s2 = HibernateUtil.getSessionFactory().openSession()) {
+				Cart refreshedCart = fetchCartWithEverything(s2, cart.getId());
+				System.out.println("DEBUG: cart size: " + refreshedCart.getItems().size());
+				client.sendToClient(new Message("cart_data", refreshedCart, null));
+			}
 		} catch (Exception e) {
+			if (tx.isActive()) tx.rollback();
 			e.printStackTrace();
-			if (em.getTransaction().isActive()) {
-				em.getTransaction().rollback();
-			}
-			try {
-				client.sendToClient(new Message("error", "Failed to add to cart", null));
-			} catch (IOException ex) {
-				ex.printStackTrace();
-			}
-		} finally {
-			em.close();
+			try { client.sendToClient(new Message("error", "Failed to add to cart", null)); }
+			catch (IOException ignored) {}
 		}
 	}
 
-	private void handleRemoveFromCart(Message message, ConnectionToClient client) {
-		EntityManager em = emf.createEntityManager();
-
+	private void handleRemoveFromCart(Message message, ConnectionToClient client, Session session) {
+		Transaction tx = session.beginTransaction();
 		try {
 			Customer customer = (Customer) message.getObjectList().get(0);
 			CartItem itemToRemove = (CartItem) message.getObjectList().get(1);
 
-			em.getTransaction().begin();
-
-			Customer managedCustomer = em.find(Customer.class, customer.getId());
+			Customer managedCustomer = session.get(Customer.class, customer.getId());
 			if (managedCustomer == null) {
-				em.getTransaction().rollback();
+				tx.rollback();
 				client.sendToClient(new Message("error", "Customer not found", null));
 				return;
 			}
 
 			Cart cart = managedCustomer.getCart();
 			if (cart == null) {
-				em.getTransaction().rollback();
+				tx.rollback();
 				client.sendToClient(new Message("error", "Cart not found", null));
 				return;
 			}
 
-			CartItem managedItem = em.find(CartItem.class, itemToRemove.getId());
+			CartItem managedItem = session.get(CartItem.class, itemToRemove.getId());
 			if (managedItem == null || !cart.getItems().contains(managedItem)) {
-				em.getTransaction().rollback();
+				tx.rollback();
 				client.sendToClient(new Message("error", "Item not found in cart", null));
 				return;
 			}
 
-			// Reduce quantity instead of removing immediately
 			if (managedItem.getQuantity() > 1) {
 				managedItem.setQuantity(managedItem.getQuantity() - 1);
-				em.merge(managedItem);
+				session.merge(managedItem);
 			} else {
 				cart.getItems().remove(managedItem);
-				em.remove(managedItem);
+				session.remove(managedItem);
 			}
 
-			em.merge(cart);
-			em.getTransaction().commit();
+			session.merge(cart);
+			tx.commit();
 
-			// Re-fetch updated cart
-			em.getTransaction().begin();
-			Cart refreshedCart = em.createQuery(
-							"SELECT DISTINCT c FROM Cart c " +
-									"LEFT JOIN FETCH c.items i " +
-									"LEFT JOIN FETCH i.product " +
-									"WHERE c.id = :cid", Cart.class)
-					.setParameter("cid", cart.getId())
-					.getSingleResult();
-			em.getTransaction().commit();
-
-			client.sendToClient(new Message("cart_data", refreshedCart, null));
-
+			try (Session s2 = HibernateUtil.getSessionFactory().openSession()) {
+				Cart refreshedCart = fetchCartWithEverything(s2, cart.getId());
+				client.sendToClient(new Message("cart_data", refreshedCart, null));
+			}
 		} catch (Exception e) {
+			if (tx.isActive()) tx.rollback();
 			e.printStackTrace();
-			if (em.getTransaction().isActive()) {
-				em.getTransaction().rollback();
-			}
-			try {
-				client.sendToClient(new Message("error", "Failed to remove item from cart", null));
-			} catch (IOException ex) {
-				ex.printStackTrace();
-			}
-		} finally {
-			em.close();
+			try { client.sendToClient(new Message("error", "Failed to remove item from cart", null)); }
+			catch (IOException ignored) {}
 		}
 	}
 
-	private void handleUpdateCartItemQuantity(Message message, ConnectionToClient client) {
-		EntityManager em = emf.createEntityManager();
+	private void handleUpdateCartItemQuantity(Message message, ConnectionToClient client, Session session) {
+		Transaction tx = session.beginTransaction();
 		try {
 			Customer customer = (Customer) message.getObjectList().get(0);
 			CartItem itemToUpdate = (CartItem) message.getObjectList().get(1);
 			int newQuantity = (Integer) message.getObjectList().get(2);
 
-			em.getTransaction().begin();
-
-			Customer managedCustomer = em.find(Customer.class, customer.getId());
+			Customer managedCustomer = session.get(Customer.class, customer.getId());
 			if (managedCustomer == null) {
-				em.getTransaction().rollback();
+				tx.rollback();
 				client.sendToClient(new Message("error", "Customer not found", null));
 				return;
 			}
 
 			Cart cart = managedCustomer.getCart();
 			if (cart == null) {
-				em.getTransaction().rollback();
+				tx.rollback();
 				client.sendToClient(new Message("error", "Cart not found", null));
 				return;
 			}
 
-			CartItem managedItem = em.find(CartItem.class, itemToUpdate.getId());
+			CartItem managedItem = session.get(CartItem.class, itemToUpdate.getId());
 			if (managedItem == null || !cart.getItems().contains(managedItem)) {
-				em.getTransaction().rollback();
+				tx.rollback();
 				client.sendToClient(new Message("error", "Item not found in cart", null));
 				return;
 			}
 
 			if (newQuantity <= 0) {
 				cart.getItems().remove(managedItem);
-				em.remove(managedItem);
+				session.remove(managedItem);
 			} else {
 				managedItem.setQuantity(newQuantity);
-				em.merge(managedItem);
+				session.merge(managedItem);
 			}
 
-			em.merge(cart);
-			em.getTransaction().commit();
+			session.merge(cart);
+			tx.commit();
 
-			// Refresh cart
-			em.getTransaction().begin();
-			Cart refreshedCart = em.createQuery(
-							"SELECT DISTINCT c FROM Cart c " +
-									"LEFT JOIN FETCH c.items i " +
-									"LEFT JOIN FETCH i.product " +
-									"WHERE c.id = :cid", Cart.class)
-					.setParameter("cid", cart.getId())
-					.getSingleResult();
-			em.getTransaction().commit();
-
-			client.sendToClient(new Message("cart_data", refreshedCart, null));
-
+			try (Session s2 = HibernateUtil.getSessionFactory().openSession()) {
+				Cart refreshedCart = fetchCartWithEverything(s2, cart.getId());
+				client.sendToClient(new Message("cart_data", refreshedCart, null));
+			}
 		} catch (Exception e) {
-			if (em.getTransaction().isActive()) {
-				em.getTransaction().rollback();
-			}
+			if (tx.isActive()) tx.rollback();
 			e.printStackTrace();
-		} finally {
-			em.close();
 		}
 	}
 
-
-	private void handleCartRequest(Message message, ConnectionToClient client) {
-		EntityManager em = emf.createEntityManager();
-
-		try {
-			User user = (User) message.getObjectList().get(0);
-
-			if(!(user instanceof Customer)) {
-				client.sendToClient(new Message("error", "User is not a customer", null));
-				return;
-			}
-
-			Customer customer = em.find(Customer.class, ((Customer) user).getId());
-
-			Cart cart = em.createQuery("SELECT c FROM Cart c LEFT JOIN FETCH c.items i LEFT JOIN FETCH i.product WHERE c.customer.id = :uid", Cart.class)
-					.setParameter("uid", customer.getId())
-					.getResultStream()
-					.findFirst()
-					.orElse(null);
-
-			if (cart == null) {
-				cart = new Cart(customer);
-				em.getTransaction().begin();
-				em.persist(cart);
-				em.getTransaction().commit();
-			}
-///
-			client.sendToClient(new Message("cart_data", cart, null));
-			if(cart != null) {
-				System.out.println("Cart found with id: " + cart.getId());
-				System.out.println("Items count: " + cart.getItems().size());
-				for(CartItem ci : cart.getItems()) {
-					System.out.println("Item product id: " + ci.getProduct().getId() + ", quantity: " + ci.getQuantity());
-				}
-			} else {
-				System.out.println("No cart found for user id " + user.getId());
-			}
-///
-
-		} catch (Exception e) {
-			e.printStackTrace();
-			try {
-				client.sendToClient(new Message("error", "Failed to load cart", null));
-			} catch (IOException ex) {
-				ex.printStackTrace();
-			}
-		} finally {
-			em.close();
-		}
-	}
-
-	private void handleOrdersRequest(Message message, ConnectionToClient client) {
-		EntityManager em = emf.createEntityManager();
+	private void handleCartRequest(Message message, ConnectionToClient client, Session session) {
 		try {
 			User user = (User) message.getObjectList().get(0);
 			if (!(user instanceof Customer)) {
 				client.sendToClient(new Message("error", "User is not a customer", null));
 				return;
 			}
-			Customer customer = em.find(Customer.class, user.getId());
 
-			List<Order> orders = em.createQuery("SELECT DISTINCT o FROM Order o LEFT JOIN FETCH o.items WHERE o.customer.id = :cid", Order.class)
-					.setParameter("cid", customer.getId())
-					.getResultList();
+			Transaction tx = session.beginTransaction();
+			Customer customer = session.get(Customer.class, ((Customer) user).getId());
 
-			client.sendToClient(new Message("orders_data", orders, null));
+			Cart cart = session.createQuery(
+							"SELECT c FROM Cart c WHERE c.customer.id = :uid", Cart.class)
+					.setParameter("uid", customer.getId())
+					.uniqueResultOptional()
+					.orElse(null);
+
+			if (cart == null) {
+				cart = new Cart(customer);
+				session.persist(cart);
+			}
+			tx.commit();
+
+			Cart hydrated = fetchCartWithEverything(session, cart.getId());
+			client.sendToClient(new Message("cart_data", hydrated, null));
+
+			if (cart != null) {
+				System.out.println("Cart found with id: " + cart.getId());
+				System.out.println("Items count: " + cart.getItems().size());
+				for (CartItem ci : cart.getItems()) {
+					if (ci.getProduct() != null) {
+						System.out.println("Item product id: " + ci.getProduct().getId() + ", quantity: " + ci.getQuantity());
+					} else if (ci.getCustomBouquet() != null) {
+						System.out.println("Item custom bouquet, quantity: " + ci.getQuantity());
+					} else {
+						System.out.println("Item without product/bouquet? id=" + ci.getId());
+					}
+				}
+			} else {
+				System.out.println("No cart found for user id " + user.getId());
+			}
 		} catch (Exception e) {
 			e.printStackTrace();
-			try {
-				client.sendToClient(new Message("error", "Failed to load orders", null));
-			} catch (IOException ex) {
-				ex.printStackTrace();
-			}
-		} finally {
-			em.close();
+			try { client.sendToClient(new Message("error", "Failed to load cart", null)); }
+			catch (IOException ignored) {}
 		}
 	}
 
+	private void handleOrdersRequest(Message message, ConnectionToClient client, Session session) {
+		try {
+			User user = (User) message.getObjectList().get(0);
+			if (!(user instanceof Customer)) {
+				client.sendToClient(new Message("error", "User is not a customer", null));
+				return;
+			}
+			Customer customer = session.get(Customer.class, user.getId());
 
-	private void handlePlaceOrder(Message message, ConnectionToClient client) {
-		EntityManager em = emf.createEntityManager();
+			List<Order> orders = fetchOrdersWithEverything(session, customer.getId());
+			client.sendToClient(new Message("orders_data", orders, null));
 
+		} catch (Exception e) {
+			e.printStackTrace();
+			try { client.sendToClient(new Message("error", "Failed to load orders", null)); }
+			catch (IOException ignored) {}
+		}
+	}
+
+	/** Load orders with items (+ product + bouquet ref), then hydrate bouquet lines. */
+	private List<Order> fetchOrdersWithEverything(Session session, Long customerId) {
+		Transaction tx = session.getTransaction().isActive() ? session.getTransaction() : session.beginTransaction();
+		List<Order> orders;
+		try {
+			orders = session.createQuery(
+					"SELECT DISTINCT o FROM Order o " +
+							"LEFT JOIN FETCH o.items i " +
+							"LEFT JOIN FETCH i.product " +
+							"LEFT JOIN FETCH i.customBouquet cb " +
+							"WHERE o.customer.id = :cid " +
+							"ORDER BY o.orderDate DESC",
+					Order.class).setParameter("cid", customerId).getResultList();
+
+			List<Long> bouquetIds = orders.stream()
+					.flatMap(o -> o.getItems().stream())
+					.map(OrderItem::getCustomBouquet)
+					.filter(Objects::nonNull)
+					.map(CustomBouquet::getId)
+					.distinct()
+					.collect(Collectors.toList());
+
+			if (!bouquetIds.isEmpty()) {
+				session.createQuery(
+								"SELECT DISTINCT cb FROM CustomBouquet cb " +
+										"LEFT JOIN FETCH cb.items li " +
+										"LEFT JOIN FETCH li.flower " +
+										"WHERE cb.id IN :ids", CustomBouquet.class)
+						.setParameter("ids", bouquetIds)
+						.getResultList();
+			}
+			if (tx.isActive()) tx.commit();
+			return orders;
+		} catch (Exception e) {
+			if (tx.isActive()) tx.rollback();
+			throw e;
+		}
+	}
+
+	/** Load a cart with items + product + custom bouquet (+ bouquet lines + line flower). */
+	private Cart fetchCartWithEverything(Session session, Long cartId) {
+		Transaction tx = session.getTransaction().isActive() ? session.getTransaction() : session.beginTransaction();
+		try {
+			Cart cart = session.createQuery(
+							"SELECT DISTINCT c FROM Cart c " +
+									"LEFT JOIN FETCH c.items i " +
+									"LEFT JOIN FETCH i.product " +
+									"LEFT JOIN FETCH i.customBouquet cb " +
+									"WHERE c.id = :cid", Cart.class)
+					.setParameter("cid", cartId)
+					.getSingleResult();
+
+			List<Long> bouquetIds = cart.getItems().stream()
+					.map(CartItem::getCustomBouquet)
+					.filter(Objects::nonNull)
+					.map(CustomBouquet::getId)
+					.distinct()
+					.collect(Collectors.toList());
+
+			if (!bouquetIds.isEmpty()) {
+				session.createQuery(
+								"SELECT DISTINCT cb FROM CustomBouquet cb " +
+										"LEFT JOIN FETCH cb.items li " +
+										"LEFT JOIN FETCH li.flower " +
+										"WHERE cb.id IN :ids", CustomBouquet.class)
+						.setParameter("ids", bouquetIds)
+						.getResultList();
+			}
+			if (tx.isActive()) tx.commit();
+			return cart;
+		} catch (Exception e) {
+			if (tx.isActive()) tx.rollback();
+			throw e;
+		}
+	}
+
+	private void handlePlaceOrder(Message message, ConnectionToClient client, Session session) {
+		Transaction tx = session.beginTransaction();
 		try {
 			Order clientOrder = (Order) message.getObject();
-
 			if (clientOrder == null || clientOrder.getCustomer() == null) {
 				client.sendToClient(new Message("order_error", "Missing order or customer data", null));
+				tx.rollback();
 				return;
 			}
 
 			Long customerId = clientOrder.getCustomer().getId();
-
-			em.getTransaction().begin();
-
-			Customer managedCustomer = em.find(Customer.class, customerId);
+			Customer managedCustomer = session.get(Customer.class, customerId);
 			if (managedCustomer == null) {
-				em.getTransaction().rollback();
+				tx.rollback();
 				client.sendToClient(new Message("order_error", "Customer not found", null));
 				return;
 			}
 
-			Cart cart = em.createQuery(
-							"SELECT DISTINCT c FROM Cart c LEFT JOIN FETCH c.items i LEFT JOIN FETCH i.product WHERE c.customer.id = :cid",
-							Cart.class)
+			// 1) Fetch cart + items + product + bouquet (no bouquet.items yet)
+			Cart cart = session.createQuery(
+							"SELECT DISTINCT c FROM Cart c " +
+									"LEFT JOIN FETCH c.items i " +
+									"LEFT JOIN FETCH i.product p " +
+									"LEFT JOIN FETCH i.customBouquet cb " +
+									"WHERE c.customer.id = :cid", Cart.class)
 					.setParameter("cid", managedCustomer.getId())
-					.getResultStream()
-					.findFirst()
+					.uniqueResultOptional()
 					.orElse(null);
-///
-			System.out.println("DEBUG(handlePlaceOrder): fetched cart id=" + (cart != null ? cart.getId() : "null"));
-			if (cart != null) {
-				System.out.println("DEBUG(handlePlaceOrder): cart items = " + cart.getItems().size());
-				for (CartItem ci : cart.getItems()) {
-					System.out.println("DEBUG(handlePlaceOrder): CartItem pid=" + ci.getProduct().getId() + " qty=" + ci.getQuantity());
-				}
-			}
-///
 
 			if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
-				em.getTransaction().rollback();
+				tx.rollback();
 				client.sendToClient(new Message("order_error", "Cart is empty", null));
 				return;
 			}
 
-			// Create new managed Order and copy data
+			// 2) Fetch bouquet.items in a second query
+			Set<Long> bouquetIds = new HashSet<>();
+			for (CartItem ci : cart.getItems()) {
+				if (ci.getCustomBouquet() != null && ci.getCustomBouquet().getId() != null) {
+					bouquetIds.add(ci.getCustomBouquet().getId());
+				}
+			}
+			if (!bouquetIds.isEmpty()) {
+				session.createQuery(
+								"SELECT DISTINCT cb FROM CustomBouquet cb " +
+										"LEFT JOIN FETCH cb.items cbi " +
+										"LEFT JOIN FETCH cbi.flower f " +
+										"WHERE cb.id IN :ids", CustomBouquet.class)
+						.setParameter("ids", bouquetIds)
+						.getResultList();
+			}
+
+			// 3) Build managed Order and copy fields
 			Order order = new Order();
 			order.setCustomer(managedCustomer);
 			order.setStoreLocation(clientOrder.getStoreLocation());
@@ -869,170 +979,79 @@ public class SimpleServer extends AbstractServer {
 			order.setPaymentMethod(clientOrder.getPaymentMethod());
 			order.setPaymentDetails(clientOrder.getPaymentDetails());
 
-			// Convert cart items -> order items (use managed product references)
+			// 4) Convert cart items -> order items, snapshotting
 			for (CartItem cartItem : new ArrayList<>(cart.getItems())) {
-				Product product = em.find(Product.class, cartItem.getProduct().getId()); // ensure managed product
 				OrderItem oi = new OrderItem();
-				oi.setProduct(product);
-				oi.setQuantity(cartItem.getQuantity());
 				oi.setOrder(order);
+				oi.setQuantity(Math.max(1, cartItem.getQuantity()));
+
+				if (cartItem.getProduct() != null) {
+					Product product = session.get(Product.class, cartItem.getProduct().getId());
+					oi.setProduct(product);
+					if (product != null) {
+						oi.snapshotFromProduct(product);
+					}
+				} else if (cartItem.getCustomBouquet() != null) {
+					CustomBouquet copy = cloneBouquetForOrder(cartItem.getCustomBouquet(), managedCustomer);
+					oi.setCustomBouquet(copy);
+					oi.snapshotFromBouquet(copy);
+				}
 				order.getItems().add(oi);
 			}
 
-			em.persist(order);
-			em.flush(); // make sure order id exists
+			// 5) Persist order
+			session.persist(order);
 
-			// remove cart items (use managed instances)
+			// 6) Clear cart safely
 			for (CartItem ci : new ArrayList<>(cart.getItems())) {
-				// If orphanRemoval=true on Cart.items, removing from the collection is enough.
 				cart.getItems().remove(ci);
-				if (!em.contains(ci)) {
-					ci = em.find(CartItem.class, ci.getId());
-				}
-				if (ci != null) {
-					em.remove(ci);
-				}
+				CartItem managedCI = session.contains(ci) ? ci : session.get(CartItem.class, ci.getId());
+				if (managedCI != null) session.remove(managedCI);
 			}
-			// optionally em.merge(cart) but cart is managed
 
-			em.getTransaction().commit();
-
+			tx.commit();
 			client.sendToClient(new Message("order_placed_successfully", order, null));
+
 		} catch (Exception e) {
-			if (em.getTransaction() != null && em.getTransaction().isActive()) {
-				em.getTransaction().rollback();
-			}
+			if (tx.isActive()) tx.rollback();
 			e.printStackTrace();
 			try {
 				client.sendToClient(new Message("order_error", "Failed to place order: " + e.getMessage(), null));
-			} catch (IOException ioException) {
-				ioException.printStackTrace();
-			}
-		} finally {
-			em.close();
+			} catch (IOException ignored) {}
 		}
 	}
 
+	private CustomBouquet cloneBouquetForOrder(CustomBouquet src, Customer creator) {
+		if (src == null) return null;
 
-	private void handleCancelOrder(Message message, ConnectionToClient client) {
-		EntityManager em = emf.createEntityManager();
-		try {
-			Long orderId = (Long) message.getObjectList().get(0);
-			Order order = em.find(Order.class, orderId);
-			if (order == null) {
-				client.sendToClient(new Message("order_cancel_error", "Order not found", null));
-				return;
+		CustomBouquet copy = new CustomBouquet();
+		copy.setCreatedBy(creator);
+		copy.setCreatedAt(src.getCreatedAt());
+		copy.setInstructions(src.getInstructions());
+
+		if (src.getItems() != null) {
+			for (CustomBouquetItem it : src.getItems()) {
+				CustomBouquetItem line = new CustomBouquetItem();
+				line.setBouquet(copy);
+				line.setFlower(null); // drop FK to Product; keep snapshots only
+				line.setFlowerNameSnapshot(it.getFlowerNameSnapshot());
+				line.setUnitPriceSnapshot(it.getUnitPriceSnapshot() != null ? it.getUnitPriceSnapshot() : java.math.BigDecimal.ZERO);
+				line.setQuantity(Math.max(0, it.getQuantity()));
+				copy.getItems().add(line);
 			}
-
-			em.getTransaction().begin();
-
-			// Remove associated items first
-			if (order.getItems() != null) {
-				for (OrderItem item : order.getItems()) {
-					if (!em.contains(item)) {
-						item = em.merge(item);
-					}
-					em.remove(item);
-				}
-			}
-
-			em.remove(order);
-			em.getTransaction().commit();
-
-			client.sendToClient(new Message("order_cancelled_successfully", orderId, null));
-		} catch (Exception e) {
-			e.printStackTrace();
-			try {
-				client.sendToClient(new Message("order_cancel_error", "Failed to cancel order", null));
-			} catch (IOException ex) {
-				ex.printStackTrace();
-			}
-		} finally {
-			em.close();
 		}
+		copy.recomputeTotalPrice();
+		return copy;
 	}
 
-
-
-	private Cart getOrCreateCartForCustomer(Customer customer) {
-		EntityManager em = emf.createEntityManager();
-		Cart cart;
-
-		try {
-			em.getTransaction().begin();
-
-			cart = em.createQuery(
-							"SELECT c FROM Cart c WHERE c.customer.id = :uid", Cart.class)
-					.setParameter("uid", customer.getId())
-					.getResultStream()
-					.findFirst()
-					.orElse(null);
-
-			if (cart == null) {
-				cart = new Cart(customer);
-				em.persist(cart);
-			}
-
-			em.getTransaction().commit();
-		} finally {
-			em.close();
-		}
-		return cart;
-	}
-
-	private void addProductToCart(Cart cart, Long productId) {
-		EntityManager em = emf.createEntityManager();
-
-		try {
-			em.getTransaction().begin();
-
-			Product product = em.find(Product.class, productId);
-			Cart managedCart = em.find(Cart.class, cart.getId());
-
-			CartItem item = managedCart.getItems().stream()
-					.filter(ci -> ci.getProduct().getId().equals(productId))
-					.findFirst()
-					.orElse(null);
-
-			if (item != null) {
-				item.setQuantity(item.getQuantity() + 1);
-			} else {
-				item = new CartItem(product, managedCart, 1);
-				em.persist(item);
-				managedCart.getItems().add(item);
-			}
-
-			em.getTransaction().commit();
-		} finally {
-			em.close();
-		}
-	}
-
-	private Cart getCartByCustomerId(Long customerId) {
-		EntityManager em = emf.createEntityManager();
-		Cart cart;
-
-		try {
-			cart = em.createQuery(
-							"SELECT c FROM Cart c WHERE c.customer.id = :uid", Cart.class)
-					.setParameter("uid", customerId)
-					.getSingleResult();
-		} finally {
-			em.close();
-		}
-		return cart;
-	}
-
+	/* ----------------------- Misc helpers ----------------------- */
 
 	public void sendToAllClients(Message message) {
-		// CopyOnWriteArrayList provides thread-safe iteration
-		// No additional synchronization needed
 		try {
 			for (SubscribedClient subscribedClient : subscribersList) {
 				try {
 					subscribedClient.getClient().sendToClient(message);
 				} catch (IOException e) {
-					// Remove client if send fails (client disconnected)
 					subscribersList.remove(subscribedClient);
 					System.out.println("Removed disconnected client");
 				}

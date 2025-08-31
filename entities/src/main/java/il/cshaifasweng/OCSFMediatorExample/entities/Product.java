@@ -1,13 +1,14 @@
 package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.SoftDelete;
 
 import java.io.Serializable;
 import java.util.Objects;
 
 @Entity
 @Table(name ="Products")
-
+@SoftDelete(columnName = "deleted")
 public class Product implements Serializable {
     private static final long serialVersionUID = -5912738471623457890L;
     @Id
@@ -24,7 +25,8 @@ public class Product implements Serializable {
     private double price;
     @Column(name = "discountPercentage")
     private double discountPercentage;
-
+    @Column(name = "isDisabled")
+    private boolean isDisabled;
     @Column(name = "ImagePath")
     private String image_path;
 
@@ -37,6 +39,14 @@ public class Product implements Serializable {
         this.image_path = image_path;
         this.color = color;
         this.discountPercentage = 0;
+        this.isDisabled = false;
+    }
+
+    public void setDisabled(boolean isDisabled) {
+        this.isDisabled = isDisabled;
+    }
+    public boolean isDisabled() {
+        return isDisabled;
     }
     public void setId(Long id) {
         this.id = id;
@@ -91,6 +101,9 @@ public class Product implements Serializable {
         }
     }
 
+    public void deleteProduct() {
+        this.isDisabled = true;
+    }
     @Override
     public boolean equals(Object obj) {
         if (this == obj) return true;

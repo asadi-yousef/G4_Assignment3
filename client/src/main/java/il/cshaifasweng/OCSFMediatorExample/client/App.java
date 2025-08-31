@@ -30,22 +30,22 @@ import il.cshaifasweng.OCSFMediatorExample.entities.Order;
 public class App extends Application {
 
     private static Scene scene;
-    private SimpleClient client;
+    private static SimpleClient client;
     private static Stage primaryStage;
 
     @Override
     public void start(Stage stage) throws IOException {
         primaryStage = stage;
         EventBus.getDefault().register(this);
-        client = SimpleClient.getClient();
-        client.openConnection();
         Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
-        scene = new Scene(loadFXML("primary"),screenBounds.getWidth(),screenBounds.getHeight());
+        scene = new Scene(loadFXML("connection"),screenBounds.getWidth(),screenBounds.getHeight());
         stage.setTitle("Lilac");
         stage.setScene(scene);
         stage.show();
     }
-
+    public static void setClient(SimpleClient client) {
+        App.client = client;
+    }
     public static void setRoot(String fxml) throws IOException {
         scene.setRoot(loadFXML(fxml));
     }

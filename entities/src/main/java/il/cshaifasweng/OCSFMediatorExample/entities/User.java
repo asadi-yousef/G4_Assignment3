@@ -19,15 +19,22 @@ public class User implements Serializable {
     protected String username;
     @Column
     protected String password;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "branch_id",nullable = true)
+    protected Branch branch;
+    @Column
+    protected boolean isNetworkAccount;
 
     public User() {
 
     }
 
-    public User(String name, String username, String password) {
+    public User(String name, String username, String password,Branch branch, boolean isNetworkAccount) {
         this.name = name;
         this.username = username;
         this.password = password;
+        this.branch = branch;
+        this.isNetworkAccount = isNetworkAccount;
     }
 
     public Long getId() {return id;}
@@ -38,4 +45,8 @@ public class User implements Serializable {
     public void setUsername(String username) {this.username = username;}
     public String getPassword() {return password;}
     public void setPassword(String password) {this.password = password;}
+    public Branch getBranch() {return branch;}
+    public void setBranch(Branch branch) {this.branch = branch;}
+    public boolean isNetworkAccount() {return isNetworkAccount;}
+    public void setNetworkAccount(boolean isNetworkAccount) {this.isNetworkAccount = isNetworkAccount;}
 }

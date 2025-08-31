@@ -1,129 +1,148 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.*;
-import org.hibernate.HibernateException;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
-import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.HibernateException;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.service.ServiceRegistry;
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Scanner;
 
-
 public class App {
 
-    private static SessionFactory getSessionFactory() throws HibernateException {
-        Configuration configuration = new Configuration();
-        String password = "Renata123";
-        configuration.setProperty("hibernate.dialect", "org.hibernate.dialect.MySQL8Dialect");
+    private static org.hibernate.SessionFactory buildSessionFactoryFromCfg() {
+        org.hibernate.cfg.Configuration cfg = new org.hibernate.cfg.Configuration().configure(); // loads hibernate.cfg.xml
 
-        configuration.setProperty("hibernate.connection.password", password);
-        configuration.setProperty("hibernate.hbm2ddl.auto", "update");
+        // Optional: allow runtime password override
+        System.out.print("Please enter your MySQL password: ");
+        String pw = new java.util.Scanner(System.in).nextLine();
+        if (pw != null && !pw.isEmpty()) {
+            cfg.setProperty("hibernate.connection.password", pw);
+        }
 
-        configuration.addAnnotatedClass(Product.class);
-        configuration.addAnnotatedClass(Customer.class);
-        configuration.addAnnotatedClass(User.class);
-        configuration.addAnnotatedClass(Employee.class);
-        configuration.addAnnotatedClass(Cart.class);
-        configuration.addAnnotatedClass(CartItem.class);
-        configuration.addAnnotatedClass(Branch.class);
-        configuration.addAnnotatedClass(CreditCard.class);
-        configuration.addAnnotatedClass(Subscription.class);
-        configuration.addAnnotatedClass(Order.class);
-        configuration.addAnnotatedClass(OrderItem.class);
-        configuration.addAnnotatedClass(Report.class);
-        configuration.addAnnotatedClass(OrderRequest.class);
-        configuration.addAnnotatedClass(OrdersReport.class);
-        configuration.addAnnotatedClass(IncomeReport.class);
-        configuration.addAnnotatedClass(ComplaintsReport.class);
+        // Register ALL annotated entities (belt & suspenders with XML <mapping/>)
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Product.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Customer.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.User.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Employee.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Cart.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.CartItem.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Branch.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.CreditCard.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Subscription.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Order.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.OrderItem.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.Report.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.OrdersReport.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.IncomeReport.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.ComplaintsReport.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.OrderRequest.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.CustomBouquet.class);
+        cfg.addAnnotatedClass(il.cshaifasweng.OCSFMediatorExample.entities.CustomBouquetItem.class);
 
-        ServiceRegistry serviceRegistry = new StandardServiceRegistryBuilder().applySettings(configuration.getProperties()).build();
+        org.hibernate.service.ServiceRegistry registry =
+                new org.hibernate.boot.registry.StandardServiceRegistryBuilder()
+                        .applySettings(cfg.getProperties())
+                        .build();
 
-        return configuration.buildSessionFactory(serviceRegistry);
+        return cfg.buildSessionFactory(registry);
     }
 
-    public static void main(String[] args) throws IOException {
-        // Prompt for password and build custom SessionFactory
-        SessionFactory sessionFactory = getSessionFactory();
 
-        // Set it into HibernateUtil
+    public static void main(String[] args) throws IOException {
+        // Build SessionFactory from hibernate.cfg.xml
+        SessionFactory sessionFactory = buildSessionFactoryFromCfg();
+
+        // Make it available to the rest of the app
         HibernateUtil.setSessionFactory(sessionFactory);
 
-        // Start server
+        // Start server on port 3000 (this is your app server port, not MySQL)
         SimpleServer server = new SimpleServer(3000);
 
-
-        // Test DB logic
+        // ---- Seed DB if empty (single transaction, commit will flush) ----
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             Transaction tx = session.beginTransaction();
+            try {
+                Long productCount = session.createQuery(
+                        "select count(p.id) from Product p", Long.class
+                ).getSingleResult();
 
-            // Check if the Flower table is empty
-            Long count = (Long) session.createQuery("select count(f.id) from Product f").uniqueResult();
+                if (productCount == null || productCount == 0L) {
+                    Product product1 = new Product("Roses", "Flower", 19.99, "Red",
+                            "/il/cshaifasweng/OCSFMediatorExample/client/images/roses.png");
+                    Product product2 = new Product("Tulips", "Flower", 14.50, "Purple",
+                            "/il/cshaifasweng/OCSFMediatorExample/client/images/white tulip.png");
+                    Product product3 = new Product("Pretty in Pink Lilies", "Bouquet", 17.25, "Pink",
+                            "/il/cshaifasweng/OCSFMediatorExample/client/images/lilies.png");
+                    Product product4 = new Product("Sunflower Bouquet", "Bouquet", 12.00, "Yellow",
+                            "/il/cshaifasweng/OCSFMediatorExample/client/images/sunflower.png");
+                    Product product5 = new Product("Orange Carnations Bouquet", "Bouquet", 25.75, "Orange",
+                            "/il/cshaifasweng/OCSFMediatorExample/client/images/carnations.png");
+                    Product productPot1 = new Product("Purple Orchid Pot", "pot", 9.99, "Purple",
+                            "/il/cshaifasweng/OCSFMediatorExample/client/images/orchids.png");
+                    Product productPot2 = new Product("Ceramic Pot", "pot", 14.49, "Black",
+                            "/il/cshaifasweng/OCSFMediatorExample/client/images/ceramic.png");
+                    Product productPot3 = new Product("Plastic Pot", "pot", 4.75, "Brown",
+                            "/il/cshaifasweng/OCSFMediatorExample/client/images/plastic.png");
 
-            if (count == 0) {
-            Product product1 = new Product("Roses", "Flower", 19.99,"Red","/il/cshaifasweng/OCSFMediatorExample/client/images/roses.png");
-            session.save(product1);session.flush();
-            Product product2 = new Product("Tulips", "Flower", 14.50,"White", "/il/cshaifasweng/OCSFMediatorExample/client/images/white tulip.png");
-            session.save(product2); session.flush();
-            Product product3 = new Product("Pretty in Pink Lilies", "Flower", 17.25,"Pink","/il/cshaifasweng/OCSFMediatorExample/client/images/lilies.png");
-            session.save(product3); session.flush();
-            Product product4 = new Product("Sunflower Bouquet", "Flower", 12.00,"Yellow","/il/cshaifasweng/OCSFMediatorExample/client/images/sunflower.png");
-            session.save(product4); session.flush();
-            Product product5 =new Product("Orange Carnations Bouquet","Flower",25.75,"Orange","/il/cshaifasweng/OCSFMediatorExample/client/images/carnations.png");
-            session.save(product5); session.flush();
-            Product productPot1 = new Product("Purple Orchid Pot", "Brown", 9.99,"Purple", "/il/cshaifasweng/OCSFMediatorExample/client/images/orchids.png");
-            session.save(productPot1); session.flush();
-            Product productPot2 = new Product("Ceramic Pot", "White", 14.49, "Black","/il/cshaifasweng/OCSFMediatorExample/client/images/ceramic.png");
-            session.save(productPot2); session.flush();
-            Product productPot3 = new Product("Plastic Pot", "Green", 4.75,"Brown", "/il/cshaifasweng/OCSFMediatorExample/client/images/plastic.png");
-            session.save(productPot3); session.flush();
-            } else {
-                System.out.println("Flower table already contains data. Skipping insert.");
-            }
-            count = (Long) session.createQuery("select count(f.id) from User f").uniqueResult();
-            System.out.println(count);
-            if (count == 0) {
-                //Customer customer = new Customer("Yosef","yosef","yosef2005",true,
-                  //      false,"111111111","assdiyousef@gmail.com",
-                    //    "0549946411","bb","aaaaa","aaa");
-                //session.save(customer); session.flush();
-            }else {
-                System.out.println("Customer table already contains data. Skipping insert.");
-            }
-            count = (Long) session.createQuery("select count(f.id) from Branch f").uniqueResult();
-            if(count == 0) {
-                Branch branch = new Branch("Haifa");
-                session.save(branch);session.flush();
-                Branch branch2 = new Branch("Tel Aviv");
-                session.save(branch2);session.flush();
-            }else
-                System.out.println("Branch table already contains data. Skipping insert.");
-
-            tx.commit();
-            List<User> users = server.getListFromDB(User.class);
-            for (User user : users) {
-                if (user instanceof Employee) {
-                    System.out.println("Employee: " + ((Employee) user).getRole());
-                } else if (user instanceof Customer) {
-                    System.out.println("Customer: " + user.getUsername());
+                    session.save(product1);
+                    session.save(product2);
+                    session.save(product3);
+                    session.save(product4);
+                    session.save(product5);
+                    session.save(productPot1);
+                    session.save(productPot2);
+                    session.save(productPot3);
                 } else {
-                    System.out.println("Base User: " + user.getUsername());
+                    System.out.println("Product table already contains data. Skipping insert.");
                 }
-            }
 
+                Long userCount = session.createQuery(
+                        "select count(u.id) from User u", Long.class
+                ).getSingleResult();
+                System.out.println("Users in DB: " + userCount);
+
+                if (userCount == null || userCount == 0L) {
+                    Employee employee = new Employee("yosef", "yosef", "yosef2005", "Manager", null, true);
+                    session.save(employee);
+                } else {
+                    System.out.println("User table already contains data. Skipping insert.");
+                }
+
+                Long branchCount = session.createQuery(
+                        "select count(b.id) from Branch b", Long.class
+                ).getSingleResult();
+
+                if (branchCount == null || branchCount == 0L) {
+                    session.save(new Branch("Haifa"));
+                    session.save(new Branch("Tel Aviv"));
+                } else {
+                    System.out.println("Branch table already contains data. Skipping insert.");
+                }
+
+                tx.commit(); // flush happens automatically on commit
+            } catch (Exception e) {
+                if (tx != null) tx.rollback();
+                throw e;
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
+        // ---- End seed ----
+
+        // Warm caches and start listening
         server.initCaches();
         server.listen();
+
+        // Clean shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             HibernateUtil.shutdown();
             com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
         }));
-
     }
 }

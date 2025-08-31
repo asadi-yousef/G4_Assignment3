@@ -11,30 +11,23 @@ import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
-
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URL;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.ResourceBundle;
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Scene;
-import javafx.stage.Stage;
-import javafx.stage.Window;
-
-
 
 public class OrdersScreenController implements Initializable {
 
     @FXML
-    private ListView<VBox> ordersListView; // Changed to VBox items for rich display
+    private ListView<VBox> ordersListView;
 
     @FXML
     private Label noOrdersLabel;
@@ -87,7 +80,7 @@ public class OrdersScreenController implements Initializable {
                 ordersListView.setVisible(true);
                 ordersListView.getItems().clear();
 
-                // Loop through orders in reverse order (most recent first)
+                // most recent first
                 for (int i = orders.size() - 1; i >= 0; i--) {
                     Order order = orders.get(i);
                     VBox orderBox = createOrderBox(order);
@@ -98,29 +91,26 @@ public class OrdersScreenController implements Initializable {
     }
 
     private VBox createOrderBox(Order order) {
-        VBox container = new VBox(8); // Increased spacing
-        container.setPadding(new Insets(15)); // Increased padding
+        VBox container = new VBox(8);
+        container.setPadding(new Insets(15));
         container.setStyle("-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #e1e8ed; -fx-border-width: 1; -fx-border-radius: 12; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);");
         container.setMaxWidth(Double.MAX_VALUE);
-        container.setPrefWidth(Region.USE_COMPUTED_SIZE); // Use computed size
+        container.setPrefWidth(Region.USE_COMPUTED_SIZE);
 
-        // Order header: ID and Order Date - make them larger
         Label orderIdLabel = new Label("Order #" + order.getId());
-        orderIdLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 20px; -fx-text-fill: #2c3e50;"); // Increased font size
+        orderIdLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 20px; -fx-text-fill: #2c3e50;");
 
         Label orderDateLabel = new Label("Order Date: " + order.getOrderDate().format(dtFormatter));
-        orderDateLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;"); // Added styling
+        orderDateLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;");
 
-        // Delivery or Pickup info - make larger
         String typeText = order.getDelivery() ? "Delivery" : "Self Pickup";
         Label deliveryTypeLabel = new Label("Type: " + typeText);
-        deliveryTypeLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #27ae60; -fx-font-weight: bold;"); // Added styling
+        deliveryTypeLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #27ae60; -fx-font-weight: bold;");
 
         String deliveryDateStr = order.getDeliveryDateTime() != null ? order.getDeliveryDateTime().format(dtFormatter) : "N/A";
         Label deliveryDateLabel = new Label((order.getDelivery() ? "Delivery" : "Pickup") + " Date: " + deliveryDateStr);
-        deliveryDateLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;"); // Added styling
+        deliveryDateLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;");
 
-        // Payment Method + masked card if applicable - make larger
         String paymentMethod = order.getPaymentMethod() == null ? "Unknown" : order.getPaymentMethod();
         String paymentDetails = order.getPaymentDetails() == null ? "" : order.getPaymentDetails();
 
@@ -131,31 +121,27 @@ public class OrdersScreenController implements Initializable {
             paymentText = "Payment: " + paymentMethod;
         }
         Label paymentLabel = new Label(paymentText);
-        paymentLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #8e44ad; -fx-font-weight: bold;"); // Added styling
+        paymentLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #8e44ad; -fx-font-weight: bold;");
 
-        // Recipient phone - make larger
         String recipientPhone = order.getRecipientPhone();
         String customerPhone = order.getCustomer() != null ? order.getCustomer().getPhone() : "";
         Label recipientPhoneLabel = null;
         if (recipientPhone != null && !recipientPhone.isEmpty() && !recipientPhone.equals(customerPhone)) {
             recipientPhoneLabel = new Label("Recipient Phone: " + recipientPhone);
-            recipientPhoneLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;"); // Added styling
+            recipientPhoneLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;");
         }
 
-        // Note - make larger
         Label noteLabel = null;
         if (order.getNote() != null && !order.getNote().trim().isEmpty()) {
             noteLabel = new Label("Note: " + order.getNote());
-            noteLabel.setStyle("-fx-font-style: italic; -fx-font-size: 16px; -fx-text-fill: #7f8c8d;"); // Increased font size
-            noteLabel.setWrapText(true); // Allow text wrapping
+            noteLabel.setStyle("-fx-font-style: italic; -fx-font-size: 16px; -fx-text-fill: #7f8c8d;");
+            noteLabel.setWrapText(true);
         }
 
-        // Items list with pictures and quantity - make much bigger
-        VBox itemsContainer = new VBox(8); // Increased spacing
-        itemsContainer.setPadding(new Insets(10, 0, 0, 0)); // Adjusted padding
-        itemsContainer.setStyle("-fx-background-color: #f8f9fa; -fx-background-radius: 8; -fx-padding: 10;"); // Added background
+        VBox itemsContainer = new VBox(8);
+        itemsContainer.setPadding(new Insets(10, 0, 0, 0));
+        itemsContainer.setStyle("-fx-background-color: #f8f9fa; -fx-background-radius: 8; -fx-padding: 10;");
 
-        // Add items header
         Label itemsHeaderLabel = new Label("Order Items:");
         itemsHeaderLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 18px; -fx-text-fill: #2c3e50;");
         itemsContainer.getChildren().add(itemsHeaderLabel);
@@ -165,162 +151,77 @@ public class OrdersScreenController implements Initializable {
             itemsContainer.getChildren().add(itemBox);
         }
 
-        // Add all to container
         container.getChildren().addAll(orderIdLabel, orderDateLabel, deliveryTypeLabel, deliveryDateLabel, paymentLabel);
         if (recipientPhoneLabel != null) container.getChildren().add(recipientPhoneLabel);
         if (noteLabel != null) container.getChildren().add(noteLabel);
         container.getChildren().add(itemsContainer);
 
-
-        // Add Complaint Button if eligible
+        // Optional: complaint button if delivered within last 14 days
         if (order.getDeliveryDateTime() != null) {
             LocalDateTime now = LocalDateTime.now();
             LocalDateTime deliveryTime = order.getDeliveryDateTime();
-
-            // Check if delivered in the past 14 days
             if (deliveryTime.isBefore(now) && ChronoUnit.DAYS.between(deliveryTime, now) <= 14) {
                 Button complaintButton = new Button("Make Complaint");
                 complaintButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
                 complaintButton.setCursor(javafx.scene.Cursor.HAND);
-
                 complaintButton.setOnAction(e -> openComplaintPage(order));
-
                 container.getChildren().add(complaintButton);
-            }
-        }
-
-        if (order.getDeliveryDateTime() != null) {
-            LocalDateTime now = LocalDateTime.now();
-            LocalDateTime deliveryTime = order.getDeliveryDateTime();
-
-            // Add cancel button if delivery date is in the future
-            if (deliveryTime.isAfter(now)) {
-                Button cancelButton = new Button("Cancel Order");
-                cancelButton.setStyle("-fx-background-color: #f39c12; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
-                cancelButton.setCursor(javafx.scene.Cursor.HAND);
-
-                cancelButton.setOnAction(e -> openCancelOrderPopup(order));
-
-                container.getChildren().add(cancelButton);
             }
         }
 
         return container;
     }
 
-    private void openCancelOrderPopup(Order order) {
-        try {
-            SessionManager.getInstance().setSelectedOrder(order);
-
-            FXMLLoader loader = new FXMLLoader(getClass().getResource(
-                    "/il/cshaifasweng/OCSFMediatorExample/client/cancelOrder.fxml"
-            ));
-            VBox root = loader.load();
-
-            Stage stage = new Stage();
-            stage.setTitle("Cancel Order");
-            stage.setScene(new Scene(root));
-            stage.initOwner(ordersListView.getScene().getWindow()); // optional: makes it modal to main window
-            stage.show();
-
-        } catch (IOException e) {
-            e.printStackTrace();
-            showAlert("Error", "Failed to open cancel order popup.");
-        }
-    }
-
-
-    @Subscribe
-    public void onOrderCanceled(Message msg) {
-        if ("order_canceled".equals(msg.getMessage())) {
-            int canceledOrderId = (int) msg.getObject();
-            orders.removeIf(o -> o.getId() == canceledOrderId);
-            renderOrders();
-            showAlert("Success", "Order #" + canceledOrderId + " has been canceled.");
-        }
-    }
-
-
     private void openComplaintPage(Order order) {
         try {
-            // Option A: Pass order via SessionManager (easier)
             SessionManager.getInstance().setSelectedOrder(order);
-
-            // Load complaints FXML
-            App.setRoot("complaints");  // assumes you have complaints.fxml set up
+            App.setRoot("complaints");
         } catch (IOException e) {
             showAlert("Error", "Failed to open complaints page.");
         }
     }
 
-
     private HBox createOrderItemBox(OrderItem item) {
-        HBox itemBox = new HBox(15); // Increased spacing
+        HBox itemBox = new HBox(15);
         itemBox.setAlignment(Pos.CENTER_LEFT);
-        itemBox.setPadding(new Insets(10)); // Added padding
+        itemBox.setPadding(new Insets(10));
         itemBox.setStyle("-fx-background-color: white; -fx-background-radius: 8; -fx-border-color: #dee2e6; -fx-border-width: 1; -fx-border-radius: 8;");
-        itemBox.setPrefWidth(Region.USE_COMPUTED_SIZE); // Use full width
+        itemBox.setPrefWidth(Region.USE_COMPUTED_SIZE);
         itemBox.setMaxWidth(Double.MAX_VALUE);
 
-        // Product image - make much bigger
         ImageView productImage = new ImageView();
-        productImage.setFitWidth(80); // Increased from 50 to 80
-        productImage.setFitHeight(80); // Increased from 50 to 80
+        productImage.setFitWidth(80);
+        productImage.setFitHeight(80);
         productImage.setPreserveRatio(true);
-        productImage.setStyle("-fx-background-color: #f8f9fa; -fx-background-radius: 8;");
 
-        String imageUrl = null;
-        if (item.getProduct() != null) {
-            try {
-                imageUrl = item.getProduct().getImagePath();
-            } catch (Exception e) {
-                imageUrl = null;
-            }
+        VBox info = new VBox(5);
+        info.setAlignment(Pos.CENTER_LEFT);
+
+        // *** Snapshot-first rendering ***
+        String name = item.getDisplayName();
+        BigDecimal unitPrice = BigDecimal.valueOf(item.getDisplayUnitPrice());
+
+        String imagePath = item.getDisplayImagePath();
+        if (imagePath != null && !imagePath.isEmpty()) {
+            try { productImage.setImage(new Image(imagePath, true)); } catch (Exception ignored) {}
         }
 
-        if (imageUrl != null && !imageUrl.isEmpty()) {
-            try {
-                Image img = new Image(imageUrl, true);
-                productImage.setImage(img);
-            } catch (Exception e) {
-                // fallback: no image - add a placeholder
-                productImage.setStyle("-fx-background-color: #ecf0f1; -fx-background-radius: 8;");
-            }
+        Label nameLbl = new Label(name);
+        nameLbl.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;");
+
+        Label qtyLbl = new Label("Quantity: " + item.getQuantity());
+        qtyLbl.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;");
+
+        if (unitPrice != null && unitPrice.compareTo(BigDecimal.ZERO) > 0) {
+            Label priceLbl = new Label("Price: $" + String.format("%.2f", unitPrice));
+            priceLbl.setStyle("-fx-font-size: 16px; -fx-text-fill: #27ae60; -fx-font-weight: bold;");
+            info.getChildren().addAll(nameLbl, qtyLbl, priceLbl);
         } else {
-            // Add placeholder styling when no image
-            productImage.setStyle("-fx-background-color: #ecf0f1; -fx-background-radius: 8;");
+            info.getChildren().addAll(nameLbl, qtyLbl);
         }
 
-        // Product info - make bigger and add more details
-        VBox productInfo = new VBox(5);
-        productInfo.setAlignment(Pos.CENTER_LEFT);
-
-        Label productNameLabel = new Label(item.getProduct().getName());
-        productNameLabel.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;"); // Much larger font
-        productNameLabel.setWrapText(true);
-
-        Label quantityLabel = new Label("Quantity: " + item.getQuantity());
-        quantityLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;"); // Larger font
-
-        // Add price if available (assuming OrderItem has getPrice() method)
-        try {
-            double price = item.getProduct().getPrice();
-            if (price > 0) {
-                Label priceLabel = new Label("Price: $" + String.format("%.2f", price));
-                priceLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #27ae60; -fx-font-weight: bold;");
-                productInfo.getChildren().add(priceLabel);
-            }
-        } catch (Exception e) {
-            // Price not available or method doesn't exist
-        }
-
-        productInfo.getChildren().addAll(productNameLabel, quantityLabel);
-
-        // Make product info take remaining space
-        HBox.setHgrow(productInfo, Priority.ALWAYS);
-
-        itemBox.getChildren().addAll(productImage, productInfo);
-
+        HBox.setHgrow(info, Priority.ALWAYS);
+        itemBox.getChildren().addAll(productImage, info);
         return itemBox;
     }
 
@@ -335,7 +236,7 @@ public class OrdersScreenController implements Initializable {
             }
         });
     }
-    // Mask card: show last 4 digits only (assumes digits only)
+
     private String maskCard(String cardNumber) {
         if (cardNumber == null || cardNumber.length() < 4) {
             return "****";

@@ -22,6 +22,7 @@ import java.util.stream.IntStream;
 public class RegisterControl implements Initializable {
 
     // Existing FXML fields
+    @FXML private TextArea idField;            // NEW: ID textarea
     @FXML private TextField nameField;
     @FXML private TextField usernameField;
     @FXML private PasswordField passwordField;
@@ -72,6 +73,11 @@ public class RegisterControl implements Initializable {
         // Hide branch combo by default
         branchComboBox.setVisible(false);
         branchComboBox.setManaged(false);
+
+        // Optional: keep idField visually to a single line height
+        if (idField != null) {
+            idField.setPrefRowCount(1);
+        }
     }
 
     private void populateAccountTypes() {
@@ -146,7 +152,9 @@ public class RegisterControl implements Initializable {
                 boolean isNetworkAccount = ("Network Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
 
                 // Create new Customer object with all form data
+                // IMPORTANT: ID is now the FIRST constructor parameter as requested
                 Customer newCustomer = new Customer(
+                        idField.getText().trim(),
                         nameField.getText().trim(),
                         usernameField.getText().trim(),
                         passwordField.getText(),
@@ -165,7 +173,8 @@ public class RegisterControl implements Initializable {
                         cvvField.getText().trim(),
                         branchComboBox.isVisible() ? getSelectedBranch() : null
                 );
-                if(!isNetworkAccount) {
+
+                if (!isNetworkAccount) {
                     newCustomer.setBranch(getSelectedBranch());
                 }
 
@@ -190,12 +199,24 @@ public class RegisterControl implements Initializable {
     @FXML
     private void handleCancel(ActionEvent event) throws IOException {
         clearForm();
-        EventBus.getDefault().unregister(this);
+        if (EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this);
+        }
         App.setRoot("logInView");
     }
 
     private boolean validateFields() {
         StringBuilder errorMessage = new StringBuilder();
+
+        // ID validation
+        String idText = (idField != null && idField.getText() != null) ? idField.getText().trim() : "";
+        if (idText.isEmpty()) {
+            errorMessage.append("ID number is required.\n");
+        } else if (!idText.matches("\\d{5,10}")) { // allow 5–10 digits input; we’ll still enforce checksum for 9-digit Israeli IDs
+            errorMessage.append("ID must contain only digits (5–10 digits).\n");
+        } else if (!isValidIsraeliID(idText)) {
+            errorMessage.append("Invalid Israeli ID number.\n");
+        }
 
         if (nameField.getText() == null || nameField.getText().trim().isEmpty()) {
             errorMessage.append("Name is required.\n");
@@ -236,17 +257,39 @@ public class RegisterControl implements Initializable {
         if (cvvField.getText() == null || !cvvField.getText().trim().matches("\\d{3,4}")) {
             errorMessage.append("A valid 3 or 4 digit CVV is required.\n");
         }
-        if(usernameField.getText().contains(" ")){
+        if (usernameField.getText() != null && usernameField.getText().contains(" ")) {
             errorMessage.append("Usernames cannot contain spaces.\n");
         }
         if (phoneField.getText() == null || !isValidPhone(phoneField.getText().trim())) {
             errorMessage.append("A valid phone number is required (7–15 digits, optional +).\n");
         }
+
         if (errorMessage.length() > 0) {
             showAlert(Alert.AlertType.ERROR, "Validation Error", errorMessage.toString());
             return false;
         }
         return true;
+    }
+
+    // Israeli ID checksum validation (pads to 9 digits and verifies check digit)
+    private boolean isValidIsraeliID(String idRaw) {
+        if (idRaw == null) return false;
+        String id = idRaw.replaceAll("\\D", "");
+        if (id.isEmpty()) return false;
+
+        // Pad with leading zeros to 9 digits (standard Israeli ID format)
+        id = String.format("%9s", id).replace(' ', '0');
+        if (!id.matches("\\d{9}")) return false;
+
+        int sum = 0;
+        for (int i = 0; i < 9; i++) {
+            int digit = id.charAt(i) - '0';
+            int factor = (i % 2 == 0) ? 1 : 2;
+            int prod = digit * factor;
+            // sum digits (equivalent to (prod > 9 ? prod - 9 : prod))
+            sum += (prod / 10) + (prod % 10);
+        }
+        return sum % 10 == 0;
     }
 
     private boolean isValidPhone(String phone) {
@@ -263,6 +306,7 @@ public class RegisterControl implements Initializable {
     }
 
     private void clearForm() {
+        if (idField != null) idField.clear();
         nameField.clear();
         usernameField.clear();
         passwordField.clear();

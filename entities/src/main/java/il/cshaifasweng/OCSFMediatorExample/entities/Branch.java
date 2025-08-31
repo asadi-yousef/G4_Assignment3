@@ -17,23 +17,11 @@ public class Branch implements Serializable {
     @Column
     private String name;
 
-    @OneToMany(mappedBy = "branch", fetch = FetchType.LAZY)
-    private List<Customer> customers;
-
-    @OneToMany(mappedBy = "branch", fetch = FetchType.LAZY)
-    private List<Employee> employees;
 
     public Branch() {}
 
     public Branch(String name) {
         this.name = name;
-    }
-
-    public void addCustomer(Customer customer) {
-        customers.add(customer);
-    }
-    public void addEmployee(Employee employee) {
-        employees.add(employee);
     }
 
     // Getters and setters
@@ -53,19 +41,4 @@ public class Branch implements Serializable {
         this.name = name;
     }
 
-    public List<Customer> getCustomers() {
-        return customers;
-    }
-
-    public void setCustomers(List<Customer> customers) {
-        this.customers = customers;
-    }
-
-    public List<Employee> getEmployees() {
-        return employees;
-    }
-
-    public void setEmployees(List<Employee> employees) {
-        this.employees = employees;
-    }
 }
