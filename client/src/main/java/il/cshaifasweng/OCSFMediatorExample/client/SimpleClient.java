@@ -17,17 +17,14 @@ public class SimpleClient extends AbstractClient {
 		super(host, port);
 	}
 
-	@Override
-	protected void handleMessageFromServer(Object msg) {
-		if(msg instanceof Message) {
-			Message message = (Message) msg;
-			System.out.println("Message received by SimpleClient: " + message.getMessage());
-			EventBus.getDefault().post(msg);
-		}
-	}
+    @Override
+    protected void handleMessageFromServer(Object msg) {
+        if (msg instanceof Message) {
+            EventBus.getDefault().post(msg);
+        }
+    }
 
-
-	public static SimpleClient getClient() {
+    public static SimpleClient getClient() {
 		if (client == null) {
 			client = new SimpleClient("localhost", 3000);
 		}

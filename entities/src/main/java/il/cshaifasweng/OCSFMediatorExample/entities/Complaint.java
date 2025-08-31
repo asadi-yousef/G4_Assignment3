@@ -14,9 +14,11 @@ public class Complaint implements Serializable {
     private int id;
 
     @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name="customer_id")
     private Customer customer;
 
     @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name="order_id")
     private Order order;
 
     @Column(length = 120, nullable = false) // <= was 100, now 120

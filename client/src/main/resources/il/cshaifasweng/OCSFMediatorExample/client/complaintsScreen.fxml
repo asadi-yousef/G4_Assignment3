@@ -24,9 +24,14 @@
     </HBox>
 
     <HBox spacing="12">
-        <Button text="Submit Complaint" onAction="#handleSubmitComplaint"
+        <Button fx:id="submitBtn" text="Submit Complaint" onAction="#handleSubmitComplaint"
                 style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 10 20;"/>
+        <Button fx:id="viewResponseBtn" text="View Response" visible="false" onAction="#handleViewResponse"
+                style="-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 10 20;"/>
         <Button text="← Back" onAction="#handleBack"
                 style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 10 20;"/>
     </HBox>
+
+    <Label fx:id="statusLabel" text="" style="-fx-text-fill:#7f8c8d;"/>
+
 </VBox>

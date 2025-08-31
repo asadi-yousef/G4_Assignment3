@@ -21,10 +21,14 @@
             <TableColumn fx:id="idColumn" text="ID" prefWidth="60"/>
             <TableColumn fx:id="customerColumn" text="Customer" prefWidth="160"/>
             <TableColumn fx:id="orderColumn" text="Order" prefWidth="80"/>
-            <TableColumn fx:id="textColumn" text="Complaint" prefWidth="280"/>
-            <TableColumn fx:id="deadlineColumn" text="Deadline" prefWidth="160"/>
+            <TableColumn fx:id="textColumn" text="Complaint" prefWidth="240"/>
+            <TableColumn fx:id="deadlineColumn" text="Deadline" prefWidth="140"/>
             <TableColumn fx:id="resolvedColumn" text="Resolved" prefWidth="80"/>
+            <!-- visible only when "Show resolved" is checked -->
+            <TableColumn fx:id="responseCol" text="Response" prefWidth="220" visible="false"/>
+            <TableColumn fx:id="compensationCol" text="Compensation" prefWidth="120" visible="false"/>
         </columns>
+
     </TableView>
 
     <TitledPane text="Respond &amp; Resolve" expanded="true" prefWidth="900">

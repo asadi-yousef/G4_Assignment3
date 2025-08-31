@@ -39,6 +39,13 @@ public class OrdersScreenController implements Initializable {
 
     private final DateTimeFormatter dtFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
+    // Tracks complaint status per order id
+    private final java.util.Map<Long, ComplaintDTO> complaintByOrder = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // the HBox that holds the controls for each order card, so we can update it in-place
+    private final java.util.Map<Long, HBox> complaintControlsByOrder = new java.util.concurrent.ConcurrentHashMap<>();
+
+
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         if (!EventBus.getDefault().isRegistered(this)) {
@@ -63,12 +70,42 @@ public class OrdersScreenController implements Initializable {
 
     @Subscribe
     public void onMessageFromServer(Message msg) {
-        if ("orders_data".equals(msg.getMessage())) {
-            orders = (List<Order>) msg.getObject();
-            SessionManager.getInstance().setOrders(orders);
-            renderOrders();
+        switch (msg.getMessage()) {
+            case "orders_data":
+                orders = (List<Order>) msg.getObject();
+                SessionManager.getInstance().setOrders(orders);
+                renderOrders();
+
+                // Request complaint status once per order after initial render
+                if (orders != null) {
+                    for (Order o : orders) requestOrderComplaintStatus(o);
+                }
+                break;
+
+            case "order_complaint_status":
+                Platform.runLater(() -> {
+                    Object obj = msg.getObject();
+                    if (obj instanceof ComplaintDTO dto && dto.getOrderId() != null) {
+                        complaintByOrder.put(dto.getOrderId(), dto);
+                        // update only that card's controls in-place
+                        applyComplaintUIForOrder(dto.getOrderId());
+                    }
+                    // If server returns null, we don't know which order — ignore silently
+                });
+                break;
+
+            case "complaints_refresh":
+                // employees resolved / a customer submitted — re-request statuses (no re-render)
+                Platform.runLater(() -> {
+                    if (orders != null) {
+                        for (Order o : orders) requestOrderComplaintStatus(o);
+                    }
+                });
+                break;
         }
     }
+
+
 
     private void renderOrders() {
         Platform.runLater(() -> {
@@ -157,16 +194,86 @@ public class OrdersScreenController implements Initializable {
         if (noteLabel != null) container.getChildren().add(noteLabel);
         container.getChildren().add(itemsContainer);
 
-        // Always allow complaint (about the order or the website)
-        Button complaintButton = new Button("Make Complaint");
-        complaintButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
-        complaintButton.setCursor(javafx.scene.Cursor.HAND);
-        complaintButton.setOnAction(e -> openComplaintPage(order));
-        container.getChildren().add(complaintButton);
+        // Complaint controls (make/view/pending) based on cached server status
+        HBox complaintControls = buildComplaintControls(order);
+        container.getChildren().add(complaintControls);
+
+        // remember the controls so we can update them later without re-rendering the whole list
+        complaintControlsByOrder.put(order.getId(), complaintControls);
 
         return container;
     }
 
+
+    private void requestOrderComplaintStatus(Order order) {
+        try {
+            User u = SessionManager.getInstance().getCurrentUser();
+            if (!(u instanceof Customer) || order == null || order.getId() == null) return;
+
+            java.util.Map<String,Object> p = new java.util.HashMap<>();
+            p.put("customerId", ((Customer) u).getId());
+            p.put("orderId", order.getId());
+
+            SimpleClient.getClient().sendToServer(
+                    new Message("get_order_complaint_status", null,
+                            new java.util.ArrayList<>(java.util.List.of(p)))
+            );
+        } catch (IOException ignored) {}
+    }
+
+    private void applyComplaintUIForOrder(Long orderId) {
+        javafx.scene.layout.HBox box = complaintControlsByOrder.get(orderId);
+        if (box == null) return; // card not visible yet
+
+        // find the order object to wire navigation correctly
+        Order order = null;
+        if (orders != null) {
+            for (Order o : orders) {
+                if (o.getId().equals(orderId)) { order = o; break; }
+            }
+        }
+        if (order == null) return;
+
+        // Rebuild the small control row
+        javafx.scene.control.Button makeBtn = new javafx.scene.control.Button("Make Complaint");
+        makeBtn.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
+        makeBtn.setCursor(javafx.scene.Cursor.HAND);
+        Order finalOrder = order;
+        makeBtn.setOnAction(e -> openComplaintPage(finalOrder));
+
+        javafx.scene.control.Button viewBtn = new javafx.scene.control.Button("View Response");
+        viewBtn.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 8 16;");
+        viewBtn.setOnAction(e -> {
+            ComplaintDTO dto = complaintByOrder.get(orderId);
+            String comp = (dto != null && dto.getCompensationAmount() != null)
+                    ? dto.getCompensationAmount().toPlainString() : "—";
+            String resp = (dto != null && dto.getResponseText() != null)
+                    ? dto.getResponseText() : "—";
+            javafx.scene.control.Alert a = new javafx.scene.control.Alert(
+                    javafx.scene.control.Alert.AlertType.INFORMATION,
+                    "Response: " + resp + "\nCompensation: " + comp,
+                    javafx.scene.control.ButtonType.OK
+            );
+            a.setHeaderText("Complaint Response for Order #" + orderId);
+            a.setTitle("Complaint Response");
+            a.showAndWait();
+        });
+
+        javafx.scene.control.Label pendingLbl = new javafx.scene.control.Label("Response pending");
+        pendingLbl.setStyle("-fx-text-fill: #7f8c8d; -fx-font-style: italic;");
+
+        ComplaintDTO dto = complaintByOrder.get(orderId);
+        if (dto == null) {
+            makeBtn.setDisable(false);
+            box.getChildren().setAll(makeBtn);
+        } else if (!dto.isResolved()) {
+            makeBtn.setDisable(true);
+            box.getChildren().setAll(makeBtn, pendingLbl);
+        } else {
+            makeBtn.setDisable(true);
+            box.getChildren().setAll(makeBtn, viewBtn);
+        }
+    }
 
 
     private void openComplaintPage(Order order) {
@@ -238,6 +345,52 @@ public class OrdersScreenController implements Initializable {
         itemBox.getChildren().addAll(productImage, info);
         return itemBox;
     }
+
+    private HBox buildComplaintControls(Order order) {
+        HBox box = new HBox(8);
+        box.setAlignment(Pos.CENTER_LEFT);
+
+        Button makeBtn = new Button("Make Complaint");
+        makeBtn.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
+        makeBtn.setCursor(javafx.scene.Cursor.HAND);
+        makeBtn.setOnAction(e -> openComplaintPage(order));
+
+        Button viewBtn = new Button("View Response");
+        viewBtn.setStyle("-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 8 16;");
+        viewBtn.setOnAction(e -> {
+            ComplaintDTO dto = complaintByOrder.get(order.getId());
+            String comp = (dto != null && dto.getCompensationAmount() != null)
+                    ? dto.getCompensationAmount().toPlainString() : "—";
+            String resp = (dto != null && dto.getResponseText() != null)
+                    ? dto.getResponseText() : "—";
+            Alert a = new Alert(Alert.AlertType.INFORMATION,
+                    "Response: " + resp + "\nCompensation: " + comp, ButtonType.OK);
+            a.setHeaderText("Complaint Response for Order #" + order.getId());
+            a.setTitle("Complaint Response");
+            a.showAndWait();
+        });
+
+        Label pendingLbl = new Label("Response pending");
+        pendingLbl.setStyle("-fx-text-fill: #7f8c8d; -fx-font-style: italic;");
+
+        // decide UI from cached status
+        ComplaintDTO dto = complaintByOrder.get(order.getId());
+        if (dto == null) {
+            makeBtn.setDisable(false);
+            box.getChildren().setAll(makeBtn);
+        } else if (!dto.isResolved()) {
+            makeBtn.setDisable(true);
+            box.getChildren().setAll(makeBtn, pendingLbl);
+        } else {
+            makeBtn.setDisable(true);
+            box.getChildren().setAll(makeBtn, viewBtn);
+        }
+
+        return box;
+    }
+
+
+
 
     @FXML
     public void handleBackToCatalog(ActionEvent event) {

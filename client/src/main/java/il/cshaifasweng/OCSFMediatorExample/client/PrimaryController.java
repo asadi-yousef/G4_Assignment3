@@ -772,7 +772,22 @@ public class PrimaryController implements Initializable {
 		}
 	}
 
-	@FXML
+    @FXML
+    private void handleOpenComplaints() {
+        var u = SessionManager.getInstance().getCurrentUser();
+        try {
+            if (u instanceof il.cshaifasweng.OCSFMediatorExample.entities.Customer) {
+                App.setRoot("MyComplaintsView");   // customer history screen
+            } else {
+                App.setRoot("complaintsListView"); // employee dashboard
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+
+    @FXML
 	public void handleProfile(ActionEvent event) {
 		try {
 			FXMLLoader loader = new FXMLLoader(getClass().getResource("Profile.fxml"));
