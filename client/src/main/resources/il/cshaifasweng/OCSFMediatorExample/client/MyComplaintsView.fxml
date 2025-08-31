@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="il.cshaifasweng.OCSFMediatorExample.client.MyComplaintsController"
+      spacing="12" alignment="TOP_CENTER"
+      style="-fx-background-color: #fafafa; -fx-padding: 24;">
+    <HBox spacing="10" alignment="CENTER_LEFT" prefWidth="900">
+        <Label text="My Complaints" style="-fx-font-size: 22px; -fx-font-weight: bold;"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <CheckBox fx:id="unresolvedOnly" text="Show only unresolved" selected="true"/>
+        <Button fx:id="refreshBtn" text="Refresh"/>
+        <Button text="← Back" onAction="#handleBack"/>
+    </HBox>
+
+    <TableView fx:id="table" prefHeight="440" prefWidth="900">
+        <columns>
+            <TableColumn fx:id="idCol" text="ID" prefWidth="60"/>
+            <TableColumn fx:id="orderCol" text="Order" prefWidth="80"/>
+            <TableColumn fx:id="textCol" text="Complaint" prefWidth="260"/>
+            <TableColumn fx:id="submittedCol" text="Submitted" prefWidth="140"/>
+            <TableColumn fx:id="resolvedCol" text="Resolved" prefWidth="80"/>
+            <TableColumn fx:id="responseCol" text="Response" prefWidth="220"/>
+            <TableColumn fx:id="compensationCol" text="Compensation" prefWidth="120"/>
+        </columns>
+    </TableView>
+</VBox>
