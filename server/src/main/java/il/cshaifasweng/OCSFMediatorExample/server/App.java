@@ -106,6 +106,7 @@ public class App {
                 if (userCount == null || userCount == 0L) {
                     Employee employee = new Employee("yosef", "yosef", "yosef2005", "Manager", null, true);
                     session.save(employee);
+                    Employee employee1 = new Employee("Renata", "Renata", "renata2002", "Employee", null, true);
                 } else {
                     System.out.println("User table already contains data. Skipping insert.");
                 }
