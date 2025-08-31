@@ -34,9 +34,10 @@
                   <Button onAction="#handleCatalog" text="Catalog" />
                   <Button onAction="#handleCart" text="My Cart" />
                   <Button onAction="#handleOrdersScreen" text="My Orders" />
-                  <Button onAction="#handleComplaints" text="Complaints" />
+                  <Button text="Complaints" onAction="#handleOpenComplaints"/>
 
-                  <!-- NEW: customer-only button (controller toggles visibility) -->
+
+                   <!-- NEW: customer-only button (controller toggles visibility) -->
                   <Button fx:id="makeCustomBouquetButton"
                           text="Make a Custom Bouquet"
                           onAction="#handleMakeCustomBouquet"

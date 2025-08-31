@@ -1,6 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
-import il.cshaifasweng.OCSFMediatorExample.entities.Complaint;
+import il.cshaifasweng.OCSFMediatorExample.entities.ComplaintDTO;
 import il.cshaifasweng.OCSFMediatorExample.entities.Employee;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import javafx.application.Platform;
@@ -20,46 +20,76 @@ import java.util.*;
 
 public class ComplaintsListController implements Initializable {
 
-    @FXML private TableView<Complaint> complaintsTable;
-    @FXML private TableColumn<Complaint, Integer> idColumn;
-    @FXML private TableColumn<Complaint, String> customerColumn;
-    @FXML private TableColumn<Complaint, String> orderColumn;
-    @FXML private TableColumn<Complaint, String> textColumn;
-    @FXML private TableColumn<Complaint, String> deadlineColumn;
-    @FXML private TableColumn<Complaint, Boolean> resolvedColumn;
+    @FXML private TableView<ComplaintDTO> complaintsTable;
+    @FXML private TableColumn<ComplaintDTO, Integer> idColumn;
+    @FXML private TableColumn<ComplaintDTO, String> customerColumn;
+    @FXML private TableColumn<ComplaintDTO, String> orderColumn;
+    @FXML private TableColumn<ComplaintDTO, String> textColumn;
+    @FXML private TableColumn<ComplaintDTO, String> deadlineColumn;
+    @FXML private TableColumn<ComplaintDTO, Boolean> resolvedColumn;
+
+    // NEW: show resolver details when "Show resolved" is checked
+    @FXML private TableColumn<ComplaintDTO, String> responseCol;
+    @FXML private TableColumn<ComplaintDTO, String> compensationCol;
 
     @FXML private TextArea responseTextArea;
     @FXML private TextField compensationField;
     @FXML private CheckBox showResolvedCheck;
 
     private final DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-    private final List<Complaint> backing = new ArrayList<>();
+    private final List<ComplaintDTO> backing = new ArrayList<>();
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         if (!EventBus.getDefault().isRegistered(this)) EventBus.getDefault().register(this);
 
         idColumn.setCellValueFactory(data -> new SimpleObjectProperty<>(data.getValue().getId()));
-        customerColumn.setCellValueFactory(d -> new SimpleStringProperty(
-                d.getValue().getCustomer() != null ? d.getValue().getCustomer().getName() : "—"));
-        orderColumn.setCellValueFactory(d -> new SimpleStringProperty(
-                d.getValue().getOrder() != null ? String.valueOf(d.getValue().getOrder().getId()) : "—"));
+        customerColumn.setCellValueFactory(d ->
+                new SimpleStringProperty(
+                        d.getValue().getCustomerName() != null ? d.getValue().getCustomerName() : "—"));
+        orderColumn.setCellValueFactory(d ->
+                new SimpleStringProperty(
+                        d.getValue().getOrderId() != null ? String.valueOf(d.getValue().getOrderId()) : "—"));
         textColumn.setCellValueFactory(d -> new SimpleStringProperty(d.getValue().getText()));
-        deadlineColumn.setCellValueFactory(d -> new SimpleStringProperty(
-                d.getValue().getDeadline() != null ? d.getValue().getDeadline().format(fmt) : "—"));
+        deadlineColumn.setCellValueFactory(d ->
+                new SimpleStringProperty(
+                        d.getValue().getDeadline() != null ? d.getValue().getDeadline().format(fmt) : "—"));
         resolvedColumn.setCellValueFactory(d -> new SimpleObjectProperty<>(d.getValue().isResolved()));
 
+        // NEW: resolver details (visible only when "show resolved" is on)
+        if (responseCol != null) {
+            responseCol.setCellValueFactory(d -> new SimpleStringProperty(
+                    d.getValue().getResponseText() == null ? "—" : d.getValue().getResponseText()
+            ));
+        }
+        if (compensationCol != null) {
+            compensationCol.setCellValueFactory(d -> new SimpleStringProperty(
+                    d.getValue().getCompensationAmount() == null ? "—" : d.getValue().getCompensationAmount().toPlainString()
+            ));
+        }
+
         complaintsTable.setRowFactory(tv -> new TableRow<>() {
-            @Override protected void updateItem(Complaint c, boolean empty) {
+            @Override protected void updateItem(ComplaintDTO c, boolean empty) {
                 super.updateItem(c, empty);
                 if (empty || c == null) { setStyle(""); return; }
-                if (!c.isResolved() && c.getDeadline() != null && c.getDeadline().isBefore(java.time.LocalDateTime.now())) {
-                    setStyle("-fx-background-color: #ffefef;"); // overdue tint
+                if (!c.isResolved() && c.getDeadline() != null
+                        && c.getDeadline().isBefore(java.time.LocalDateTime.now())) {
+                    setStyle("-fx-background-color: #ffefef;");
                 } else setStyle("");
             }
         });
 
-        showResolvedCheck.selectedProperty().addListener((o, a, b) -> loadComplaints());
+        // toggle extra columns
+        showResolvedCheck.selectedProperty().addListener((o, oldV, show) -> {
+            if (responseCol != null) responseCol.setVisible(show);
+            if (compensationCol != null) compensationCol.setVisible(show);
+            loadComplaints();
+        });
+
+        // default visibility
+        if (responseCol != null) responseCol.setVisible(showResolvedCheck.isSelected());
+        if (compensationCol != null) compensationCol.setVisible(showResolvedCheck.isSelected());
+
         loadComplaints();
     }
 
@@ -73,25 +103,19 @@ public class ComplaintsListController implements Initializable {
                 showAlert("Error", "Employee login required.", Alert.AlertType.WARNING);
                 return;
             }
-            Long employeeId = ((Employee) user).getId();
-            boolean resolved = showResolvedCheck.isSelected();
-
             Map<String, Object> payload = new HashMap<>();
-            payload.put("employeeId", employeeId);
-            payload.put("resolved", resolved);
+            payload.put("resolved", showResolvedCheck.isSelected());
 
             SimpleClient.getClient().sendToServer(new Message(
-                    "get_all_complaints", null, new ArrayList<>(List.of(payload)))
-            );
+                    "get_all_complaints", null, new ArrayList<>(List.of(payload))));
         } catch (IOException e) {
             showAlert("Error", "Failed to load complaints.", Alert.AlertType.ERROR);
         }
     }
 
-
     @FXML
     private void handleResolveWithReply() {
-        Complaint selected = complaintsTable.getSelectionModel().getSelectedItem();
+        ComplaintDTO selected = complaintsTable.getSelectionModel().getSelectedItem();
         if (selected == null) {
             showAlert("Select", "Please select a complaint.", Alert.AlertType.WARNING);
             return;
@@ -109,19 +133,19 @@ public class ComplaintsListController implements Initializable {
         Map<String, Object> payload = new HashMap<>();
         payload.put("complaintId", selected.getId());
         payload.put("responseText", reply);
-        payload.put("compensation", comp);
+        if (comp != null) payload.put("compensation", comp);
 
         try {
-            SimpleClient.getClient().sendToServer(new Message("resolve_complaint", null,
-                    new ArrayList<>(List.of(payload))));
+            SimpleClient.getClient().sendToServer(new Message(
+                    "resolve_complaint", null, new ArrayList<>(List.of(payload))
+            ));
         } catch (IOException e) {
             showAlert("Error", "Failed to resolve complaint.", Alert.AlertType.ERROR);
             return;
         }
-        showAlert("Success", "Reply sent and complaint resolved.", Alert.AlertType.INFORMATION);
+        // UX: clear & reload when the server confirms
         responseTextArea.clear();
         compensationField.clear();
-        loadComplaints();
     }
 
     @FXML
@@ -131,14 +155,37 @@ public class ComplaintsListController implements Initializable {
 
     @Subscribe
     public void onServerMessage(Message msg) {
-        if ("complaints_list".equals(msg.getMessage()) || "complaints_history".equals(msg.getMessage())) {
-            Platform.runLater(() -> {
-                backing.clear();
-                if (msg.getObject() instanceof List<?>) {
-                    for (Object o : (List<?>) msg.getObject()) if (o instanceof Complaint) backing.add((Complaint) o);
-                }
-                complaintsTable.getItems().setAll(backing);
-            });
+        switch (msg.getMessage()) {
+            case "complaints_list":
+                Platform.runLater(() -> {
+                    backing.clear();
+                    if (msg.getObject() instanceof List<?>) {
+                        for (Object o : (List<?>) msg.getObject()) {
+                            if (o instanceof ComplaintDTO dto) backing.add(dto);
+                        }
+                    }
+                    complaintsTable.getItems().setAll(backing);
+                });
+                break;
+
+            // refresh signals after resolution (from server broadcast)
+            case "complaints_refresh":
+                Platform.runLater(this::loadComplaints);
+                break;
+
+            // immediate feedback for this employee
+            case "complaint_resolved":
+                Platform.runLater(() -> {
+                    showAlert("Resolved", "Reply sent and complaint marked as resolved.", Alert.AlertType.INFORMATION);
+                    loadComplaints();
+                });
+                break;
+
+            // (optional) errors
+            case "complaint_resolve_error":
+                Platform.runLater(() ->
+                        showAlert("Error", String.valueOf(msg.getObject()), Alert.AlertType.ERROR));
+                break;
         }
     }
 

@@ -156,6 +156,9 @@ public class SimpleServer extends AbstractServer {
                 } else if (key != null && key.startsWith("add_custom_bouquet_to_cart")) {
                     handleAddCustomBouquetToCart(m, client, session);
                 }
+                else if ("get_my_complaints".equals(key) || "get_customer_complaints".equals(key)) {
+                    handleGetMyComplaints(m, client, session);
+                }
                 // === Complaint routes ===
                 // === Complaint routes ===
                 else if ("submit_complaint".equals(key)) {
@@ -165,6 +168,19 @@ public class SimpleServer extends AbstractServer {
                     handleGetAllComplaints(m, client, session);
                 } else if ("resolve_complaint".equals(key)) {
                     handleResolveComplaint(m, client, session);
+                }
+                else if ("get_complaints_count".equals(key)) {
+                    handleGetComplaintsCount(client, session);
+                } else if ("get_complaint_ids".equals(key)) {
+                    handleGetComplaintIds(client, session);
+                } else if ("ping_echo".equals(key)) {
+                    sendMsg(client, new Message("pong", "ok", null), "ping_echo");
+                }
+                else if ("get_my_complaints".equals(key) || "get_customer_complaints".equals(key)) {
+                    handleGetMyComplaints(m, client, session);
+                }
+                else if ("get_order_complaint_status".equals(key)) {
+                    handleGetOrderComplaintStatus(m, client, session);
                 }
                 else {
                     System.out.println("[WARN] Unhandled key: " + key);
@@ -192,54 +208,64 @@ public class SimpleServer extends AbstractServer {
     /* ----------------------- Handlers (all receive Session) ----------------------- */
 
 
+    private void handleGetComplaintsCount(ConnectionToClient client, Session session) {
+        try {
+            Long cnt = session.createQuery("select count(c) from Complaint c", Long.class).getSingleResult();
+            System.out.println("[GetComplaintsCount] count=" + cnt);
+            sendMsg(client, new Message("complaints_count", cnt, null), "get_complaints_count");
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendMsg(client, new Message("complaints_count_error", e.getMessage(), null), "get_complaints_count");
+        }
+    }
+
+    private void handleGetComplaintIds(ConnectionToClient client, Session session) {
+        try {
+            List<Integer> ids = session.createQuery("select c.id from Complaint c order by c.submittedAt desc", Integer.class)
+                    .setMaxResults(20)
+                    .getResultList();
+            System.out.println("[GetComplaintIds] size=" + ids.size() + " ids=" + ids);
+            sendMsg(client, new Message("complaint_ids", ids, null), "get_complaint_ids");
+        } catch (Exception e) {
+            e.printStackTrace();
+            sendMsg(client, new Message("complaint_ids_error", e.getMessage(), null), "get_complaint_ids");
+        }
+    }
+
+
+
+
     @SuppressWarnings("unchecked")
     private void handleSubmitComplaint(Message m, ConnectionToClient client, Session session) {
-        System.out.println("[SubmitComplaint] raw obj=" +
-                (m.getObject()==null?"null":m.getObject().getClass().getName()) +
-                " list=" + (m.getObjectList()==null?"null":m.getObjectList().stream()
-                .map(o -> o==null?"null":o.getClass().getName())
-                .collect(java.util.stream.Collectors.joining(", "))));
-
         Transaction tx = session.beginTransaction();
         try {
             Long customerId = null;
-            Long orderId    = null;   // optional
+            Long orderId    = null;
             String text     = null;
 
-            // ---- Accept BOTH payload styles ----
             if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
                 Object p0 = m.getObjectList().get(0);
-
-                // Style A: Map { text, customerId, orderId? }
                 if (p0 instanceof Map) {
                     Map<String,Object> p = (Map<String,Object>) p0;
                     text = Objects.toString(p.get("text"), "").trim();
 
                     Object cid = p.get("customerId");
                     if (cid instanceof Number) customerId = ((Number) cid).longValue();
-                    else if (cid instanceof String && !((String) cid).isBlank())
-                        customerId = Long.valueOf((String) cid);
+                    else if (cid instanceof String && !((String) cid).isBlank()) customerId = Long.valueOf((String) cid);
 
                     Object oid = p.get("orderId");
                     if (oid instanceof Number) orderId = ((Number) oid).longValue();
-                    else if (oid instanceof String && !((String) oid).isBlank())
-                        orderId = Long.valueOf((String) oid);
-                }
-                // Style B: [Complaint, Customer, Order?]
-                else if (p0 instanceof Complaint) {
+                    else if (oid instanceof String && !((String) oid).isBlank()) orderId = Long.valueOf((String) oid);
+                } else if (p0 instanceof Complaint) {
                     Complaint incoming = (Complaint) p0;
                     text = Optional.ofNullable(incoming.getText()).orElse("").trim();
-
-                    if (m.getObjectList().size() > 1 && m.getObjectList().get(1) instanceof Customer) {
+                    if (m.getObjectList().size() > 1 && m.getObjectList().get(1) instanceof Customer)
                         customerId = ((Customer) m.getObjectList().get(1)).getId();
-                    }
-                    if (m.getObjectList().size() > 2 && m.getObjectList().get(2) instanceof Order) {
+                    if (m.getObjectList().size() > 2 && m.getObjectList().get(2) instanceof Order)
                         orderId = ((Order) m.getObjectList().get(2)).getId();
-                    }
                 }
             }
 
-            // ---- Basic validation (no 14-day rule, order optional) ----
             if (text == null || text.isBlank()) {
                 tx.rollback();
                 client.sendToClient(new Message("complaint_error", "Complaint text empty", null));
@@ -257,35 +283,125 @@ public class SimpleServer extends AbstractServer {
                 client.sendToClient(new Message("complaint_error", "Customer not found", null));
                 return;
             }
-
             Order order = (orderId != null) ? session.get(Order.class, orderId) : null;
 
-            // ---- Persist complaint ----
+            // Block duplicate complaint for same (customer, order)
+            if (order != null) {
+                Long dupCount = session.createQuery(
+                                "select count(c) from Complaint c " +
+                                        "where c.customer.id = :cid and c.order.id = :oid", Long.class)
+                        .setParameter("cid", customer.getId())
+                        .setParameter("oid", order.getId())
+                        .getSingleResult();
+                if (dupCount != null && dupCount > 0) {
+                    tx.rollback();
+                    client.sendToClient(new Message("complaint_exists_for_order", null, null));
+                    return;
+                }
+            }
+
             Complaint c = new Complaint();
             c.setCustomer(customer);
-            c.setOrder(order); // nullable (website issue etc.)
+            c.setOrder(order);
             c.setText(text.length() > 120 ? text.substring(0, 120) : text);
             c.setSubmittedAt(java.time.LocalDateTime.now());
             c.setDeadline(c.getSubmittedAt().plusHours(24));
             c.setResolved(false);
-            c.setBranch(customer.getBranch()); // optional snapshot
+            c.setBranch(customer.getBranch());
 
             session.persist(c);
             tx.commit();
 
-            client.sendToClient(new Message("complaint_submitted", c, null));
-            // optional: nudge employee UIs to refresh
-            try { sendToAllClients(new Message("complaints_refresh", null, null)); } catch (Exception ignored) {}
+            // Ack to submitting customer (client will navigate away)
+            client.sendToClient(new Message("complaint_submitted", new ComplaintDTO(c), null));
+
+            // Live-refresh any open UIs (employee/customer lists)
+            sendToAllClients(new Message("complaints_refresh", null, null));
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
-            e.printStackTrace();
             try { client.sendToClient(new Message("complaint_error", "Exception: " + e.getMessage(), null)); }
             catch (IOException ignored) {}
         }
     }
 
 
-    /** Return ALL unresolved complaints (no branch filter), newest first. */
+
+    @SuppressWarnings("unchecked")
+    private void handleGetMyComplaints(Message m, ConnectionToClient client, Session session) {
+        try {
+            Long customerId = null;
+            boolean unresolvedOnly = false;
+
+            if (m.getObjectList() != null && !m.getObjectList().isEmpty() && m.getObjectList().get(0) instanceof Map) {
+                Map<String,Object> p = (Map<String,Object>) m.getObjectList().get(0);
+                Object cid = p.get("customerId");
+                if (cid instanceof Number) customerId = ((Number) cid).longValue();
+                else if (cid instanceof String && !((String) cid).isBlank()) customerId = Long.valueOf((String) cid);
+
+                Object uo = p.get("unresolvedOnly");
+                if (uo instanceof Boolean) unresolvedOnly = (Boolean) uo;
+            }
+
+            if (customerId == null) {
+                client.sendToClient(new Message("complaints_history", List.of(), null));
+                return;
+            }
+
+            String hql = "select c from Complaint c " +
+                    "left join fetch c.customer " +
+                    "left join fetch c.order " +
+                    "where c.customer.id = :cid " +
+                    "order by c.submittedAt desc";
+            List<Complaint> list = session.createQuery(hql, Complaint.class)
+                    .setParameter("cid", customerId)
+                    .getResultList();
+
+            if (unresolvedOnly) list.removeIf(Complaint::isResolved);
+
+            List<ComplaintDTO> dto = list.stream().map(ComplaintDTO::new).collect(java.util.stream.Collectors.toList());
+            client.sendToClient(new Message("complaints_history", dto, null));
+        } catch (Exception e) {
+            try { client.sendToClient(new Message("complaints_history", List.of(), null)); } catch (IOException ignored) {}
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleGetOrderComplaintStatus(Message m, ConnectionToClient client, Session session) {
+        try {
+            Long customerId = null, orderId = null;
+            if (m.getObjectList()!=null && !m.getObjectList().isEmpty() && m.getObjectList().get(0) instanceof Map) {
+                Map<String,Object> p = (Map<String,Object>) m.getObjectList().get(0);
+                Object cid = p.get("customerId");
+                Object oid = p.get("orderId");
+                if (cid instanceof Number) customerId = ((Number) cid).longValue();
+                if (oid instanceof Number) orderId = ((Number) oid).longValue();
+            }
+            if (customerId == null || orderId == null) {
+                client.sendToClient(new Message("order_complaint_status", null, null));
+                return;
+            }
+
+            Complaint c = session.createQuery(
+                            "select c from Complaint c " +
+                                    "left join fetch c.order " +
+                                    "where c.customer.id = :cid and c.order.id = :oid",
+                            Complaint.class)
+                    .setParameter("cid", customerId)
+                    .setParameter("oid", orderId)
+                    .setMaxResults(1)
+                    .uniqueResultOptional()
+                    .orElse(null);
+
+            client.sendToClient(new Message("order_complaint_status",
+                    c == null ? null : new ComplaintDTO(c), null));
+        } catch (Exception e) {
+            try { client.sendToClient(new Message("order_complaint_status", null, null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+
+
     private void handleGetAllComplaints(Message m, ConnectionToClient client, Session session) {
         try {
             String hql = "select c from Complaint c " +
@@ -293,10 +409,18 @@ public class SimpleServer extends AbstractServer {
                     "left join fetch c.order " +
                     "order by c.submittedAt desc";
             var list = session.createQuery(hql, Complaint.class).getResultList();
-            list.removeIf(Complaint::isResolved);
 
-            System.out.println("[Complaints] Fetched " + list.size() + " (unresolved only=true)");
-            client.sendToClient(new Message("complaints_list", list, null));
+            // if the client sent {"resolved": true}, include resolved; otherwise keep unresolved only
+            boolean includeResolved = false;
+            if (m.getObjectList() != null && !m.getObjectList().isEmpty() && m.getObjectList().get(0) instanceof Map) {
+                Object flag = ((Map<?,?>) m.getObjectList().get(0)).get("resolved");
+                if (flag instanceof Boolean) includeResolved = (Boolean) flag;
+            }
+            if (!includeResolved) list.removeIf(Complaint::isResolved);
+
+            List<ComplaintDTO> dtoList = list.stream().map(ComplaintDTO::new).collect(Collectors.toList());
+            System.out.println("[Complaints] sending DTO list size=" + dtoList.size());
+            client.sendToClient(new Message("complaints_list", dtoList, null));
         } catch (Exception e) {
             e.printStackTrace();
             try { client.sendToClient(new Message("complaints_error", "Failed to fetch complaints", null)); }
@@ -306,34 +430,64 @@ public class SimpleServer extends AbstractServer {
 
 
 
-    /** Mark a complaint as resolved, set responder/response/compensation, and notify client. */
+
+
+    private void sendMsg(ConnectionToClient client, Message msg, String context) {
+        try {
+            System.out.println("[SEND][" + context + "] -> " + msg.getMessage() +
+                    " (obj=" + (msg.getObject()==null?"null":msg.getObject().getClass().getSimpleName()) +
+                    ", listSize=" + (msg.getObjectList()==null?0:msg.getObjectList().size()) + ")");
+            client.sendToClient(msg);
+        } catch (IOException ex) {
+            System.err.println("[SEND-ERROR][" + context + "] to=" + client + " msg=" + msg.getMessage());
+            ex.printStackTrace();
+        }
+    }
+
+
+    /** Mark a complaint as resolved, set responder/response/compensation, and notify clients. */
     private void handleResolveComplaint(Message m, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();
         try {
-            // Expecting objectList: [complaintId(Number or Complaint), (optional) Employee, (optional) String responseText, (optional) Number/BigDecimal compensation]
             Long complaintId = null;
             Employee responder = null;
             String responseText = null;
-            BigDecimal compensation = null;
+            java.math.BigDecimal compensation = null;
 
-            if (m.getObjectList() != null) {
-                if (m.getObjectList().size() > 0) {
-                    Object idObj = m.getObjectList().get(0);
+            // Accept either: Map payload OR positional list
+            if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
+                Object first = m.getObjectList().get(0);
+                if (first instanceof Map) {
+                    Map<?,?> p = (Map<?,?>) first;
+                    Object idObj = p.get("complaintId");
                     if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
-                    else if (idObj instanceof Complaint && ((Complaint) idObj).getId() != 0) {
-                        complaintId = (long) ((Complaint) idObj).getId();
+                    else if (idObj instanceof String && !((String) idObj).isBlank()) complaintId = Long.valueOf((String) idObj);
+
+                    Object txt = p.get("responseText");
+                    if (txt instanceof String) responseText = ((String) txt).trim();
+
+                    Object comp = p.get("compensation");
+                    if (comp instanceof java.math.BigDecimal) compensation = (java.math.BigDecimal) comp;
+                    else if (comp instanceof Number) compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
+                } else {
+                    // old positional style
+                    if (m.getObjectList().size() > 0) {
+                        Object idObj = m.getObjectList().get(0);
+                        if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
+                        else if (idObj instanceof Complaint && ((Complaint) idObj).getId() != 0)
+                            complaintId = (long) ((Complaint) idObj).getId();
                     }
-                }
-                if (m.getObjectList().size() > 1 && m.getObjectList().get(1) instanceof Employee) {
-                    responder = session.get(Employee.class, ((Employee) m.getObjectList().get(1)).getId());
-                }
-                if (m.getObjectList().size() > 2 && m.getObjectList().get(2) instanceof String) {
-                    responseText = (String) m.getObjectList().get(2);
-                }
-                if (m.getObjectList().size() > 3) {
-                    Object comp = m.getObjectList().get(3);
-                    if (comp instanceof BigDecimal) compensation = (BigDecimal) comp;
-                    else if (comp instanceof Number) compensation = BigDecimal.valueOf(((Number) comp).doubleValue());
+                    if (m.getObjectList().size() > 1 && m.getObjectList().get(1) instanceof Employee) {
+                        responder = session.get(Employee.class, ((Employee) m.getObjectList().get(1)).getId());
+                    }
+                    if (m.getObjectList().size() > 2 && m.getObjectList().get(2) instanceof String) {
+                        responseText = ((String) m.getObjectList().get(2)).trim();
+                    }
+                    if (m.getObjectList().size() > 3) {
+                        Object comp = m.getObjectList().get(3);
+                        if (comp instanceof java.math.BigDecimal) compensation = (java.math.BigDecimal) comp;
+                        else if (comp instanceof Number) compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
+                    }
                 }
             }
 
@@ -351,7 +505,7 @@ public class SimpleServer extends AbstractServer {
             }
 
             c.setResolved(true);
-            c.setResolvedAt(LocalDateTime.now());
+            c.setResolvedAt(java.time.LocalDateTime.now());
             if (responseText != null) c.setResponseText(responseText);
             if (compensation != null) c.setCompensationAmount(compensation);
             if (responder != null) c.setResponder(responder);
@@ -359,7 +513,11 @@ public class SimpleServer extends AbstractServer {
             session.merge(c);
             tx.commit();
 
-            client.sendToClient(new Message("complaint_resolved", c, null));
+            // Acknowledge to the resolving employee
+            client.sendToClient(new Message("complaint_resolved", new ComplaintDTO(c), null));
+
+            // Nudge all open UIs (employee list hides it unless "show resolved"; customer screen will show response)
+            sendToAllClients(new Message("complaints_refresh", null, null));
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
@@ -367,6 +525,7 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
+
 
 
 
