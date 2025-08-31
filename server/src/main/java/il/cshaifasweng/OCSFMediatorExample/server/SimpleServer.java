@@ -159,8 +159,9 @@ public class SimpleServer extends AbstractServer {
                 else if ("get_my_complaints".equals(key) || "get_customer_complaints".equals(key)) {
                     handleGetMyComplaints(m, client, session);
                 }
-                // === Complaint routes ===
-                // === Complaint routes ===
+                else if("cancel_order".equals(key)) {
+                    handleCancelOrder(m, client, session);
+                }
                 else if ("submit_complaint".equals(key)) {
                     handleSubmitComplaint(m, client, session);
                 } else if ("get_complaints_for_branch".equals(key) || "get_all_complaints".equals(key)) {
@@ -231,8 +232,85 @@ public class SimpleServer extends AbstractServer {
             sendMsg(client, new Message("complaint_ids_error", e.getMessage(), null), "get_complaint_ids");
         }
     }
+    private void handleCancelOrder(Message m, ConnectionToClient client, Session session) {
+        if (m.getObjectList() == null || m.getObjectList().isEmpty()) {
+            sendCancelError(client, "No order ID provided.");
+            return;
+        }
 
+        Object first = m.getObjectList().get(0);
+        Long orderId;
+        try {
+            orderId = (Long) first;
+        } catch (Exception e) {
+            sendCancelError(client, "Invalid order ID.");
+            return;
+        }
 
+        String reason = "";
+        if (m.getObjectList().size() > 1) {
+            Object second = m.getObjectList().get(1);
+            reason = (second != null) ? second.toString() : "";
+        }
+
+        Transaction tx = null;
+        try {
+            tx = session.beginTransaction();
+
+            Order order = session.get(Order.class, orderId);
+            if (order == null) {
+                sendCancelError(client, "Order not found.");
+                return;
+            }
+
+            // Delete complaints linked to this order
+            List<Complaint> complaints = session.createQuery(
+                            "FROM Complaint c WHERE c.order.id = :orderId", Complaint.class)
+                    .setParameter("orderId", orderId)
+                    .list();
+
+            for (Complaint c : complaints) {
+                session.delete(c);
+            }
+
+            // Delete the order itself
+            session.delete(order);
+
+            tx.commit();
+
+            // Send success message to client (third argument must be a list)
+            Message response = new Message(
+                    "order_cancelled_successfully",
+                    null,
+                    new ArrayList<>(List.of(orderId))
+            );
+            client.sendToClient(response);
+
+            System.out.println("Order " + orderId + " cancelled successfully. Complaints deleted: " + complaints.size());
+
+        } catch (Exception e) {
+            if (tx != null) tx.rollback();
+            e.printStackTrace();
+            sendCancelError(client, "Error cancelling order: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Send cancellation error to client.
+     * Only define this once in your server class.
+     */
+    private void sendCancelError(ConnectionToClient client, String msg) {
+        try {
+            Message response = new Message(
+                    "order_cancel_error",
+                    null,
+                    new ArrayList<>(List.of(msg))  // Wrap string in a list
+            );
+            client.sendToClient(response);
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+    }
 
 
     @SuppressWarnings("unchecked")

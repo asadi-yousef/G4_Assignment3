@@ -23,6 +23,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ResourceBundle;
+import javafx.scene.Cursor;
+import javafx.scene.Node;
 
 public class OrdersScreenController implements Initializable {
 
@@ -104,8 +106,6 @@ public class OrdersScreenController implements Initializable {
                 break;
         }
     }
-
-
 
     private void renderOrders() {
         Platform.runLater(() -> {
@@ -196,14 +196,35 @@ public class OrdersScreenController implements Initializable {
 
         // Complaint controls (make/view/pending) based on cached server status
         HBox complaintControls = buildComplaintControls(order);
+
+        // Add Cancel button to the right of complaint controls
+        Button cancelBtn = new Button("Cancel Order");
+        cancelBtn.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
+        cancelBtn.setOnAction(e -> openCancelOrderPage(order));
+
+// Push cancel button to the right
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        complaintControls.getChildren().add(spacer);
+        complaintControls.getChildren().add(cancelBtn);
+
+// Add complaint controls + cancel button to the container
         container.getChildren().add(complaintControls);
 
-        // remember the controls so we can update them later without re-rendering the whole list
+// Remember controls for later updates
         complaintControlsByOrder.put(order.getId(), complaintControls);
 
         return container;
     }
 
+    private void openCancelOrderPage(Order order) {
+        try {
+            SessionManager.getInstance().setSelectedOrder(order);
+            App.setRoot("cancelOrder"); // FXML name
+        } catch (IOException e) {
+            showAlert("Error", "Failed to open cancel order page.");
+        }
+    }
 
     private void requestOrderComplaintStatus(Order order) {
         try {
@@ -236,7 +257,7 @@ public class OrdersScreenController implements Initializable {
 
         // Rebuild the small control row
         javafx.scene.control.Button makeBtn = new javafx.scene.control.Button("Make Complaint");
-        makeBtn.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
+        makeBtn.setStyle("-fx-background-color: #e67e22; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
         makeBtn.setCursor(javafx.scene.Cursor.HAND);
         Order finalOrder = order;
         makeBtn.setOnAction(e -> openComplaintPage(finalOrder));
@@ -261,8 +282,11 @@ public class OrdersScreenController implements Initializable {
 
         javafx.scene.control.Label pendingLbl = new javafx.scene.control.Label("Response pending");
         pendingLbl.setStyle("-fx-text-fill: #7f8c8d; -fx-font-style: italic;");
-
         ComplaintDTO dto = complaintByOrder.get(orderId);
+        Node cancelBtn = null;
+        if (!box.getChildren().isEmpty()) {
+            cancelBtn = box.getChildren().get(box.getChildren().size() - 1); // assume last is cancel
+        }
         if (dto == null) {
             makeBtn.setDisable(false);
             box.getChildren().setAll(makeBtn);
@@ -273,9 +297,13 @@ public class OrdersScreenController implements Initializable {
             makeBtn.setDisable(true);
             box.getChildren().setAll(makeBtn, viewBtn);
         }
+        if (cancelBtn != null) {
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+            box.getChildren().add(spacer);
+            box.getChildren().add(cancelBtn); // Cancel button is now pushed to the right
+        }
     }
-
-
     private void openComplaintPage(Order order) {
         try {
             SessionManager.getInstance().setSelectedOrder(order);
@@ -351,7 +379,7 @@ public class OrdersScreenController implements Initializable {
         box.setAlignment(Pos.CENTER_LEFT);
 
         Button makeBtn = new Button("Make Complaint");
-        makeBtn.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
+        makeBtn.setStyle("-fx-background-color: #e67e22; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
         makeBtn.setCursor(javafx.scene.Cursor.HAND);
         makeBtn.setOnAction(e -> openComplaintPage(order));
 

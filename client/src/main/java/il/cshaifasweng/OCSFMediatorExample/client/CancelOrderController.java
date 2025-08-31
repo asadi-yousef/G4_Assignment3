@@ -6,19 +6,16 @@ import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
-import javafx.scene.layout.VBox;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
 import java.net.URL;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.ResourceBundle;
 
 public class CancelOrderController implements Initializable {
-
-    @FXML
-    private VBox orderDetailsBox;
 
     @FXML
     private Label orderIdLabel;
@@ -27,10 +24,14 @@ public class CancelOrderController implements Initializable {
     private Label orderDateLabel;
 
     @FXML
-    private Button cancelOrderButton;
+    private Label deliveryDateLabel;
+
+    @FXML
+    private Label compensationLabel; // placeholder for future compensation
 
     @FXML
     private Button confirmButton;
+
     @FXML
     private Button backButton;
 
@@ -42,71 +43,87 @@ public class CancelOrderController implements Initializable {
             EventBus.getDefault().register(this);
         }
 
-        // Get the currently selected order from SessionManager
         selectedOrder = SessionManager.getInstance().getSelectedOrder();
         if (selectedOrder != null) {
             orderIdLabel.setText("Order ID: " + selectedOrder.getId());
-            orderDateLabel.setText("Order Date: " + selectedOrder.getOrderDate().toString());
+
+            // Format order date
+            if (selectedOrder.getOrderDate() != null) {
+                orderDateLabel.setText("Order Date: " +
+                        selectedOrder.getOrderDate().format(
+                                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                        )
+                );
+            } else {
+                orderDateLabel.setText("Order Date: -");
+            }
+
+            // Format delivery date
+            if (selectedOrder.getDeliveryDateTime() != null) {
+                deliveryDateLabel.setText("Delivery Date: " +
+                        selectedOrder.getDeliveryDateTime().format(
+                                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                        )
+                );
+            } else {
+                deliveryDateLabel.setText("Delivery Date: -");
+            }
+
+            // Placeholder for future compensation info
+            compensationLabel.setText("Compensation: -");
         } else {
             showAlert("Error", "No order selected.");
             confirmButton.setDisable(true);
         }
     }
 
+
+
     @FXML
     private void handleConfirmCancel() {
-        cancelOrder();
-    }
-    @FXML
-    private void handleBack() {
-        goBack();
-    }
-    private void cancelOrder() {
-        try {
-            if (selectedOrder == null) {
-                showAlert("Error", "No order selected to cancel.");
-                return;
-            }
+        if (selectedOrder == null) return;
 
+        try {
             ArrayList<Object> payload = new ArrayList<>();
-            payload.add(selectedOrder.getId()); // just send order ID
+            payload.add(selectedOrder.getId());
             Message message = new Message("cancel_order", null, payload);
             SimpleClient.getClient().sendToServer(message);
 
-            cancelOrderButton.setDisable(true);
-            cancelOrderButton.setText("Cancelling...");
+            confirmButton.setDisable(true);
+            confirmButton.setText("Cancelling...");
 
         } catch (Exception e) {
             showAlert("Error", "Failed to send cancel request.");
-            e.printStackTrace();
+            confirmButton.setDisable(false);
         }
     }
-
 
     @Subscribe
     public void onServerResponse(Message msg) {
         if ("order_cancelled_successfully".equals(msg.getMessage())) {
-            Long cancelledId = (Long) msg.getObject();
-            if (SessionManager.getInstance().getSelectedOrder() != null &&
-                    SessionManager.getInstance().getSelectedOrder().getId().equals(cancelledId)) {
-                SessionManager.getInstance().setSelectedOrder(null);
-            }
-
             Platform.runLater(() -> {
                 showAlert("Success", "Order cancelled successfully.");
+                SessionManager.getInstance().setSelectedOrder(null);
                 goBack();
             });
         } else if ("order_cancel_error".equals(msg.getMessage())) {
-            Platform.runLater(() -> showAlert("Error", msg.getObject().toString()));
-            cancelOrderButton.setDisable(false);
-            cancelOrderButton.setText("Cancel Order");
+            Platform.runLater(() -> {
+                showAlert("Error", msg.getObject().toString());
+                confirmButton.setDisable(false);
+                confirmButton.setText("Confirm");
+            });
         }
+    }
+
+    @FXML
+    private void handleBack() {
+        goBack();
     }
 
     private void goBack() {
         try {
             EventBus.getDefault().unregister(this);
-            App.setRoot("orderListView"); // your previous view of orders
+            App.setRoot("ordersScreenView"); // Orders screen FXML
         } catch (IOException e) {
             showAlert("Error", "Failed to go back.");
         }
