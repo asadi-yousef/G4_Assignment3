@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="il.cshaifasweng.OCSFMediatorExample.client.ComplaintsScreenController"
+      spacing="12" alignment="TOP_CENTER"
+      style="-fx-background-color: #fafafa; -fx-padding: 30;">
+    <Label text="Submit a Complaint"
+           style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #2c3e50;"/>
+    <Label fx:id="orderLabel"
+           style="-fx-font-size: 16px; -fx-text-fill: #34495e;"/>
+
+    <TextArea fx:id="complaintTextArea"
+              promptText="Describe your complaint (max 120 chars)"
+              prefHeight="200"
+              wrapText="true"/>
+
+    <HBox alignment="CENTER_RIGHT" prefWidth="600">
+        <Label fx:id="charCountLabel" text="0/120"
+               style="-fx-text-fill: #7f8c8d; -fx-font-size: 12;"/>
+    </HBox>
+
+    <HBox spacing="12">
+        <Button text="Submit Complaint" onAction="#handleSubmitComplaint"
+                style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 10 20;"/>
+        <Button text="← Back" onAction="#handleBack"
+                style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 10 20;"/>
+    </HBox>
+</VBox>

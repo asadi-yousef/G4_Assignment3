@@ -107,12 +107,14 @@ public class OrdersScreenController implements Initializable {
         Label deliveryTypeLabel = new Label("Type: " + typeText);
         deliveryTypeLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #27ae60; -fx-font-weight: bold;");
 
-        String deliveryDateStr = order.getDeliveryDateTime() != null ? order.getDeliveryDateTime().format(dtFormatter) : "N/A";
+        String deliveryDateStr = (order.getDeliveryDateTime() != null)
+                ? order.getDeliveryDateTime().format(dtFormatter)
+                : (order.getDelivery() ? "N/A" : order.getOrderDate().format(dtFormatter));
         Label deliveryDateLabel = new Label((order.getDelivery() ? "Delivery" : "Pickup") + " Date: " + deliveryDateStr);
         deliveryDateLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #34495e;");
 
-        String paymentMethod = order.getPaymentMethod() == null ? "Unknown" : order.getPaymentMethod();
-        String paymentDetails = order.getPaymentDetails() == null ? "" : order.getPaymentDetails();
+        String paymentMethod = (order.getPaymentMethod() == null) ? "Unknown" : order.getPaymentMethod();
+        String paymentDetails = (order.getPaymentDetails() == null) ? "" : order.getPaymentDetails();
 
         String paymentText;
         if ("SavedCard".equalsIgnoreCase(paymentMethod) || "NewCard".equalsIgnoreCase(paymentMethod)) {
@@ -124,7 +126,7 @@ public class OrdersScreenController implements Initializable {
         paymentLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #8e44ad; -fx-font-weight: bold;");
 
         String recipientPhone = order.getRecipientPhone();
-        String customerPhone = order.getCustomer() != null ? order.getCustomer().getPhone() : "";
+        String customerPhone = (order.getCustomer() != null) ? order.getCustomer().getPhone() : "";
         Label recipientPhoneLabel = null;
         if (recipientPhone != null && !recipientPhone.isEmpty() && !recipientPhone.equals(customerPhone)) {
             recipientPhoneLabel = new Label("Recipient Phone: " + recipientPhone);
@@ -141,7 +143,6 @@ public class OrdersScreenController implements Initializable {
         VBox itemsContainer = new VBox(8);
         itemsContainer.setPadding(new Insets(10, 0, 0, 0));
         itemsContainer.setStyle("-fx-background-color: #f8f9fa; -fx-background-radius: 8; -fx-padding: 10;");
-
         Label itemsHeaderLabel = new Label("Order Items:");
         itemsHeaderLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 18px; -fx-text-fill: #2c3e50;");
         itemsContainer.getChildren().add(itemsHeaderLabel);
@@ -156,29 +157,42 @@ public class OrdersScreenController implements Initializable {
         if (noteLabel != null) container.getChildren().add(noteLabel);
         container.getChildren().add(itemsContainer);
 
-        // Optional: complaint button if delivered within last 14 days
-        if (order.getDeliveryDateTime() != null) {
-            LocalDateTime now = LocalDateTime.now();
-            LocalDateTime deliveryTime = order.getDeliveryDateTime();
-            if (deliveryTime.isBefore(now) && ChronoUnit.DAYS.between(deliveryTime, now) <= 14) {
-                Button complaintButton = new Button("Make Complaint");
-                complaintButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
-                complaintButton.setCursor(javafx.scene.Cursor.HAND);
-                complaintButton.setOnAction(e -> openComplaintPage(order));
-                container.getChildren().add(complaintButton);
-            }
-        }
+        // Always allow complaint (about the order or the website)
+        Button complaintButton = new Button("Make Complaint");
+        complaintButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 8; -fx-padding: 8 16;");
+        complaintButton.setCursor(javafx.scene.Cursor.HAND);
+        complaintButton.setOnAction(e -> openComplaintPage(order));
+        container.getChildren().add(complaintButton);
 
         return container;
     }
 
+
+
     private void openComplaintPage(Order order) {
         try {
             SessionManager.getInstance().setSelectedOrder(order);
-            App.setRoot("complaints");
+            App.setRoot("complaintsScreen"); // << was "complaints"
         } catch (IOException e) {
             showAlert("Error", "Failed to open complaints page.");
         }
+    }
+
+    private boolean canComplain(Order order) {
+        if (order == null) return false;
+
+        // For delivery: use deliveryDateTime
+        // For pickup: fall back to orderDate (or add a dedicated pickup time if you have one)
+        java.time.LocalDateTime refTime = order.getDelivery()
+                ? order.getDeliveryDateTime()
+                : order.getOrderDate();
+
+        if (refTime == null) return false;                  // nothing to compare against
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        if (!refTime.isBefore(now)) return false;           // only after delivery/pickup time
+
+        long days = java.time.temporal.ChronoUnit.DAYS.between(refTime, now);
+        return days <= 14;                                  // show up to (and including) 14 days
     }
 
     private HBox createOrderItemBox(OrderItem item) {

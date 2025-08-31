@@ -1,36 +1,44 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.lang.*?>
-<?import java.util.*?>
-<?import javafx.scene.*?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
 
 <VBox xmlns:fx="http://javafx.com/fxml"
       fx:controller="il.cshaifasweng.OCSFMediatorExample.client.ComplaintsListController"
       spacing="15" alignment="TOP_CENTER"
       style="-fx-background-color: #f4f6f8; -fx-padding: 20;">
+    <HBox spacing="10" alignment="CENTER_LEFT" prefWidth="900">
+        <Label text="Complaints Dashboard" style="-fx-font-size: 22px; -fx-font-weight: bold;"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <CheckBox fx:id="showResolvedCheck" text="Show resolved"/>
+        <Button text="Refresh" onAction="#handleRefresh"/>
+        <Button text="← Back" onAction="#handleBack"/>
+    </HBox>
 
-    <Label text="Complaints Dashboard"
-           style="-fx-font-size: 22px; -fx-font-weight: bold;" />
-
-    <TableView fx:id="complaintsTable" prefHeight="400" prefWidth="700">
+    <TableView fx:id="complaintsTable" prefHeight="420" prefWidth="900">
         <columns>
-            <TableColumn fx:id="idColumn" text="ID" prefWidth="50"/>
-            <TableColumn fx:id="customerColumn" text="Customer" prefWidth="150"/>
-            <TableColumn fx:id="orderColumn" text="Order" prefWidth="100"/>
-            <TableColumn fx:id="textColumn" text="Complaint" prefWidth="250"/>
-            <TableColumn fx:id="deadlineColumn" text="Deadline" prefWidth="150"/>
-            <TableColumn fx:id="resolvedColumn" text="Resolved" prefWidth="100"/>
+            <TableColumn fx:id="idColumn" text="ID" prefWidth="60"/>
+            <TableColumn fx:id="customerColumn" text="Customer" prefWidth="160"/>
+            <TableColumn fx:id="orderColumn" text="Order" prefWidth="80"/>
+            <TableColumn fx:id="textColumn" text="Complaint" prefWidth="280"/>
+            <TableColumn fx:id="deadlineColumn" text="Deadline" prefWidth="160"/>
+            <TableColumn fx:id="resolvedColumn" text="Resolved" prefWidth="80"/>
         </columns>
     </TableView>
 
-    <Button text="Mark as Resolved"
-            onAction="#handleResolve"
-            style="-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-background-radius: 8;" />
-
-    <Button text="← Back"
-            onAction="#handleBack"
-            style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 8;" />
+    <TitledPane text="Respond &amp; Resolve" expanded="true" prefWidth="900">
+        <content>
+            <VBox spacing="10" style="-fx-padding: 10;">
+                <Label text="Response to selected complaint:"/>
+                <TextArea fx:id="responseTextArea" prefRowCount="3" wrapText="true"/>
+                <HBox spacing="8" alignment="CENTER_LEFT">
+                    <Label text="Compensation (₪):"/>
+                    <TextField fx:id="compensationField" promptText="e.g. 50.00"/>
+                    <Button text="Send Reply &amp; Resolve" onAction="#handleResolveWithReply"
+                            style="-fx-background-color: #2ecc71; -fx-text-fill: white; -fx-background-radius: 8;"/>
+                </HBox>
+            </VBox>
+        </content>
+    </TitledPane>
 </VBox>
-
