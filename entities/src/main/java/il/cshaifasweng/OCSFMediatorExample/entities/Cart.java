@@ -35,6 +35,21 @@ public class Cart implements Serializable {
         return id;
     }
 
+    @Transient
+    public double getTotalWithDiscount() {
+        double total = getBaseTotal(); // sum of item prices * quantities
+        if (customer != null && customer.hasValidSubscription() && total > 50) {
+            return total * 0.9; // apply 10% discount
+        }
+        return total;
+    }
+    @Transient
+    public double getBaseTotal() {
+        return items.stream()
+                .mapToDouble(CartItem::getSubtotal)
+                .sum();
+    }
+
 
     public List<CartItem> getItems() { return items; }
 

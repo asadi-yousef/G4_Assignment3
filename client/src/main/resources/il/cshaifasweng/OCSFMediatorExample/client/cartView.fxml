@@ -80,14 +80,51 @@
                     </VBox.margin>
                 </Separator>
 
+                <!-- Replace the existing totalLabel HBox section with this -->
                 <HBox alignment="CENTER_RIGHT">
                     <children>
                         <Region HBox.hgrow="ALWAYS" />
-                        <Label fx:id="totalLabel" text="Total: $0.00" textFill="#27ae60" style="-fx-background-color: #f8f9fa; -fx-background-radius: 8; -fx-padding: 12 20 12 20;">
-                            <font>
-                                <Font name="System Bold" size="20.0" />
-                            </font>
-                        </Label>
+
+                        <!-- Container for total display -->
+                        <VBox alignment="CENTER_RIGHT" spacing="8">
+                            <children>
+                                <!-- Original total with discount badge (shown when discount applies) -->
+                                <HBox alignment="CENTER_RIGHT" spacing="10" visible="false" managed="false" fx:id="discountContainer">
+                                    <children>
+                                        <Region HBox.hgrow="ALWAYS" />
+
+                                        <!-- Discount badge -->
+                                        <Label fx:id="discountBadge" text="SUBSCRIBER DISCOUNT" textFill="#ffffff"
+                                               style="-fx-background-color: #e74c3c; -fx-background-radius: 12; -fx-padding: 4 8 4 8;">
+                                            <font>
+                                                <Font name="System Bold" size="10.0" />
+                                            </font>
+                                        </Label>
+
+                                        <!-- Original total (crossed out) -->
+                                        <Label fx:id="originalTotalLabel" text="Total: ₪0.00" textFill="#95a5a6"
+                                               style="-fx-background-color: transparent;">
+                                            <font>
+                                                <Font name="System" size="16.0" />
+                                            </font>
+                                        </Label>
+                                    </children>
+                                </HBox>
+
+                                <!-- Final total -->
+                                <HBox alignment="CENTER_RIGHT">
+                                    <children>
+                                        <Region HBox.hgrow="ALWAYS" />
+                                        <Label fx:id="totalLabel" text="Total: ₪0.00" textFill="#27ae60"
+                                               style="-fx-background-color: #f8f9fa; -fx-background-radius: 8; -fx-padding: 12 20 12 20;">
+                                            <font>
+                                                <Font name="System Bold" size="20.0" />
+                                            </font>
+                                        </Label>
+                                    </children>
+                                </HBox>
+                            </children>
+                        </VBox>
                     </children>
                     <VBox.margin>
                         <Insets bottom="15.0" left="25.0" right="25.0" />
