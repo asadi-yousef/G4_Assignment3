@@ -64,7 +64,8 @@
                   <Button onAction="#handleAddProduct" text="Add Product" />
                   <Button fx:id="reportButton" onAction="#handleViewReports" text="Reports" />
                   <Button onAction="#handleManageComplaints" text="Manage Complaints" />
-                  <Pane HBox.hgrow="ALWAYS" />
+                   <Button fx:id="broadcastButton" text="Broadcast" onAction="#handleBroadcast"/>
+                   <Pane HBox.hgrow="ALWAYS" />
                </children>
             </HBox>
 

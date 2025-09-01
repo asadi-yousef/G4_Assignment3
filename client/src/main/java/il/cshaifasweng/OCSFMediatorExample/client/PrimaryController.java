@@ -14,6 +14,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 import javafx.util.Duration;
@@ -40,7 +41,9 @@ public class PrimaryController implements Initializable {
 	@FXML private TextField minPriceField;
 	@FXML private TextField maxPriceField;
     @FXML private Button inboxButton;
+    @FXML private Button broadcastButton;
     private int unreadPersonalCount = 0;
+    private Label inboxBadge;
 
 
     // Reports button (must exist in primary.fxml with fx:id="reportButton")
@@ -73,7 +76,9 @@ public class PrimaryController implements Initializable {
 			EventBus.getDefault().register(this);
 		}
 
-		debounceTimer = new PauseTransition(Duration.millis(300));
+        setupInboxBadge();
+
+        debounceTimer = new PauseTransition(Duration.millis(300));
 		debounceTimer.setOnFinished(event -> renderCatalog());
 
 		searchTextField.textProperty().addListener((obs, o, n) -> debounceTimer.playFromStart());
@@ -498,7 +503,13 @@ public class PrimaryController implements Initializable {
 		if (isLoggedIn) {
 			userStatusLabel.setText("Hi, " + SessionManager.getInstance().getCurrentUser().getUsername());
 		}
-	}
+
+        if (broadcastButton != null) {
+            broadcastButton.setVisible(isEmployee);
+            broadcastButton.setManaged(isEmployee);
+        }
+
+    }
 
 	private void updateCustomButtonState() {
 		if (makeCustomBouquetButton != null) {
@@ -530,82 +541,154 @@ public class PrimaryController implements Initializable {
 
     @Subscribe
     public void onInboxMessages(Message msg) {
-        if ("inbox_list".equals(msg.getMessage())) {
-            Platform.runLater(() -> {
-                @SuppressWarnings("unchecked")
-                Map<String,Object> payload = (Map<String,Object>) msg.getObject();
-                @SuppressWarnings("unchecked")
-                List<Notification> personal = (List<Notification>) payload.getOrDefault("personal", List.of());
-                @SuppressWarnings("unchecked")
-                List<Notification> broadcast = (List<Notification>) payload.getOrDefault("broadcast", List.of());
+        Platform.runLater(() -> {
+            switch (msg.getMessage()) {
+                // Full inbox snapshot: recompute the unread counter from the payload
+                case "inbox_list": {
+                    int unread = 0;
+                    Object obj = msg.getObject();
 
-                // update badge: unread in personal
-                unreadPersonalCount = (int) personal.stream().filter(n -> !n.isReadFlag()).count();
-                refreshInboxBadgeText();
-
-                // quick UI (Alert + TextArea); replace later with a dedicated view if you want
-                StringBuilder sb = new StringBuilder();
-                sb.append("— Personal —\n");
-                for (Notification n : personal) {
-                    sb.append((n.isReadFlag() ? "[read] " : "[UNREAD] "))
-                            .append(n.getCreatedAt()).append(" • ").append(n.getTitle()).append("\n")
-                            .append(n.getBody()).append("\n\n");
-                }
-                sb.append("\n— All Customers —\n");
-                for (Notification n : broadcast) {
-                    sb.append(n.getCreatedAt()).append(" • ").append(n.getTitle()).append("\n")
-                            .append(n.getBody()).append("\n\n");
-                }
-
-                TextArea area = new TextArea(sb.toString());
-                area.setEditable(false);
-                area.setWrapText(true);
-                area.setPrefRowCount(24);
-
-                Dialog<Void> dlg = new Dialog<>();
-                dlg.setTitle("Inbox");
-                dlg.getDialogPane().setContent(area);
-
-                ButtonType markAllRead = new ButtonType("Mark all personal as read", ButtonBar.ButtonData.LEFT);
-                dlg.getDialogPane().getButtonTypes().addAll(markAllRead, ButtonType.CLOSE);
-
-                // mark all personal unread as read
-                Button markAllBtn = (Button) dlg.getDialogPane().lookupButton(markAllRead);
-                markAllBtn.setOnAction(e -> {
-                    for (Notification n : personal) {
-                        if (!n.isReadFlag()) {
-                            try {
-                                SimpleClient.getClient().sendToServer(
-                                        new Message("mark_notification_read", null, List.of(n.getId()))
-                                );
-                            } catch (IOException ex) { /* ignore */ }
+                    if (obj instanceof InboxListDTO dto) {
+                        // new DTO path
+                        unread = (int) dto.getPersonal().stream()
+                                .filter(it -> !it.isRead())
+                                .count();
+                    } else if (obj instanceof Map<?,?> m) {
+                        // legacy Map path (handles either DTOs or Notification)
+                        Object p = m.get("personal");
+                        if (p instanceof java.util.List<?> list && !list.isEmpty()) {
+                            Object first = list.get(0);
+                            if (first instanceof InboxItemDTO) {
+                                unread = (int) list.stream()
+                                        .map(InboxItemDTO.class::cast)
+                                        .filter(it -> !it.isRead())
+                                        .count();
+                            } else if (first instanceof Notification) {
+                                unread = (int) list.stream()
+                                        .map(Notification.class::cast)
+                                        .filter(n -> !n.isReadFlag())
+                                        .count();
+                            }
                         }
                     }
-                    // locally update count (server will ack too)
-                    unreadPersonalCount = 0;
-                    refreshInboxBadgeText();
-                });
 
-                dlg.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
-                dlg.showAndWait();
-            });
-        } else if ("inbox_read_ack".equals(msg.getMessage())) {
-            // Could refetch or decrement locally; we already update locally above.
-            refreshInboxBadgeText();
+                    unreadPersonalCount = unread;
+                    refreshInboxBadgeText();
+                    break;
+                }
+
+                // A brand-new notification was created. Increment only if it's a personal
+                // one addressed to the currently logged-in customer.
+                case "inbox_new": {
+                    Object o = msg.getObject();
+                    if (o instanceof InboxItemDTO dto && !dto.isBroadcast()) {
+                        Long target = null;
+                        if (msg.getObjectList() != null && !msg.getObjectList().isEmpty()
+                                && msg.getObjectList().get(0) instanceof Map<?,?> meta) {
+                            Object cid = ((Map<?,?>) meta).get("customerId");
+                            if (cid instanceof Number) target = ((Number) cid).longValue();
+                        }
+                        var u = SessionManager.getInstance().getCurrentUser();
+                        if (u instanceof Customer && target != null && target.equals(((Customer) u).getId())) {
+                            unreadPersonalCount++;
+                            refreshInboxBadgeText();
+                        }
+                    }
+                    break;
+                }
+
+                // A personal message was marked read/unread somewhere (Inbox view)
+                case "inbox_read_ack": {
+                    if (unreadPersonalCount > 0) unreadPersonalCount--;
+                    refreshInboxBadgeText();
+                    break;
+                }
+                case "inbox_unread_ack": {
+                    unreadPersonalCount++;
+                    refreshInboxBadgeText();
+                    break;
+                }
+            }
+        });
+    }
+
+
+    @FXML
+    private void handleBroadcast(javafx.event.ActionEvent e) {
+        if (!SessionManager.getInstance().isEmployee()) return;
+
+        // Simple dialog with Title + Body
+        TextInputDialog titleDlg = new TextInputDialog();
+        titleDlg.setTitle("Broadcast");
+        titleDlg.setHeaderText("Send announcement to all customers");
+        titleDlg.setContentText("Title:");
+        Optional<String> t = titleDlg.showAndWait();
+        if (t.isEmpty() || t.get().isBlank()) return;
+
+        Dialog<String> bodyDlg = new Dialog<>();
+        bodyDlg.setTitle("Broadcast");
+        bodyDlg.setHeaderText("Message body");
+        TextArea area = new TextArea();
+        area.setPrefRowCount(6);
+        bodyDlg.getDialogPane().setContent(area);
+        bodyDlg.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        bodyDlg.setResultConverter(btn -> btn==ButtonType.OK ? area.getText() : null);
+        Optional<String> b = bodyDlg.showAndWait();
+        if (b.isEmpty() || b.get().isBlank()) return;
+
+        try {
+            Map<String,Object> payload = java.util.Map.of("title", t.get().trim(), "body", b.get().trim());
+            SimpleClient.getClient().sendToServer(new Message("create_broadcast", null, java.util.List.of(payload)));
+            showAlert("Broadcast", "Announcement sent.");
+        } catch (IOException ex) {
+            showAlert("Broadcast", "Failed to send announcement.");
         }
     }
+
 
 
     private void refreshInboxBadgeText() {
         if (inboxButton == null) return;
+        if (inboxBadge == null) setupInboxBadge();
+
         if (unreadPersonalCount > 0) {
-            inboxButton.setText("📥 Inbox (" + unreadPersonalCount + ")");
-            inboxButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-background-radius: 8;");
+            inboxBadge.setText(String.valueOf(unreadPersonalCount));
+            inboxBadge.setVisible(true);
+            inboxBadge.setManaged(true);
         } else {
-            inboxButton.setText("📥 Inbox");
-            inboxButton.setStyle(""); // default style
+            inboxBadge.setVisible(false);
+            inboxBadge.setManaged(false);
         }
     }
+
+
+    private void setupInboxBadge() {
+        if (inboxButton == null) return;
+
+        // base label (the button's text)
+        Label base = new Label("📥 Inbox");
+
+        // the little red bubble
+        inboxBadge = new Label();
+        inboxBadge.setVisible(false);
+        inboxBadge.setManaged(false); // don't affect layout when hidden
+        inboxBadge.setStyle(
+                "-fx-background-color:#e74c3c;" +
+                        "-fx-text-fill:white;" +
+                        "-fx-background-radius:10;" +
+                        "-fx-padding:1 6;" +
+                        "-fx-font-size:10px;" +
+                        "-fx-font-weight:bold;"
+        );
+
+        StackPane wrap = new StackPane(base, inboxBadge);
+        StackPane.setAlignment(inboxBadge, javafx.geometry.Pos.TOP_RIGHT);
+        wrap.setMaxWidth(Region.USE_PREF_SIZE);
+
+        inboxButton.setText(null);          // use graphic instead of text
+        inboxButton.setGraphic(wrap);
+    }
+
 
 
     // =================== Product actions (existing) ===================

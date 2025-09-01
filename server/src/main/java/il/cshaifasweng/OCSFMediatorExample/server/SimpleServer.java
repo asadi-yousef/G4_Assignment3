@@ -193,6 +193,15 @@ public class SimpleServer extends AbstractServer {
                 } else if ("mark_notification_read".equals(key)) {
                     handleMarkNotificationRead(m, client, session);
                 }
+                else if ("mark_notification_unread".equals(key)) {
+                    handleMarkNotificationUnread(m, client, session);
+                }
+                else if ("mark_notification_unread".equals(key)) {
+                    handleMarkNotificationUnread(m, client, session);
+                }
+                else if ("create_broadcast".equals(key)) {
+                    handleCreateBroadcast(m, client, session);
+                }
                 else {
                     System.out.println("[WARN] Unhandled key: " + key);
                 }
@@ -442,6 +451,7 @@ public class SimpleServer extends AbstractServer {
 
 
 
+
     @SuppressWarnings("unchecked")
     private void handleGetMyComplaints(Message m, ConnectionToClient client, Session session) {
         try {
@@ -544,6 +554,30 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+
+    @SuppressWarnings("unchecked")
+    private void handleCreateBroadcast(Message m, ConnectionToClient client, Session session) {
+        try {
+            if (m.getObjectList()==null || m.getObjectList().isEmpty() || !(m.getObjectList().get(0) instanceof Map)) {
+                sendMsg(client, new Message("broadcast_error", "missing_payload", null), "create_broadcast");
+                return;
+            }
+            Map<String,Object> p = (Map<String,Object>) m.getObjectList().get(0);
+            String title = java.util.Objects.toString(p.get("title"), "").trim();
+            String body  = java.util.Objects.toString(p.get("body"),  "").trim();
+            if (title.isBlank() || body.isBlank()) {
+                sendMsg(client, new Message("broadcast_error", "empty_fields", null), "create_broadcast");
+                return;
+            }
+            var tx = session.beginTransaction();
+            createBroadcastNotification(session, title, body); // flush + push happens inside
+            tx.commit();
+            sendMsg(client, new Message("broadcast_created", null, null), "create_broadcast");
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            sendMsg(client, new Message("broadcast_error", "server_exception", null), "create_broadcast");
+        }
+    }
 
 
 
@@ -720,14 +754,6 @@ public class SimpleServer extends AbstractServer {
     }
 
 
-    /** Create a personal notification for a customer. */
-    private void createPersonalNotification(Session session, Long customerId, String title, String body) {
-        Customer c = session.get(Customer.class, customerId);
-        if (c == null) return;
-        Notification n = new Notification(c, title, body);
-        session.persist(n);
-    }
-
     // --- DTO mapper ---
     private il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO toDTO(
             il.cshaifasweng.OCSFMediatorExample.entities.Notification n) {
@@ -812,6 +838,33 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+    private void handleMarkNotificationUnread(Message m, ConnectionToClient client, Session session) {
+        try {
+            if (m.getObjectList() == null || m.getObjectList().isEmpty()) {
+                sendMsg(client, new Message("inbox_list_error", "missing_notification_id", null), "mark_notification_unread");
+                return;
+            }
+            long id = ((Number) m.getObjectList().get(0)).longValue();
+
+            var tx = session.beginTransaction();
+            Notification n = session.get(Notification.class, id);
+            if (n == null || n.getCustomer() == null) {
+                tx.rollback();
+                sendMsg(client, new Message("inbox_list_error", "not_found_or_broadcast", null), "mark_notification_unread");
+                return;
+            }
+            n.setReadFlag(false);
+            session.merge(n);
+            tx.commit();
+
+            sendMsg(client, new Message("inbox_unread_ack", id, null), "mark_notification_unread");
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            sendMsg(client, new Message("inbox_list_error", "server_exception", null), "mark_notification_unread");
+        }
+    }
+
+
     private void handleBranchesRequest(Message msg, ConnectionToClient client, Session session) throws IOException {
         List<Branch> branches = getListFromDB(session, Branch.class);
         for (Branch branch : branches) {
@@ -821,9 +874,25 @@ public class SimpleServer extends AbstractServer {
     }
 
     private void createBroadcastNotification(Session session, String title, String body) {
-        Notification n = new Notification(null, title, body); // customer == null ⇒ broadcast
+        Notification n = new Notification(null, title, body); // broadcast
         session.persist(n);
+        session.flush(); // make sure ID is available
+        InboxItemDTO dto = toDTO(n);
+        // objectList carries a simple flag for client-side filtering
+        sendToAllClients(new Message("inbox_new", dto, java.util.List.of(java.util.Map.of("broadcast", true))));
     }
+
+    private void createPersonalNotification(Session session, Long customerId, String title, String body) {
+        Customer c = session.get(Customer.class, customerId);
+        if (c == null) return;
+        Notification n = new Notification(c, title, body);
+        session.persist(n);
+        session.flush();
+        InboxItemDTO dto = toDTO(n);
+        // include the intended recipient id (clients will ignore if it's not them)
+        sendToAllClients(new Message("inbox_new", dto, java.util.List.of(java.util.Map.of("customerId", customerId))));
+    }
+
 
 
     private void handleCustomerDataRequest(Message message, ConnectionToClient client, Session session) {

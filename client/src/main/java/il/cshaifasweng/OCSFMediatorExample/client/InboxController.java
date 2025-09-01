@@ -16,68 +16,67 @@ import java.net.URL;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableSet;
+
+import javafx.scene.control.ContentDisplay;
+import javafx.scene.control.ListCell;
+
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+
 
 public class InboxController implements Initializable {
 
     @FXML private TabPane tabPane;
     @FXML private ListView<InboxItemDTO> personalList;
     @FXML private ListView<InboxItemDTO> broadcastList;
-
     @FXML private Label statusLabel;
 
     private final DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private final javafx.collections.ObservableSet<Long> selectedIds =
+            javafx.collections.FXCollections.observableSet(); // NEW
+
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         if (!EventBus.getDefault().isRegistered(this)) EventBus.getDefault().register(this);
 
-        // cell renderers
-        personalList.setCellFactory(v -> new NotificationCell(true));
-        broadcastList.setCellFactory(v -> new NotificationCell(false));
+        personalList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
+        broadcastList.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
 
+        personalList.setCellFactory(v -> new GmailCell(true));
+        broadcastList.setCellFactory(v -> new GmailCell(false));
 
-        // fetch inbox on load
-        var u = SessionManager.getInstance().getCurrentUser();
-        if (!(u instanceof Customer)) {
-            status("Login as a customer to view inbox.");
-            return;
-        }
-        Map<String,Object> payload = Map.of("customerId", ((Customer) u).getId());
-        try {
-            SimpleClient.getClient().sendToServer(new Message("get_inbox", null, List.of(payload)));
-            status("Loading inbox…");
-        } catch (IOException e) {
-            status("Failed to request inbox.");
-        }
+        handleRefresh();
     }
+
 
     @Subscribe
     public void onServer(Message msg) {
-        if ("inbox_list".equals(msg.getMessage())) {
-            Platform.runLater(() -> {
+        switch (msg.getMessage()) {
+            case "inbox_list" -> javafx.application.Platform.runLater(() -> {
                 InboxListDTO payload = (InboxListDTO) msg.getObject();
                 var personal = payload.getPersonal();
                 var broadcast = payload.getBroadcast();
 
                 personalList.getItems().setAll(personal);
                 broadcastList.getItems().setAll(broadcast);
-                status(String.format("Personal: %d (%d unread) • Broadcast: %d",
+
+                status(String.format("Personal: %d (%d unread) • Announcements: %d",
                         personal.size(),
                         (int) personal.stream().filter(n -> !n.isRead()).count(),
                         broadcast.size()));
+
             });
-        } else if ("inbox_read_ack".equals(msg.getMessage())) {
-            var u = SessionManager.getInstance().getCurrentUser();
-            if (u instanceof Customer) {
-                Map<String,Object> payload = Map.of("customerId", ((Customer) u).getId());
-                try {
-                    SimpleClient.getClient().sendToServer(new Message("get_inbox", null, java.util.List.of(payload)));
-                } catch (IOException ignored) {}
-            }
-        } else if ("inbox_list_error".equals(msg.getMessage())) {
-            Platform.runLater(() -> status("Error: " + java.util.Objects.toString(msg.getObject(), "unknown")));
+            case "inbox_read_ack", "inbox_unread_ack" -> handleRefresh();
+            case "inbox_list_error" -> javafx.application.Platform.runLater(() ->
+                    status("Error: " + java.util.Objects.toString(msg.getObject(), "unknown")));
         }
     }
+
 
     @FXML
     private void handleMarkSelectedRead() {
@@ -101,6 +100,31 @@ public class InboxController implements Initializable {
         }
     }
 
+    @FXML private void handleRefresh() {
+        var u = SessionManager.getInstance().getCurrentUser();
+        if (!(u instanceof Customer c)) { status("Login as a customer to view inbox."); return; }
+        Map<String,Object> payload = Map.of("customerId", c.getId());
+        try {
+            SimpleClient.getClient().sendToServer(new Message("get_inbox", null, java.util.List.of(payload)));
+            status("Loading inbox…");
+        } catch (IOException e) { status("Failed to request inbox."); }
+    }
+
+    @FXML private void handleMarkRead()   { bulkMark(true); }
+    @FXML private void handleMarkUnread() { bulkMark(false); }
+
+    private void bulkMark(boolean markRead) {
+        if (selectedIds.isEmpty()) { status("Select messages first."); return; }
+        for (Long id : new java.util.ArrayList<>(selectedIds)) {
+            try {
+                String key = markRead ? "mark_notification_read" : "mark_notification_unread";
+                SimpleClient.getClient().sendToServer(new Message(key, null, java.util.List.of(id)));
+            } catch (IOException ignored) {}
+        }
+        status(markRead ? "Marked as read." : "Marked as unread.");
+    }
+
+
     private void status(String s) { if (statusLabel != null) statusLabel.setText(s); }
 
     @SuppressWarnings("unchecked")
@@ -116,27 +140,62 @@ public class InboxController implements Initializable {
         }
     }
 
-    private class NotificationCell extends ListCell<InboxItemDTO> {
-        private final boolean showUnreadBadge;
+    /** Gmail-like row with checkbox, unread dot, title/snippet, right-aligned date. */
+    private class GmailCell extends ListCell<InboxItemDTO> {
+        private final boolean allowCheckbox;
+        private final CheckBox cb = new CheckBox();
+        private final Label title = new Label();
+        private final Label snippet = new Label();
+        private final Label date = new Label();
+        private final HBox dot = new HBox();
+        private final HBox root = new HBox(10);
 
-        NotificationCell(boolean showUnreadBadge) {
-            this.showUnreadBadge = showUnreadBadge;
+        GmailCell(boolean allowCheckbox) {
+            this.allowCheckbox = allowCheckbox;
+
+            title.getStyleClass().add("inbox-title");
+            snippet.getStyleClass().add("inbox-snippet");
+            date.getStyleClass().add("inbox-date");
+            dot.getStyleClass().add("unread-dot");
+            dot.setVisible(false);
+
+            VBox textCol = new VBox(title, snippet);
+            HBox.setHgrow(textCol, Priority.ALWAYS);
+
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+
+            if (allowCheckbox) root.getChildren().add(cb);
+            root.getChildren().addAll(dot, textCol, spacer, date);
+            root.getStyleClass().add("inbox-row");
+
+            // ListCell extends Labeled, so this is valid:
+            setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+
+            cb.selectedProperty().addListener((o, was, now) -> {
+                InboxItemDTO n = getItem();
+                if (n == null) return;
+                if (now) selectedIds.add(n.getId()); else selectedIds.remove(n.getId());
+            });
         }
 
-        @Override
-        protected void updateItem(InboxItemDTO n, boolean empty) {
+        @Override protected void updateItem(InboxItemDTO n, boolean empty) {
             super.updateItem(n, empty);
-            if (empty || n == null) {
-                setText(null);
-            } else {
-                String badge = (showUnreadBadge && !n.isRead()) ? " • UNREAD" : "";
-                String created = (n.getCreatedAt() == null) ? "" : n.getCreatedAt().format(fmt);
-                setText(String.format("%s%s\n%s\n%s",
-                        created, badge,
-                        n.getTitle(),
-                        java.util.Objects.toString(n.getBody(), "")));
-            }
+            if (empty || n == null) { setGraphic(null); return; }
+
+            title.setText(n.getTitle());
+            snippet.setText(Objects.toString(n.getBody(), ""));
+            date.setText(n.getCreatedAt() == null ? "" : fmt.format(n.getCreatedAt()));
+            cb.setSelected(selectedIds.contains(n.getId()));
+            cb.setVisible(allowCheckbox); // hide on announcements list
+
+            dot.setVisible(!n.isRead());
+            getStyleClass().removeAll("unread");
+            if (!n.isRead()) getStyleClass().add("unread");
+
+            setGraphic(root);
         }
-    }}
+    }
+}
 
 
