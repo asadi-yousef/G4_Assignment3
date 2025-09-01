@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Map;
+import java.time.LocalDate;
 
 
 public class SimpleServer extends AbstractServer {
@@ -899,7 +900,6 @@ public class SimpleServer extends AbstractServer {
     private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
         String username = ((User) (msg.getObject())).getUsername();
         final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
-
         synchronized (lock) {
             if (checkExistence(username)) {
                 client.sendToClient(new Message("user already exists", msg.getObject(), null));
@@ -908,9 +908,22 @@ public class SimpleServer extends AbstractServer {
             Transaction tx = session.beginTransaction();
             try {
                 User user = (User) msg.getObject();
+
+                // Extra: handle subscription if it's a Customer
+                if (user instanceof Customer) {
+                    Customer customer = (Customer) user;
+                    if (customer.isSubscribed()) {
+                        Subscription sub = new Subscription();
+                        sub.setStartDate(LocalDate.now());
+                        sub.setEndDate(LocalDate.now().plusYears(1));
+                        sub.setActive(true);
+                        sub.setCustomer(customer);
+                        customer.setSubscription(sub); // link both sides
+                    }
+                }
+
                 session.save(user);
                 tx.commit();
-
                 userCache.putIfAbsent(user.getUsername(), user);
                 client.sendToClient(new Message("registered", null, null));
             } catch (Exception e) {
@@ -921,6 +934,7 @@ public class SimpleServer extends AbstractServer {
             }
         }
     }
+
 
     private void handleCatalogRequest(ConnectionToClient client) {
         try {

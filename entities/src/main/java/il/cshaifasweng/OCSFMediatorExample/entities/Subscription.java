@@ -47,4 +47,8 @@ public class Subscription implements Serializable {
 
     public Customer getCustomer() { return customer; }
     public void setCustomer(Customer customer) { this.customer = customer; }
+    public boolean isCurrentlyActive() {
+        LocalDate today = LocalDate.now();
+        return active && startDate != null && endDate != null && ( !today.isBefore(startDate) && !today.isAfter(endDate) );
+    }
 }

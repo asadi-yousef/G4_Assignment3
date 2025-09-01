@@ -130,4 +130,16 @@ public class Order implements Serializable {
     public void setItems(List<OrderItem> items) {
         this.items = items;
     }
+    @Transient
+    public double calculateFinalTotal() {
+        double total = items.stream()
+                .mapToDouble(item -> item.getDisplayUnitPrice() * item.getQuantity())
+                .sum();
+
+        if (customer != null && customer.hasValidSubscription() && total > 50) {
+            total *= 0.9;
+        }
+        return total;
+    }
+
 }

@@ -56,6 +56,8 @@ public class Customer extends User implements Serializable {
         this.country = country;
         this.creditCard = new CreditCard(cardNumber, expirationMonth, expirationYear, cvv, this);
         this.subscription = new Subscription(subStartDate, subExpDate, true, this);
+        this.isNetworkAccount = isNetworkAccount;
+        this.isSubscribed = isSubscribed;
     }
 
 
@@ -91,11 +93,26 @@ public class Customer extends User implements Serializable {
         this.subscription = subscription;
         subscription.setCustomer(this); // keep both sides in sync
     }
+    public boolean hasValidSubscription() {
+        return isSubscribed && subscription != null && subscription.isCurrentlyActive();
+    }
 
-    // Cart methods from first file
+
     public Cart getCart() { return cart; }
     public void setCart(Cart cart) {
         this.cart = cart;
         if (cart != null) cart.setCustomer(this);
+    }
+    public boolean isNetworkAccount() {
+        return isNetworkAccount;
+    }
+    public void setNetworkAccount(boolean isNetworkAccount) {
+        this.isNetworkAccount = isNetworkAccount;
+    }
+    public boolean isSubscribed() {
+        return isSubscribed;
+    }
+    public void setSubscribed(boolean isSubscribed) {
+        this.isSubscribed = isSubscribed;
     }
 }

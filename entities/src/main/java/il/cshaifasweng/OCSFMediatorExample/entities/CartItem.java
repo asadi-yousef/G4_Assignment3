@@ -89,5 +89,9 @@ public class CartItem implements Serializable {
         }
         return (product != null) ? product.getImagePath() : null;
     }
+    @Transient
+    public double getSubtotal() {
+        return product.getPrice() * quantity;
+    }
 
 }
