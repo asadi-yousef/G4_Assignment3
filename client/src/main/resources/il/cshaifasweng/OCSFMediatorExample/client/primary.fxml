@@ -43,7 +43,16 @@
                           onAction="#handleMakeCustomBouquet"
                           visible="false" managed="false"/>
 
-                  <Pane HBox.hgrow="ALWAYS" />
+
+
+                   <Pane HBox.hgrow="ALWAYS" />
+                   <!-- Inbox (top-right) -->
+                   <Button fx:id="inboxButton"
+                           text="📥 Inbox"
+                           onAction="#handleInbox"
+                           visible="false" managed="false">
+                       <font><Font name="System Bold" size="14.0"/></font>
+                   </Button>
                   <Button onAction="#handleProfile" style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-background-radius: 8;" text="👤 Profile">
                      <font><Font name="System Bold" size="14.0" /></font>
                   </Button>

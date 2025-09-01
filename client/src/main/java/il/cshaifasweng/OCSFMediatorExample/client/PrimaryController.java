@@ -39,8 +39,11 @@ public class PrimaryController implements Initializable {
 	@FXML private ComboBox<String> typeFilterComboBox;
 	@FXML private TextField minPriceField;
 	@FXML private TextField maxPriceField;
+    @FXML private Button inboxButton;
+    private int unreadPersonalCount = 0;
 
-	// Reports button (must exist in primary.fxml with fx:id="reportButton")
+
+    // Reports button (must exist in primary.fxml with fx:id="reportButton")
 	@FXML private Button reportButton;
 
 	// Customer-only “Make a Custom Bouquet” button (present in FXML)
@@ -387,8 +390,15 @@ public class PrimaryController implements Initializable {
 					break;
 				}
 
+                case "inbox_list_error": {
+                    String err = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Failed to load inbox.";
+                    showAlert("Inbox Error", err);
+                    break;
+                }
 
-				default:
+
+
+                default:
 					System.out.println("Received unhandled message from server: " + msg.getMessage());
 					break;
 			}
@@ -475,7 +485,15 @@ public class PrimaryController implements Initializable {
 			reportButton.setManaged(showReports);
 		}
 
-		updateCustomButtonState();
+        if (inboxButton != null) {
+            boolean showInbox = isLoggedIn && !isEmployee;
+            inboxButton.setVisible(showInbox);
+            inboxButton.setManaged(showInbox);
+            refreshInboxBadgeText(); // keeps the count on button label
+        }
+
+
+        updateCustomButtonState();
 
 		if (isLoggedIn) {
 			userStatusLabel.setText("Hi, " + SessionManager.getInstance().getCurrentUser().getUsername());
@@ -491,7 +509,106 @@ public class PrimaryController implements Initializable {
 		}
 	}
 
-	// =================== Product actions (existing) ===================
+    // =================== Inbox actions  ===================
+
+    @FXML
+    private void handleInbox() {
+        var u = SessionManager.getInstance().getCurrentUser();
+        if (!(u instanceof il.cshaifasweng.OCSFMediatorExample.entities.Customer)) {
+            showAlert("Inbox", "Please login as a customer.");
+            return;
+        }
+        try {
+            EventBus.getDefault().unregister(this);
+            App.setRoot("InboxView"); // matches the FXML name (without .fxml)
+        } catch (IOException e) {
+            showAlert("Inbox", "Failed to open inbox.");
+        }
+    }
+
+
+
+    @Subscribe
+    public void onInboxMessages(Message msg) {
+        if ("inbox_list".equals(msg.getMessage())) {
+            Platform.runLater(() -> {
+                @SuppressWarnings("unchecked")
+                Map<String,Object> payload = (Map<String,Object>) msg.getObject();
+                @SuppressWarnings("unchecked")
+                List<Notification> personal = (List<Notification>) payload.getOrDefault("personal", List.of());
+                @SuppressWarnings("unchecked")
+                List<Notification> broadcast = (List<Notification>) payload.getOrDefault("broadcast", List.of());
+
+                // update badge: unread in personal
+                unreadPersonalCount = (int) personal.stream().filter(n -> !n.isReadFlag()).count();
+                refreshInboxBadgeText();
+
+                // quick UI (Alert + TextArea); replace later with a dedicated view if you want
+                StringBuilder sb = new StringBuilder();
+                sb.append("— Personal —\n");
+                for (Notification n : personal) {
+                    sb.append((n.isReadFlag() ? "[read] " : "[UNREAD] "))
+                            .append(n.getCreatedAt()).append(" • ").append(n.getTitle()).append("\n")
+                            .append(n.getBody()).append("\n\n");
+                }
+                sb.append("\n— All Customers —\n");
+                for (Notification n : broadcast) {
+                    sb.append(n.getCreatedAt()).append(" • ").append(n.getTitle()).append("\n")
+                            .append(n.getBody()).append("\n\n");
+                }
+
+                TextArea area = new TextArea(sb.toString());
+                area.setEditable(false);
+                area.setWrapText(true);
+                area.setPrefRowCount(24);
+
+                Dialog<Void> dlg = new Dialog<>();
+                dlg.setTitle("Inbox");
+                dlg.getDialogPane().setContent(area);
+
+                ButtonType markAllRead = new ButtonType("Mark all personal as read", ButtonBar.ButtonData.LEFT);
+                dlg.getDialogPane().getButtonTypes().addAll(markAllRead, ButtonType.CLOSE);
+
+                // mark all personal unread as read
+                Button markAllBtn = (Button) dlg.getDialogPane().lookupButton(markAllRead);
+                markAllBtn.setOnAction(e -> {
+                    for (Notification n : personal) {
+                        if (!n.isReadFlag()) {
+                            try {
+                                SimpleClient.getClient().sendToServer(
+                                        new Message("mark_notification_read", null, List.of(n.getId()))
+                                );
+                            } catch (IOException ex) { /* ignore */ }
+                        }
+                    }
+                    // locally update count (server will ack too)
+                    unreadPersonalCount = 0;
+                    refreshInboxBadgeText();
+                });
+
+                dlg.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+                dlg.showAndWait();
+            });
+        } else if ("inbox_read_ack".equals(msg.getMessage())) {
+            // Could refetch or decrement locally; we already update locally above.
+            refreshInboxBadgeText();
+        }
+    }
+
+
+    private void refreshInboxBadgeText() {
+        if (inboxButton == null) return;
+        if (unreadPersonalCount > 0) {
+            inboxButton.setText("📥 Inbox (" + unreadPersonalCount + ")");
+            inboxButton.setStyle("-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-background-radius: 8;");
+        } else {
+            inboxButton.setText("📥 Inbox");
+            inboxButton.setStyle(""); // default style
+        }
+    }
+
+
+    // =================== Product actions (existing) ===================
 
 	private void handleAddToCart(Product product) {
 		User currentUser = SessionManager.getInstance().getCurrentUser();

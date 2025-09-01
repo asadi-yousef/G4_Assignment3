@@ -31,6 +31,8 @@
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.CustomBouquet"/>
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.CustomBouquetItem"/>
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Complaint"/>
+        <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Notification"/>
+
 
     </session-factory>
 </hibernate-configuration>

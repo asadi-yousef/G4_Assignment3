@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<BorderPane xmlns="http://javafx.com/javafx/17.0.12"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="il.cshaifasweng.OCSFMediatorExample.client.InboxController">
+    <top>
+        <HBox spacing="10" style="-fx-padding: 10;">
+            <Label text="Inbox" style="-fx-font-size: 20px; -fx-font-weight: bold;"/>
+            <Pane HBox.hgrow="ALWAYS"/>
+            <Button text="Mark selected as read" onAction="#handleMarkSelectedRead"/>
+            <Button text="Back" onAction="#handleBack"/>
+        </HBox>
+    </top>
+    <center>
+        <TabPane fx:id="tabPane">
+            <tabs>
+                <Tab text="Personal" closable="false">
+                    <BorderPane>
+                        <center>
+                            <ListView fx:id="personalList"/>
+                        </center>
+                    </BorderPane>
+                </Tab>
+                <Tab text="All Customers" closable="false">
+                    <BorderPane>
+                        <center>
+                            <ListView fx:id="broadcastList"/>
+                        </center>
+                    </BorderPane>
+                </Tab>
+            </tabs>
+        </TabPane>
+    </center>
+    <bottom>
+        <Label fx:id="statusLabel" style="-fx-padding: 8; -fx-text-fill: #555;"/>
+    </bottom>
+</BorderPane>

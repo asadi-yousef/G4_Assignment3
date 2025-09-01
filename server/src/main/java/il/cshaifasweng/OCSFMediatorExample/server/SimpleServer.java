@@ -1,9 +1,14 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
+import il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Root;
+
 
 import org.hibernate.Session;
 import org.hibernate.Transaction;
@@ -183,6 +188,11 @@ public class SimpleServer extends AbstractServer {
                 else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
                 }
+                else if ("get_inbox".equals(key)) {
+                    handleGetInbox(m, client, session);
+                } else if ("mark_notification_read".equals(key)) {
+                    handleMarkNotificationRead(m, client, session);
+                }
                 else {
                     System.out.println("[WARN] Unhandled key: " + key);
                 }
@@ -275,6 +285,15 @@ public class SimpleServer extends AbstractServer {
 
             // Delete the order itself
             session.delete(order);
+
+            session.flush();
+
+            createPersonalNotification(session,
+                    order.getCustomer().getId(),
+                    "Order canceled",
+                    "Your order #" + order.getId() + " was canceled" +
+                            (/* if you issue refunds here */ false ? " and a refund is being processed." : "."));
+
 
             tx.commit();
 
@@ -388,6 +407,7 @@ public class SimpleServer extends AbstractServer {
             c.setBranch(customer.getBranch());
 
             session.persist(c);
+
             tx.commit();
 
             // Ack to submitting customer (client will navigate away)
@@ -395,6 +415,24 @@ public class SimpleServer extends AbstractServer {
 
             // Live-refresh any open UIs (employee/customer lists)
             sendToAllClients(new Message("complaints_refresh", null, null));
+
+            // Create the personal notification in a separate, safe TX
+            try (Session s2 = HibernateUtil.getSessionFactory().openSession()) {
+                var tx2 = s2.beginTransaction();
+                Customer fresh = s2.get(Customer.class, customer.getId());
+                if (fresh != null) {
+                    Notification n = new Notification(
+                            fresh,
+                            "Complaint submitted",
+                            "Your complaint #" + c.getId() + " was received. We'll get back to you within 24h."
+                    );
+                    s2.persist(n);
+                }
+                tx2.commit();
+            } catch (Exception notifEx) {
+                notifEx.printStackTrace(); // log and continue; don't break complaint flow
+            }
+
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             try { client.sendToClient(new Message("complaint_error", "Exception: " + e.getMessage(), null)); }
@@ -589,6 +627,20 @@ public class SimpleServer extends AbstractServer {
             if (responder != null) c.setResponder(responder);
 
             session.merge(c);
+
+            session.flush();
+
+            String comp = (c.getCompensationAmount() != null)
+                    ? " Compensation: " + c.getCompensationAmount() + "."
+                    : "";
+
+            createPersonalNotification(session,
+                    c.getCustomer().getId(),
+                    "Complaint resolved",
+                    "We’ve reviewed your complaint #" + c.getId() + ". " +
+                            (c.getResponseText() == null ? "" : c.getResponseText()) + comp);
+
+
             tx.commit();
 
             // Acknowledge to the resolving employee
@@ -667,6 +719,99 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+
+    /** Create a personal notification for a customer. */
+    private void createPersonalNotification(Session session, Long customerId, String title, String body) {
+        Customer c = session.get(Customer.class, customerId);
+        if (c == null) return;
+        Notification n = new Notification(c, title, body);
+        session.persist(n);
+    }
+
+    // --- DTO mapper ---
+    private il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO toDTO(
+            il.cshaifasweng.OCSFMediatorExample.entities.Notification n) {
+        return new il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO(
+                n.getId(),
+                n.getTitle(),
+                n.getBody(),
+                n.getCreatedAt(),
+                n.isReadFlag(),
+                n.getCustomer() == null // broadcast if no customer
+        );
+    }
+
+
+    /** Fetch inbox for a given customer: personal (sorted desc) + broadcast (customer==null). */
+    private void handleGetInbox(Message m, ConnectionToClient client, Session session) {
+        try {
+            Long customerId = null;
+            if (m.getObjectList() != null && !m.getObjectList().isEmpty() && m.getObjectList().get(0) instanceof java.util.Map) {
+                Object v = ((java.util.Map<?, ?>) m.getObjectList().get(0)).get("customerId");
+                if (v instanceof Number) customerId = ((Number) v).longValue();
+            }
+            if (customerId == null) {
+                sendMsg(client, new Message("inbox_list_error", "missing_customer_id", null), "get_inbox");
+                return;
+            }
+
+            var personalEntities = session.createQuery(
+                    "from Notification n where n.customer.id = :cid order by n.createdAt desc",
+                    il.cshaifasweng.OCSFMediatorExample.entities.Notification.class
+            ).setParameter("cid", customerId).getResultList();
+
+            var broadcastEntities = session.createQuery(
+                    "from Notification n where n.customer is null order by n.createdAt desc",
+                    il.cshaifasweng.OCSFMediatorExample.entities.Notification.class
+            ).getResultList();
+
+            java.util.List<il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO> personalDTO =
+                    personalEntities.stream().map(this::toDTO).toList();
+            java.util.List<il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO> broadcastDTO =
+                    broadcastEntities.stream().map(this::toDTO).toList();
+
+            var payload = new il.cshaifasweng.OCSFMediatorExample.entities.InboxListDTO(personalDTO, broadcastDTO);
+            sendMsg(client, new Message("inbox_list", payload, null), "get_inbox");
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            sendMsg(client, new Message("inbox_list_error", "server_exception", null), "get_inbox");
+        }
+    }
+
+    // --- INBOX: mark one personal notification as read ---
+    private void handleMarkNotificationRead(Message m, ConnectionToClient client, Session session) {
+        try {
+            if (m.getObjectList() == null || m.getObjectList().isEmpty()) {
+                sendMsg(client, new Message("inbox_list_error", "missing_notification_id", null), "mark_notification_read");
+                return;
+            }
+            long id = ((Number) m.getObjectList().get(0)).longValue();
+
+            var tx = session.beginTransaction();
+            Notification n = session.get(Notification.class, id);
+            if (n == null) {
+                tx.rollback();
+                sendMsg(client, new Message("inbox_list_error", "not_found", null), "mark_notification_read");
+                return;
+            }
+            // broadcast notifications (customer == null) don't have read flag
+            if (n.getCustomer() == null) {
+                tx.rollback();
+                sendMsg(client, new Message("inbox_list_error", "broadcast_has_no_read_flag", null), "mark_notification_read");
+                return;
+            }
+
+            n.setReadFlag(true);
+            session.merge(n);
+            tx.commit();
+
+            sendMsg(client, new Message("inbox_read_ack", id, null), "mark_notification_read");
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            sendMsg(client, new Message("inbox_list_error", "server_exception", null), "mark_notification_read");
+        }
+    }
+
     private void handleBranchesRequest(Message msg, ConnectionToClient client, Session session) throws IOException {
         List<Branch> branches = getListFromDB(session, Branch.class);
         for (Branch branch : branches) {
@@ -674,6 +819,12 @@ public class SimpleServer extends AbstractServer {
         }
         client.sendToClient(new Message("Branches", branches, null));
     }
+
+    private void createBroadcastNotification(Session session, String title, String body) {
+        Notification n = new Notification(null, title, body); // customer == null ⇒ broadcast
+        session.persist(n);
+    }
+
 
     private void handleCustomerDataRequest(Message message, ConnectionToClient client, Session session) {
         try {
@@ -734,6 +885,15 @@ public class SimpleServer extends AbstractServer {
 
             session.merge(user);
             if (customer != null) session.merge(customer);
+
+            session.flush();
+
+            createPersonalNotification(session,
+                    customer.getId(),
+                    "Profile updated",
+                    "Your profile details were updated successfully.");
+
+
             tx.commit();
 
             client.sendToClient(new Message("profile_updated_success", null, null));
@@ -860,6 +1020,10 @@ public class SimpleServer extends AbstractServer {
             payload.put("deletedBouquetIds", deletableBouquetIds);
             payload.put("protectedBouquetIds", protectedBouquetIds);
             sendToAllClients(new Message("item_removed", payload, null));
+            createBroadcastNotification(session,
+                    "Product removed",
+                    "A product was removed from the catalog. Your cart may have been updated.");
+
 
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
@@ -1468,6 +1632,16 @@ public class SimpleServer extends AbstractServer {
                 CartItem managedCI = session.contains(ci) ? ci : session.get(CartItem.class, ci.getId());
                 if (managedCI != null) session.remove(managedCI);
             }
+
+            session.flush();
+
+            // add notification BEFORE tx.commit()
+            createPersonalNotification(session,
+                    order.getCustomer().getId(),
+                    "Order placed",
+                    "Thanks! Your order #" + order.getId() + " was placed. " +
+                            (order.getDeliveryDateTime() == null ? "" : "Delivery: " + order.getDeliveryDateTime()));
+
 
             tx.commit();
             client.sendToClient(new Message("order_placed_successfully", order, null));
