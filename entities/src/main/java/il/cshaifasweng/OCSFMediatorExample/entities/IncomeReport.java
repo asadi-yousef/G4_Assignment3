@@ -15,10 +15,10 @@ public class IncomeReport extends Report implements Serializable {
 
     public IncomeReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate, BigDecimal totalRevenue,BigDecimal totalExpenses, BigDecimal netProfit, BigDecimal avgDailyNetProfit, int totalTransactions) {
         super(store_id, branch_name, branch_id, startDate, endDate);
-        TotalRevenue = totalRevenue;
-        TotalExpenses = totalRevenue;
-        NetProfit = totalRevenue;
-        AvgDailyNetProfit = netProfit;
+        this.TotalRevenue = totalRevenue;
+        this.TotalExpenses = totalExpenses;
+        this.NetProfit = netProfit;
+        this.AvgDailyNetProfit = avgDailyNetProfit;
         TotalTransactions = totalTransactions;
     }
     @Override
