@@ -91,10 +91,10 @@ public class AddProductController implements Initializable {
         saveButton.setDisable(true);
         showStatus("Creating product...", false);
 
-        Task<Product> createProductTask = new Task<>() {
+        Task<Product> task = new Task<>() {
             @Override
             protected Product call() throws Exception {
-                // Build product (meta only; no copying to resources)
+                // Build product metadata (no file copy to resources)
                 Product product = new Product();
                 product.setName(nameField.getText().trim());
                 product.setType(typeField.getText().trim());
@@ -109,15 +109,14 @@ public class AddProductController implements Initializable {
                 product.setDiscountPercentage(discount);
 
                 product.setColor(toHexString(colorPicker.getValue()));
-                product.setImagePath(null); // stop using classpath path for new items
-                product.setImagePath(null);   // will be filled by server if an image exists
+                product.setImagePath(null); // stop using classpath path
 
-                // Pack the selected image as bytes (optional)
+                // Read selected image as bytes (optional)
                 byte[] imageBytes = null;
-                String imageName  = null;
-                String chosen = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
-                if (!chosen.isEmpty()) {
-                    File f = new File(chosen);
+                String imageName = null;
+                String chosenPath = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
+                if (!chosenPath.isEmpty()) {
+                    File f = new File(chosenPath);
                     if (f.exists()) {
                         imageName = f.getName();
                         try (InputStream in = new FileInputStream(f);
@@ -128,11 +127,11 @@ public class AddProductController implements Initializable {
                     }
                 }
 
-                // Send one message: product meta + (optional) image bytes + original name
+                // Send AddProductRequest to server
                 AddProductRequest req = new AddProductRequest();
                 req.productMeta = product;
-                req.imageBytes  = imageBytes;   // may be null
-                req.imageName   = imageName;    // may be null
+                req.imageBytes = imageBytes;
+                req.imageName = imageName;
 
                 Message msg = new Message("add_product", req, null);
                 SimpleClient.getClient().sendToServer(msg);
@@ -141,29 +140,26 @@ public class AddProductController implements Initializable {
             }
         };
 
-        createProductTask.setOnSucceeded(e -> {
+        task.setOnSucceeded(e -> {
             showStatus("Product create request sent.", false);
-            if (onProductSaved != null) onProductSaved.accept(createProductTask.getValue());
+            if (onProductSaved != null) onProductSaved.accept(task.getValue());
             clearForm();
             saveButton.setDisable(false);
         });
 
-        createProductTask.setOnFailed(e -> {
-            Throwable ex = createProductTask.getException();
-            showStatus("Failed to create product: " + (ex != null ? ex.getMessage() : "Unknown error"), true);
+        task.setOnFailed(e -> {
+            Throwable ex = task.getException();
+            showStatus("Failed: " + (ex != null ? ex.getMessage() : "Unknown"), true);
             saveButton.setDisable(false);
-
-            Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.setTitle("Error Creating Product");
-            alert.setHeaderText("Failed to create the product");
-            alert.setContentText(ex != null ? ex.getMessage() : "Unknown error");
-            alert.showAndWait();
+            new Alert(Alert.AlertType.ERROR,
+                    "Failed to create product:\n" + (ex != null ? ex.getMessage() : "Unknown error")).showAndWait();
         });
 
-        Thread thread = new Thread(createProductTask);
-        thread.setDaemon(true);
-        thread.start();
+        Thread t = new Thread(task);
+        t.setDaemon(true);
+        t.start();
     }
+
 
 
     private void sendProductToServer(Product product) throws Exception {

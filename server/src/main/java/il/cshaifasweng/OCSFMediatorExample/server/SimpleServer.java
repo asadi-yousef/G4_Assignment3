@@ -14,7 +14,10 @@ import org.hibernate.Session;
 import org.hibernate.Transaction;
 
 import java.awt.event.ActionEvent;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,6 +28,14 @@ import java.util.stream.Collectors;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.UUID;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 
 public class SimpleServer extends AbstractServer {
@@ -237,6 +248,32 @@ public class SimpleServer extends AbstractServer {
     }
 
     /* ----------------------- Handlers (all receive Session) ----------------------- */
+    /** Resolve a product image path (server DB value) to a File on the server disk. */
+    private static File resolveServerImageFile(String storedPath) {
+        if (storedPath == null || storedPath.isBlank()) return null;
+        try {
+            String sp = storedPath.trim();
+
+            // Already server-relative "images/..." → live under IMAGES_DIR
+            if (sp.startsWith("images/") || sp.startsWith("images\\")) {
+                String fileName = java.nio.file.Paths.get(sp.replace('\\','/')).getFileName().toString();
+                return new File(IMAGES_DIR, fileName);
+            }
+            // file: URI (common in your legacy rows)
+            if (sp.startsWith("file:")) {
+                try {
+                    return new File(java.net.URI.create(sp));
+                } catch (Exception ignored) { /* fall through */ }
+            }
+            // Absolute or relative plain path
+            File f = new File(sp);
+            if (!f.isAbsolute()) f = new File(".", sp);
+            return f;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     /** Put/replace user in cache, and migrate the key if username changed. */
     private void upsertUserCache(User managedUser, String oldUsernameIfKnown) {
         if (managedUser == null) return;
@@ -1088,9 +1125,9 @@ public class SimpleServer extends AbstractServer {
             ).getResultList();
 
             java.util.List<il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO> personalDTO =
-                    personalEntities.stream().map(this::toDTO).toList();
+                    personalEntities.stream().map(this::toDTO).collect(Collectors.toList());
             java.util.List<il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO> broadcastDTO =
-                    broadcastEntities.stream().map(this::toDTO).toList();
+                    broadcastEntities.stream().map(this::toDTO).collect(Collectors.toList());
 
             var payload = new il.cshaifasweng.OCSFMediatorExample.entities.InboxListDTO(personalDTO, broadcastDTO);
             sendMsg(client, new Message("inbox_list", payload, null), "get_inbox");
@@ -1411,22 +1448,81 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+    private static final File IMAGES_DIR = new File("images").getAbsoluteFile();
+
+    private static String getExtension(String name) {
+        if (name == null) return "bin";
+        int i = name.lastIndexOf('.');
+        return (i > 0 && i < name.length() - 1) ? name.substring(i + 1).toLowerCase() : "bin";
+    }
+
+    private static String normalizeRelative(String path) {
+        return path.replace('\\', '/');
+    }
+
     private void handleAddProduct(Message msg, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();
         try {
-            Product product = (Product) msg.getObject();
+            Object payload = msg.getObject();
+
+            // Back-compat: old clients send Product directly
+            if (!(payload instanceof AddProductRequest)) {
+                Product legacy = (Product) payload;
+                session.save(legacy);
+                tx.commit();
+
+                catalogLock.writeLock().lock();
+                try { catalog.getFlowers().add(legacy); }
+                finally { catalogLock.writeLock().unlock(); }
+
+                sendToAllClients(new Message("add_product", legacy, null));
+                return;
+            }
+
+            AddProductRequest req = (AddProductRequest) payload;
+            Product product = req.productMeta;
+
+            byte[] broadcastBytes = null;
+
+            // --- Save the image into SERVER images/ (if provided) ---
+            if (req.imageBytes != null && req.imageBytes.length > 0) {
+                if (!IMAGES_DIR.exists() && !IMAGES_DIR.mkdirs()) {
+                    throw new IOException("Cannot create images dir: " + IMAGES_DIR.getAbsolutePath());
+                }
+                String ext = getExtension(req.imageName);
+                String fileName = java.util.UUID.randomUUID().toString() + "." + ext;
+                File out = new File(IMAGES_DIR, fileName);
+
+                // WRITE FIRST
+                try (OutputStream os = new FileOutputStream(out)) {
+                    os.write(req.imageBytes);
+                }
+                // set path stored in DB as server-relative
+                String relative = normalizeRelative("images/" + fileName);
+                product.setImagePath(relative);
+
+                // BROADCAST the bytes we already have (don’t re-read)
+                broadcastBytes = req.imageBytes;
+            } else {
+                product.setImagePath(null);
+            }
+            // --------------------------------------------------------
+
             session.save(product);
             tx.commit();
 
             // update in-memory snapshot
             catalogLock.writeLock().lock();
-            try {
-                catalog.getFlowers().add(product);
-            } finally {
-                catalogLock.writeLock().unlock();
-            }
+            try { catalog.getFlowers().add(product); }
+            finally { catalogLock.writeLock().unlock(); }
 
-            sendToAllClients(new Message("add_product", product, null));
+            // Broadcast new product + its image bytes to all clients
+            sendToAllClients(new Message(
+                    "add_product",
+                    product,
+                    (broadcastBytes != null ? java.util.List.of(broadcastBytes) : null)
+            ));
+
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
@@ -1434,6 +1530,7 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
+
 
     private boolean checkExistence(String username) {
         return userCache.containsKey(username);
@@ -1471,11 +1568,47 @@ public class SimpleServer extends AbstractServer {
 
     private void handleCatalogRequest(ConnectionToClient client) {
         try {
-            Message message = new Message("catalog", catalog, null);
-            client.sendToClient(message);
+            Catalog full = catalog;
+            java.util.List<Product> all = (full != null && full.getFlowers() != null)
+                    ? full.getFlowers()
+                    : java.util.List.of();
+
+            Catalog flowersOnly = new Catalog(
+                    all.stream().filter(SimpleServer::isFlower).collect(java.util.stream.Collectors.toList()));
+            Catalog nonFlowers  = new Catalog(
+                    all.stream().filter(p -> !isFlower(p)).collect(java.util.stream.Collectors.toList()));
+
+            // Build productId -> image bytes (now also supports legacy file:/ and absolute paths)
+            Map<Long, byte[]> imageBlobs = new java.util.HashMap<>();
+            for (Product p : all) {
+                if (p == null || p.getId() == null) continue;
+                String sp = p.getImagePath();
+                if (sp == null || sp.isBlank()) continue;
+
+                try {
+                    File f = resolveServerImageFile(sp);
+                    if (f != null && f.exists() && f.isFile()) {
+                        byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+                        if (bytes != null && bytes.length > 0) {
+                            imageBlobs.put(p.getId(), bytes);
+                        }
+                    } else {
+                        System.out.println("[catalog] image not found on server: " + sp);
+                    }
+                } catch (Exception ex) {
+                    System.err.println("[catalog] failed reading image '" + sp + "': " + ex.getMessage());
+                }
+            }
+
+            // Send: object = full catalog; objectList = [flowersOnly, nonFlowers, imageBlobs]
+            client.sendToClient(new Message("catalog", full, java.util.List.of(flowersOnly, nonFlowers, imageBlobs)));
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private static boolean isFlower(Product p) {
+        return p != null && p.getType() != null && p.getType().equalsIgnoreCase("flower");
     }
 
     private void handleProductEdit(Message msg, ConnectionToClient client, Session session) {
@@ -1637,21 +1770,53 @@ public class SimpleServer extends AbstractServer {
         Transaction tx = session.beginTransaction();
         try {
             Product product = session.get(Product.class, productId);
-            if (product != null) {
-                product.setPrice(newPrice);
-                product.setDiscountPercentage(newDiscount);
-                product.setName(newProductName);
-                product.setType(newType);
-                product.setImagePath(newImagePath);
-                product.setColor(newColor);
-                session.update(product);
-                tx.commit();
-                return true;
-            } else {
+            if (product == null) {
                 System.out.println("Product not found with ID: " + productId);
                 tx.rollback();
                 return false;
             }
+
+            product.setPrice(newPrice);
+            product.setDiscountPercentage(newDiscount);
+            product.setName(newProductName);
+            product.setType(newType);
+            product.setColor(newColor);
+
+            // ---- Image path normalization (server-side) ----
+            String finalPath = product.getImagePath(); // keep old unless we can improve it
+            if (newImagePath != null) {
+                String sp = newImagePath.trim();
+                if (sp.isEmpty()) {
+                    finalPath = null; // explicit clear
+                } else if (sp.startsWith("images/") || sp.startsWith("images\\")) {
+                    // already in server images/ -> normalize slashes
+                    finalPath = normalizeRelative(sp);
+                } else {
+                    // Try to copy a reachable file on the SERVER into images/
+                    File source = resolveServerImageFile(sp);
+                    if (source != null && source.exists() && source.isFile()) {
+                        if (!IMAGES_DIR.exists()) IMAGES_DIR.mkdirs();
+                        String ext = getExtension(source.getName());
+                        String fileName = java.util.UUID.randomUUID().toString() + "." + ext;
+                        File out = new File(IMAGES_DIR, fileName);
+                        java.nio.file.Files.copy(
+                                source.toPath(),
+                                out.toPath(),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                        );
+                        finalPath = normalizeRelative("images/" + fileName);
+                    } else {
+                        // not reachable by the server → keep previous imagePath
+                        System.err.println("[updateProduct] Provided image path not accessible on server: " + sp);
+                    }
+                }
+            }
+            product.setImagePath(finalPath);
+            // -----------------------------------------------
+
+            session.update(product);
+            tx.commit();
+            return true;
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
@@ -1660,6 +1825,7 @@ public class SimpleServer extends AbstractServer {
             catalogLock.writeLock().unlock();
         }
     }
+
 
     private void handleAddToCart(Message message, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();
