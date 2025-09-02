@@ -19,6 +19,8 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
+import org.hibernate.Session;
+import org.hibernate.cache.internal.SimpleCacheKeysFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -386,7 +388,14 @@ public class PrimaryController implements Initializable {
 					}
 					break;
 				}
+				case "logout_success":
+					SessionManager.getInstance().logout();
+					updateUIBasedOnUserStatus();
 
+					resetToFullCatalogAfterLogout(); // <-- ensures full, unfiltered catalog
+
+					showAlert("Success", "Logged out successfully!");
+					break;
 
 				default:
 					System.out.println("Received unhandled message from server: " + msg.getMessage());
@@ -832,13 +841,15 @@ public class PrimaryController implements Initializable {
 	}
 
 	@FXML
-	public void handleLogout(ActionEvent actionEvent) {
-		SessionManager.getInstance().logout();
-		updateUIBasedOnUserStatus();
+	public void handleLogout(ActionEvent actionEvent) throws IOException {
+		String username = (String) (SessionManager.getInstance().getCurrentUser().getUsername());
+		SimpleClient.getClient().sendToServer(new Message("logout",username,null));
+		//SessionManager.getInstance().logout();
+		//updateUIBasedOnUserStatus();
 
-		resetToFullCatalogAfterLogout(); // <-- ensures full, unfiltered catalog
+		//resetToFullCatalogAfterLogout(); // <-- ensures full, unfiltered catalog
 
-		showAlert("Success", "Logged out successfully!");
+		//showAlert("Success", "Logged out successfully!");
 	}
 
 

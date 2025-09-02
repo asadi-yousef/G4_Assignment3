@@ -1,5 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
@@ -71,6 +72,10 @@ public class App extends Application {
 
     @Override
     public void stop() throws Exception {
+        if(SessionManager.getInstance().getCurrentUser() != null) {
+            String username = (String) (SessionManager.getInstance().getCurrentUser().getUsername());
+            SimpleClient.getClient().sendToServer(new Message("logout",username,null));
+        }
         EventBus.getDefault().unregister(this);
         client.sendToServer("remove client");
         client.closeConnection();

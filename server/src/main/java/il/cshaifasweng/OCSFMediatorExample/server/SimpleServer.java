@@ -8,6 +8,7 @@ import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 
+import java.awt.event.ActionEvent;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -182,6 +183,16 @@ public class SimpleServer extends AbstractServer {
                 else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
                 }
+                else if("logout".equals(key)) {
+                    handleLogout(client,session,m);
+                }
+                else if ("admin_list_users".equals(key)) {
+                    handleAdminListUsers(m, client, session);
+                } else if ("admin_update_user".equals(key)) {
+                    handleAdminUpdateUser(m, client, session);
+                } else if ("admin_freeze_customer".equals(key)) {
+                    handleAdminFreezeCustomer(m, client, session);
+                }
                 else {
                     System.out.println("[WARN] Unhandled key: " + key);
                 }
@@ -206,6 +217,291 @@ public class SimpleServer extends AbstractServer {
     }
 
     /* ----------------------- Handlers (all receive Session) ----------------------- */
+    /** Put/replace user in cache, and migrate the key if username changed. */
+    private void upsertUserCache(User managedUser, String oldUsernameIfKnown) {
+        if (managedUser == null) return;
+        final String newUsername = managedUser.getUsername();
+
+        // If username changed, move the cache entry and the per-username lock
+        if (oldUsernameIfKnown != null && !oldUsernameIfKnown.equals(newUsername)) {
+            userCache.remove(oldUsernameIfKnown);
+            Object lock = usernameLocks.remove(oldUsernameIfKnown);
+            if (lock != null) {
+                usernameLocks.putIfAbsent(newUsername, lock);
+            }
+        }
+        userCache.put(newUsername, managedUser);
+    }
+
+    /** Resolve a lock object for a username that might be null/unknown. */
+    private Object lockForUsername(String username) {
+        return usernameLocks.computeIfAbsent(username == null ? "<null>" : username, k -> new Object());
+    }
+
+
+    @SuppressWarnings("unchecked")
+    private void handleAdminFreezeCustomer(Message m, ConnectionToClient client, Session session) {
+        Map<String,Object> req = (m.getObject() instanceof Map) ? (Map<String,Object>) m.getObject() : null;
+        if (req == null) {
+            try { client.sendToClient(new Message("admin_freeze_error", "Bad request", null)); }
+            catch (IOException ignored) {}
+            return;
+        }
+
+        Long customerId = null;
+        Boolean frozen = null;
+        Object idObj = req.get("customerId");
+        Object frObj = req.get("frozen");
+        if (idObj instanceof Number) customerId = ((Number)idObj).longValue();
+        if (frObj instanceof Boolean) frozen = (Boolean) frObj;
+
+        if (customerId == null || frozen == null) {
+            try { client.sendToClient(new Message("admin_freeze_error", "Bad request", null)); }
+            catch (IOException ignored) {}
+            return;
+        }
+
+        Transaction tx = session.beginTransaction();
+        try {
+            Customer c = session.get(Customer.class, customerId);
+            if (c == null) throw new IllegalArgumentException("Customer not found");
+
+            final String username = c.getUsername();
+            final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
+
+            synchronized (lock) {
+                // assumes you added a 'frozen' boolean to Customer
+                c.setFrozen(frozen);
+                Customer managed = (Customer) session.merge(c);
+                tx.commit();
+
+                // refresh cache entry
+                upsertUserCache(managed, username);
+
+                client.sendToClient(new Message("admin_freeze_ok", toDTO(managed), null));
+            }
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("admin_freeze_error", e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+
+
+    private void handleAdminUpdateUser(Message m, ConnectionToClient client, Session session) {
+        var dto = (UserAdminDTO) m.getObject();
+        if (dto == null || dto.getId() == null || dto.getUserType() == null) {
+            try { client.sendToClient(new Message("admin_update_error", "Bad request", null)); }
+            catch (IOException ignored) {}
+            return;
+        }
+
+        Transaction tx = session.beginTransaction();
+        try {
+            Branch newBranch = findBranchByName(session, dto.getBranchName());
+
+            if ("EMPLOYEE".equalsIgnoreCase(dto.getUserType())) {
+                Employee e = session.get(Employee.class, dto.getId());
+                if (e == null) throw new IllegalArgumentException("Employee not found");
+                final String oldUsername = e.getUsername();
+
+                // Per-username lock around mutation
+                final Object lock = usernameLocks.computeIfAbsent(oldUsername, k -> new Object());
+                synchronized (lock) {
+                    if (dto.getName() != null) e.setName(dto.getName());
+                    if (dto.getUsername() != null) e.setUsername(dto.getUsername());
+                    if (dto.getPassword() != null) e.setPassword(dto.getPassword());
+                    if (dto.getNetworkAccount() != null) e.setNetworkAccount(dto.getNetworkAccount());
+                    if (newBranch != null) e.setBranch(newBranch);
+                    if (dto.getRole() != null) e.setRole(dto.getRole());
+
+                    Employee managed = (Employee) session.merge(e);
+                    tx.commit();
+
+                    // Move/refresh cache and lock if username changed
+                    upsertUserCache(managed, oldUsername);
+
+                    client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
+                }
+            } else if ("CUSTOMER".equalsIgnoreCase(dto.getUserType())) {
+                Customer c = session.get(Customer.class, dto.getId());
+                if (c == null) throw new IllegalArgumentException("Customer not found");
+                final String oldUsername = c.getUsername();
+
+                final Object lock = usernameLocks.computeIfAbsent(oldUsername, k -> new Object());
+                synchronized (lock) {
+                    if (dto.getName() != null) c.setName(dto.getName());
+                    if (dto.getUsername() != null) c.setUsername(dto.getUsername());
+                    if (dto.getPassword() != null) c.setPassword(dto.getPassword());
+                    if (dto.getNetworkAccount() != null) c.setNetworkAccount(dto.getNetworkAccount());
+                    if (newBranch != null) c.setBranch(newBranch);
+                    if (dto.getBudget() != null) c.setBudget(dto.getBudget());
+                    // (frozen) handled in admin_freeze_customer
+
+                    Customer managed = (Customer) session.merge(c);
+                    tx.commit();
+
+                    upsertUserCache(managed, oldUsername);
+
+                    client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
+                }
+            } else {
+                throw new IllegalArgumentException("Unknown userType");
+            }
+            System.out.println("DEBUG: updated user " + dto.getUsername());
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("admin_update_error", e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+
+
+    private UserAdminDTO toDTO(User u) {
+        UserAdminDTO dto = new UserAdminDTO();
+        dto.setId(u.getId());
+        dto.setName(u.getName());
+        dto.setUsername(u.getUsername());
+        dto.setBranchName(u.getBranch() != null ? u.getBranch().getName() : null);
+        dto.setNetworkAccount(u.isNetworkAccount());
+        dto.setLoggedIn(u.isLoggedIn());
+
+        if (u instanceof Employee) {
+            Employee e = (Employee) u;
+            dto.setUserType("EMPLOYEE");
+            dto.setRole(e.getRole());
+        } else if (u instanceof Customer) {
+            Customer c = (Customer) u;
+            dto.setUserType("CUSTOMER");
+            dto.setBudget(c.getBudget());
+            // assumes you added a 'frozen' boolean to Customer as discussed
+            try {
+                // if field exists
+                dto.setFrozen(c.isFrozen());
+            } catch (Throwable ignore) {}
+        } else {
+            dto.setUserType("USER");
+        }
+        return dto;
+    }
+
+    private Branch findBranchByName(Session session, String name) {
+        if (name == null || name.isBlank()) return null;
+        return session.createQuery("from Branch b where b.name = :n", Branch.class)
+                .setParameter("n", name.trim())
+                .uniqueResultOptional().orElse(null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleAdminListUsers(Message m, ConnectionToClient client, Session session) {
+        try {
+            String search = "";
+            int offset = 0, limit = 50;
+
+            Object payload = m.getObject();
+            if (payload instanceof Map) {
+                Map<String,Object> q = (Map<String,Object>) payload;
+                if (q.get("search") instanceof String){
+                    String s = (String) q.get("search");
+                    search = s.trim();
+                }
+                if (q.get("offset") instanceof Number){
+                    Number o = (Number) q.get("offset");
+                    offset = Math.max(0, o.intValue());
+                }
+                if (q.get("limit") instanceof Number){
+                    Number l = (Number) q.get("limit");
+                    limit = Math.max(1, l.intValue());
+                }
+            }
+
+            String jpql = "select u from User u left join fetch u.branch"
+                    + (search.isBlank() ? "" : " where lower(u.username) like :like");
+
+            var query = session.createQuery(jpql, User.class);
+            if (!search.isBlank()) query.setParameter("like", "%" + search.toLowerCase() + "%");
+
+            List<User> users = query.getResultList();
+
+            // Map to DTOs
+            List<UserAdminDTO> all = new ArrayList<>(users.size());
+            for (User u : users) all.add(toDTO(u));
+
+            // Sort + page
+            all.sort(Comparator.comparing(d -> {
+                String un = d.getUsername();
+                return un == null ? "" : un.toLowerCase();
+            }));
+
+            int total = all.size();
+            int from  = Math.min(offset, total);
+            int to    = Math.min(from + limit, total);
+
+            Map<String,Object> page = new HashMap<>();
+            page.put("rows", new ArrayList<>(all.subList(from, to))); // <-- Serializable
+            page.put("total", total);
+
+            client.sendToClient(new Message("admin_users_page", page, null));
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("admin_users_error", e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+
+
+
+
+    private void handleLogout(ConnectionToClient client, Session session, Message message) {
+        final String username = (message != null && message.getObject() instanceof String)
+                ? ((String) message.getObject()).trim()
+                : null;
+
+        if (username == null || username.isBlank()) {
+            try { client.sendToClient(new Message("logout_error", "Missing username", null)); }
+            catch (IOException ignored) {}
+            return;
+        }
+
+        final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
+
+        synchronized (lock) {
+            User cached = userCache.get(username);
+            if (cached == null) {
+                try { client.sendToClient(new Message("logout_error", "User not found in cache", null)); }
+                catch (IOException ignored) {}
+                return;
+            }
+            if (!cached.isLoggedIn()) {
+                try { client.sendToClient(new Message("logout_success", username, null)); }
+                catch (IOException ignored) {}
+                return;
+            }
+
+            Transaction tx = session.beginTransaction();
+            try {
+                cached.setLoggedIn(false);
+                User managed = (User) session.merge(cached);
+                tx.commit();
+
+                // keep cache updated
+                upsertUserCache(managed, username);
+
+                try { client.sendToClient(new Message("logout_success", username, null)); }
+                catch (IOException ignored) {}
+            } catch (Exception e) {
+                if (tx.isActive()) tx.rollback();
+                e.printStackTrace();
+                try { client.sendToClient(new Message("logout_error", "Exception: " + e.getMessage(), null)); }
+                catch (IOException ignored) {}
+            }
+        }
+    }
 
 
     private void handleGetComplaintsCount(ConnectionToClient client, Session session) {
@@ -654,9 +950,19 @@ public class SimpleServer extends AbstractServer {
                 return;
             }
 
-            session.merge(user);
-            if (customer != null) session.merge(customer);
-            tx.commit();
+            // Lock using current (old) username; capture it in case it changes
+            final String oldUsername = user.getUsername();
+            final Object lock = usernameLocks.computeIfAbsent(oldUsername, k -> new Object());
+
+            User mergedUser;
+            synchronized (lock) {
+                mergedUser = (User) session.merge(user);
+                if (customer != null) session.merge(customer);
+                tx.commit();
+
+                // (Possibly) move cache key if username changed
+                upsertUserCache(mergedUser, oldUsername);
+            }
 
             client.sendToClient(new Message("profile_updated_success", null, null));
         } catch (Exception e) {
@@ -668,6 +974,7 @@ public class SimpleServer extends AbstractServer {
             } catch (IOException ignored) {}
         }
     }
+
 
     @SuppressWarnings("unchecked")
     private void handleDeleteProduct(Message msg, ConnectionToClient client, Session session) {
@@ -829,11 +1136,15 @@ public class SimpleServer extends AbstractServer {
             }
             Transaction tx = session.beginTransaction();
             try {
-                User user = (User) msg.getObject();
-                session.save(user);
+                User incoming = (User) msg.getObject();
+                session.save(incoming);
+                // Obtain managed fresh state
+                User managed = session.get(User.class, incoming.getId());
                 tx.commit();
 
-                userCache.putIfAbsent(user.getUsername(), user);
+                // cache + lock ready for this username
+                upsertUserCache(managed, null);
+
                 client.sendToClient(new Message("registered", null, null));
             } catch (Exception e) {
                 if (tx.isActive()) tx.rollback();
@@ -843,6 +1154,7 @@ public class SimpleServer extends AbstractServer {
             }
         }
     }
+
 
     private void handleCatalogRequest(ConnectionToClient client) {
         try {
@@ -940,26 +1252,56 @@ public class SimpleServer extends AbstractServer {
         subscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
     }
 
-    private void handleUserAuthentication(Message msg, ConnectionToClient client, Session session) throws Exception {
+    private void handleUserAuthentication(Message msg, ConnectionToClient client, Session session) {
         try {
+            if (msg == null || !(msg.getObject() instanceof List)) {
+                try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
+                return;
+            }
             @SuppressWarnings("unchecked")
             List<String> info = (List<String>) msg.getObject();
-            String username = info.get(0);
-            String password = info.get(1);
+            if (info.size() < 2) {
+                try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
+                return;
+            }
 
-            User user = userCache.get(username);
+            final String username = info.get(0);
+            final String password = info.get(1);
+            final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
 
-            if (user == null) {
-                System.out.println("user not found");
-                client.sendToClient(new Message("incorrect", null, null));
-            } else {
-                if (user.getPassword().equals(password)) {
-                    System.out.println(user.getUsername());
-                    System.out.println(user.getPassword());
-                    client.sendToClient(new Message("correct", user, null));
-                } else {
+            synchronized (lock) {
+                User cached = userCache.get(username);
+                if (cached == null) {
+                    System.out.println("user not found");
+                    try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
+                    return;
+                }
+                if (!Objects.equals(cached.getPassword(), password)) {
                     System.out.println("Incorrect password");
-                    client.sendToClient(new Message("incorrect", null, null));
+                    try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
+                    return;
+                }
+                if (cached.isLoggedIn()) {
+                    try { client.sendToClient(new Message("already_logged", null, null)); } catch (IOException ignored) {}
+                    return;
+                }
+
+                Transaction tx = session.beginTransaction();
+                try {
+                    cached.setLoggedIn(true);
+                    User managed = (User) session.merge(cached);
+                    tx.commit();
+
+                    // keep cache consistent with DB state
+                    upsertUserCache(managed, username);
+
+                    System.out.println(cached.getUsername());
+                    System.out.println(cached.getPassword());
+                    try { client.sendToClient(new Message("correct", managed, null)); } catch (IOException ignored) {}
+                } catch (Exception e) {
+                    if (tx.isActive()) tx.rollback();
+                    e.printStackTrace();
+                    try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
                 }
             }
         } catch (Exception e) {
@@ -973,6 +1315,8 @@ public class SimpleServer extends AbstractServer {
             }
         }
     }
+
+
 
     public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,
                                  double newPrice, double newDiscount, String newType, String newImagePath) {

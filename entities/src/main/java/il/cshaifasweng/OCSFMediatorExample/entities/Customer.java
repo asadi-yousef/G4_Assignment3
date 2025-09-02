@@ -2,6 +2,7 @@ package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
@@ -27,6 +28,10 @@ public class Customer extends User implements Serializable {
     private String city;
     @Column
     private String country;
+    @Column
+    private BigDecimal budget;
+    @Column
+    private boolean frozen = false;
 
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private CreditCard creditCard;
@@ -37,7 +42,6 @@ public class Customer extends User implements Serializable {
     // Cart logic from first file
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private Cart cart;
-
 
     public Customer() {
         super();
@@ -56,6 +60,7 @@ public class Customer extends User implements Serializable {
         this.country = country;
         this.creditCard = new CreditCard(cardNumber, expirationMonth, expirationYear, cvv, this);
         this.subscription = new Subscription(subStartDate, subExpDate, true, this);
+        this.budget = BigDecimal.ZERO;
     }
 
 
@@ -98,4 +103,19 @@ public class Customer extends User implements Serializable {
         this.cart = cart;
         if (cart != null) cart.setCustomer(this);
     }
+    public BigDecimal getBudget() {
+        return budget;
+    }
+    public void setBudget(BigDecimal budget) {
+        this.budget = budget;
+    }
+    public void substractBudget(double amount) {
+        BigDecimal sub = BigDecimal.valueOf(amount);
+        this.budget = this.budget.subtract(sub);
+    }
+    public void substractBudget(BigDecimal amount) {
+        this.budget = this.budget.subtract(amount);
+    }
+    public boolean isFrozen() { return frozen; }
+    public void setFrozen(boolean frozen) { this.frozen = frozen; }
 }

@@ -24,6 +24,7 @@ public class User implements Serializable {
     protected Branch branch;
     @Column
     protected boolean isNetworkAccount;
+    protected boolean isLoggedIn;
 
     public User() {
 
@@ -35,6 +36,7 @@ public class User implements Serializable {
         this.password = password;
         this.branch = branch;
         this.isNetworkAccount = isNetworkAccount;
+        this.isLoggedIn = false;
     }
 
     public Long getId() {return id;}
@@ -49,4 +51,6 @@ public class User implements Serializable {
     public void setBranch(Branch branch) {this.branch = branch;}
     public boolean isNetworkAccount() {return isNetworkAccount;}
     public void setNetworkAccount(boolean isNetworkAccount) {this.isNetworkAccount = isNetworkAccount;}
+    public boolean isLoggedIn() {return isLoggedIn;}
+    public void setLoggedIn(boolean isLoggedIn) {this.isLoggedIn = isLoggedIn;}
 }
