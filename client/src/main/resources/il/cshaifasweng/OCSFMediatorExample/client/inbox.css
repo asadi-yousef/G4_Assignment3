@@ -1,0 +1,16 @@
+/* inbox.css */
+.list-cell { -fx-padding: 10 14; -fx-background-insets: 0; }
+.list-cell:filled:hover { -fx-background-color: rgba(0,0,0,0.04); }
+.list-cell:filled:selected { -fx-background-color: rgba(84,132,237,0.18); }
+
+.inbox-row { -fx-spacing: 10; -fx-alignment: CENTER_LEFT; }
+.inbox-title { -fx-font-size: 14px; -fx-font-weight: bold; }
+.inbox-snippet { -fx-text-fill: #666; }
+.inbox-date { -fx-text-fill: #555; -fx-font-size: 12px; }
+.unread .inbox-title { -fx-font-weight: 800; }
+.unread-dot {
+    -fx-background-color: #1a73e8;
+    -fx-background-radius: 6px;
+    -fx-min-width: 8px; -fx-min-height: 8px;
+}
+.status { -fx-padding: 6 10; -fx-text-fill: #555; }

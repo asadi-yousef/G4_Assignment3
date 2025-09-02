@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns="http://javafx.com/javafx/17.0.12"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="il.cshaifasweng.OCSFMediatorExample.client.InboxController"
+            stylesheets="@inbox.css">
+
+    <top>
+        <HBox spacing="8" style="-fx-padding:10;">
+            <Label text="My Inbox" style="-fx-font-size:18px; -fx-font-weight:bold;" />
+            <Region HBox.hgrow="ALWAYS"/> <!-- this is the correct hgrow usage -->
+            <Button text="Mark read"   onAction="#handleMarkRead"/>
+            <Button text="Mark unread" onAction="#handleMarkUnread"/>
+            <Button text="Refresh"     onAction="#handleRefresh"/>
+            <Button text="Back"        onAction="#handleBack"/>
+        </HBox>
+    </top>
+
+    <center>
+        <TabPane fx:id="tabPane">
+            <tabs>
+                <Tab text="My Inbox" closable="false">
+                    <BorderPane>
+                        <center>
+                            <ListView fx:id="personalList"/>
+                        </center>
+                    </BorderPane>
+                </Tab>
+                <Tab text="Announcements" closable="false">
+                    <BorderPane>
+                        <center>
+                            <ListView fx:id="broadcastList"/>
+                        </center>
+                    </BorderPane>
+                </Tab>
+            </tabs>
+        </TabPane>
+    </center>
+
+    <bottom>
+        <Label fx:id="statusLabel" styleClass="status"/>
+    </bottom>
+</BorderPane>

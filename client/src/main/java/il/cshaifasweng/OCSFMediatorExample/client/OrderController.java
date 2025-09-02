@@ -106,6 +106,32 @@ public class OrderController implements Initializable {
                 new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 23, 12)
         );
 
+        // 🔹 Disable past dates in DatePicker
+        deliveryDatePicker.setDayCellFactory(picker -> new DateCell() {
+            @Override
+            public void updateItem(LocalDate date, boolean empty) {
+                super.updateItem(date, empty);
+                if (empty || date.isBefore(LocalDate.now())) {
+                    setDisable(true);
+                    setStyle("-fx-background-color: #EEEEEE;");
+                }
+            }
+        });
+
+        // 🔹 Adjust available hours when a date is picked
+        deliveryDatePicker.valueProperty().addListener((obs, oldDate, newDate) -> {
+            if (newDate != null && newDate.equals(LocalDate.now())) {
+                int currentHour = LocalDateTime.now().getHour();
+                deliveryHourSpinner.setValueFactory(
+                        new SpinnerValueFactory.IntegerSpinnerValueFactory(currentHour, 23, Math.max(currentHour, 12))
+                );
+            } else {
+                deliveryHourSpinner.setValueFactory(
+                        new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 23, 12)
+                );
+            }
+        });
+
         // Recipient phone enabled only if different recipient is checked
         recipientPhoneField.setDisable(true);
         differentRecipientCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
@@ -229,6 +255,12 @@ public class OrderController implements Initializable {
                     return;
                 }
                 deliveryTime = date.atTime(hour != null ? hour : 12, 0);
+
+                // 🔹 Final validation: block past times
+                if (deliveryTime.isBefore(LocalDateTime.now())) {
+                    showAlert("Invalid Time", "Please select a future time.");
+                    return;
+                }
 
                 deliveryAddress = deliveryAddressField.getText();
                 if (deliveryAddress == null || deliveryAddress.trim().isEmpty()) {

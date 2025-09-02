@@ -26,26 +26,28 @@ public class App {
                     cfg.setProperty("hibernate.connection.password", pw);
                 }
 
-                // Register all entities
-                cfg.addAnnotatedClass(Product.class);
-                cfg.addAnnotatedClass(Customer.class);
-                cfg.addAnnotatedClass(User.class);
-                cfg.addAnnotatedClass(Employee.class);
-                cfg.addAnnotatedClass(Cart.class);
-                cfg.addAnnotatedClass(CartItem.class);
-                cfg.addAnnotatedClass(Branch.class);
-                cfg.addAnnotatedClass(CreditCard.class);
-                cfg.addAnnotatedClass(Subscription.class);
-                cfg.addAnnotatedClass(Order.class);
-                cfg.addAnnotatedClass(OrderItem.class);
-                cfg.addAnnotatedClass(Report.class);
-                cfg.addAnnotatedClass(OrdersReport.class);
-                cfg.addAnnotatedClass(IncomeReport.class);
-                cfg.addAnnotatedClass(ComplaintsReport.class);
-                cfg.addAnnotatedClass(OrderRequest.class);
-                cfg.addAnnotatedClass(CustomBouquet.class);
-                cfg.addAnnotatedClass(CustomBouquetItem.class);
-                cfg.addAnnotatedClass(Complaint.class);
+        // Register ALL annotated entities explicitly
+        cfg.addAnnotatedClass(Product.class);
+        cfg.addAnnotatedClass(Customer.class);
+        cfg.addAnnotatedClass(User.class);
+        cfg.addAnnotatedClass(Employee.class);
+        cfg.addAnnotatedClass(Cart.class);
+        cfg.addAnnotatedClass(CartItem.class);
+        cfg.addAnnotatedClass(Branch.class);
+        cfg.addAnnotatedClass(CreditCard.class);
+        cfg.addAnnotatedClass(Subscription.class);
+        cfg.addAnnotatedClass(Order.class);
+        cfg.addAnnotatedClass(OrderItem.class);
+        cfg.addAnnotatedClass(Report.class);
+        cfg.addAnnotatedClass(OrdersReport.class);
+        cfg.addAnnotatedClass(IncomeReport.class);
+        cfg.addAnnotatedClass(ComplaintsReport.class);
+        cfg.addAnnotatedClass(OrderRequest.class);
+        cfg.addAnnotatedClass(CustomBouquet.class);
+        cfg.addAnnotatedClass(CustomBouquetItem.class);
+        // 👇 IMPORTANT: Complaint must be mapped
+        cfg.addAnnotatedClass(Complaint.class);
+        cfg.addAnnotatedClass(Notification.class);
 
                 ServiceRegistry registry = new StandardServiceRegistryBuilder()
                         .applySettings(cfg.getProperties())

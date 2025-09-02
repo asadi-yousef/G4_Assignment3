@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="il.cshaifasweng.OCSFMediatorExample.client.CancelOrderController"
+      spacing="20"
+      alignment="TOP_CENTER"
+      style="-fx-background-color: #fafafa; -fx-padding: 30; -fx-background-radius: 10;">
+
+    <Label text="Cancel Order"
+           style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #e74c3c;" />
+
+    <VBox spacing="5" alignment="CENTER_LEFT" style="-fx-background-color: #ffffff; -fx-padding: 15; -fx-background-radius: 8; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
+        <Label fx:id="orderIdLabel" text="Order ID: " style="-fx-font-weight: bold; -fx-font-size: 16;" />
+        <Label fx:id="orderDateLabel" text="Order Date: " style="-fx-font-size: 14;" />
+        <Label fx:id="deliveryDateLabel" text="Delivery Date: " style="-fx-font-size: 14;" />
+        <Label fx:id="compensationLabel" text="Compensation: —" style="-fx-font-size: 14;" />
+    </VBox>
+
+    <Label text="Are you sure you want to cancel this order?"
+           style="-fx-font-size: 16;" wrapText="true" />
+
+    <HBox spacing="15" alignment="CENTER">
+        <Button fx:id="confirmButton" text="Confirm" onAction="#handleConfirmCancel"
+                style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold; -fx-padding: 8 20; -fx-background-radius: 8;" />
+        <Button fx:id="backButton" text="Back" onAction="#handleBack"
+                style="-fx-background-color: #bdc3c7; -fx-text-fill: black; -fx-font-weight: bold; -fx-padding: 8 20; -fx-background-radius: 8;" />
+    </HBox>
+
+</VBox>
