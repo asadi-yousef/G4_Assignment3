@@ -10,6 +10,7 @@ import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
 import org.greenrobot.eventbus.EventBus;
 import javafx.scene.control.DateCell;
+import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -17,7 +18,6 @@ import java.math.RoundingMode;
 import java.net.URL;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class ReportsViewController implements Initializable {
@@ -34,13 +34,30 @@ public class ReportsViewController implements Initializable {
     @FXML private Button backToCatalogButton;
 
     private ToggleGroup reportTypeGroup;
+    private List<Branch> branches;
+
+    // name -> id map (keeps ComboBox<String> simple but lets us send the ID)
+    private final Map<String, Long> branchNameToId = new HashMap<>();
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-        // Role gate (same logic as before)
-        if (!(isSystemManager()||isBranchManager())) {
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this);
+        }
+
+        if (!(isSystemManager() || isBranchManager())) {
             showInfo("Permission Denied", "You do not have permission to view reports.");
             return;
+        }
+
+        // Request branches (open connection first)
+        try {
+            if (!SimpleClient.getClient().isConnected()) {
+                SimpleClient.getClient().openConnection();
+            }
+            SimpleClient.getClient().sendToServer(new Message("request_branches", null, null));
+        } catch (Exception e) {
+            System.err.println("Failed to request branches: " + e.getMessage());
         }
 
         // Radio group
@@ -56,13 +73,11 @@ public class ReportsViewController implements Initializable {
         LocalDate lastOfMonth  = today.withDayOfMonth(today.lengthOfMonth());
 
         if (isSystemManager()) {
-            // System Manager: all branches + any dates
-            loadBranchesForSystemManager(); // below
+            // branches will be populated when the server responds (onBranches -> loadBranchesForSystemManager)
             startDatePicker.setValue(today.minusMonths(1));
             endDatePicker.setValue(today);
-            // allow full range
         } else if (isBranchManager()) {
-            // Branch Manager: only their branch + this month only
+            // Pre-fill with manager's branch name; will be hardened when branches arrive
             String myBranchName = Optional.ofNullable(currentUserBranchName()).orElse("My Branch");
             branchComboBox.getItems().setAll(myBranchName);
             branchComboBox.getSelectionModel().selectFirst();
@@ -74,17 +89,59 @@ public class ReportsViewController implements Initializable {
             restrictDatePickerToMonth(startDatePicker, firstOfMonth, lastOfMonth);
             restrictDatePickerToMonth(endDatePicker, firstOfMonth, lastOfMonth);
         } else {
-            // Others: no access
             showInfo("Permission Denied", "You do not have permission to view reports.");
         }
+
         reportOutput.setText("Pick a type, branch and dates, then click Generate.");
         clearChart();
     }
 
     private void loadBranchesForSystemManager() {
-        // TODO replace with server fetch if you have it
-        branchComboBox.getItems().setAll("All Branches", "Haifa", "Tel Aviv", "Jerusalem");
-        branchComboBox.getSelectionModel().selectFirst();
+        branchComboBox.getItems().clear();
+        branchNameToId.clear();
+
+        if (isSystemManager()) {
+            // Offer "All Branches"
+            branchComboBox.getItems().add("All Branches");
+            branchNameToId.put("All Branches", null);
+        }
+
+        if (branches != null) {
+            for (Branch branch : branches) {
+                if (branch == null) continue;
+                String name = branch.getName();
+                Long id = null;
+                try {
+                    Object rawId = branch.getId(); // supports Long/Integer/String
+                    if (rawId instanceof Number) id = ((Number) rawId).longValue();
+                    else if (rawId != null) id = Long.valueOf(rawId.toString());
+                } catch (Exception ignored) {}
+                if (name != null) {
+                    branchComboBox.getItems().add(name);
+                    branchNameToId.put(name, id);
+                }
+            }
+        }
+
+        // If branch manager, lock to their branch (from delivered list) and keep disabled
+        if (isBranchManager()) {
+            String myBranchName = Optional.ofNullable(currentUserBranchName()).orElse(null);
+            if (myBranchName != null) {
+                // Ensure the map has an entry for their branch even if server's name capitalization differs
+                for (String name : new ArrayList<>(branchNameToId.keySet())) {
+                    if (name.equalsIgnoreCase(myBranchName)) {
+                        myBranchName = name;
+                        break;
+                    }
+                }
+                branchComboBox.getItems().setAll(myBranchName);
+            }
+            branchComboBox.setDisable(true);
+        }
+
+        if (!branchComboBox.getItems().isEmpty()) {
+            branchComboBox.getSelectionModel().selectFirst();
+        }
     }
 
     private void restrictDatePickerToMonth(DatePicker dp, LocalDate first, LocalDate last) {
@@ -97,16 +154,15 @@ public class ReportsViewController implements Initializable {
         });
     }
 
-
     @FXML
     private void onGenerate() {
-        // Allow roles: SYSTEM_MANAGER or BRANCH_MANAGER
         if (!(isSystemManager() || isBranchManager())) {
             showInfo("Permission Denied", "You do not have permission to view reports.");
             return;
         }
 
         String branch = Optional.ofNullable(branchComboBox.getValue()).orElse("All Branches");
+        Long branchId = branchNameToId.get(branch); // may be null for "All Branches" or if not loaded yet
         LocalDate start = startDatePicker.getValue();
         LocalDate end   = endDatePicker.getValue();
 
@@ -128,125 +184,172 @@ public class ReportsViewController implements Initializable {
             }
         }
 
+        // Build criteria for server
+        Map<String, Object> criteria = new HashMap<>();
+        criteria.put("branchId", branchId);                               // send the id (null => all branches)
+        criteria.put("branch", (branchId == null) ? null : branch);       // optional fallback by name
+        criteria.put("from", start.atStartOfDay());
+        criteria.put("to",   end.plusDays(1).atStartOfDay()); // exclusive upper bound
+
+        // UI feedback
         clearChart();
-        reportOutput.clear();
+        reportOutput.setText("Fetching " + (incomeReportBtn.isSelected() ? "income" : ordersReportBtn.isSelected() ? "orders" : "complaints")
+                + " for " + branch + " (" + start + " → " + end + ")...");
 
-        if (incomeReportBtn.isSelected()) {
-            IncomeReport r = new IncomeReport(
-                    0, branch, 0L,
-                    start.atStartOfDay(), end.plusDays(1).atStartOfDay(),
-                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0
-            );
-            r.generate();
-            renderIncomeReport(r);
+        try {
+            if (!SimpleClient.getClient().isConnected()) {
+                SimpleClient.getClient().openConnection();
+            }
+            String key =
+                    incomeReportBtn.isSelected() ? "request_report_income" :
+                            ordersReportBtn.isSelected() ? "request_report_orders" :
+                                    "request_report_complaints";
 
-        } else if (ordersReportBtn.isSelected()) {
-            OrdersReport r = new OrdersReport(
-                    0, branch, 0L,
-                    start.atStartOfDay(), end.plusDays(1).atStartOfDay(),
-                    0, 0, 0, new HashMap<>()
-            );
-            r.generate();
-            renderOrdersReport(r);
-
-        } else if (complaintsReportBtn.isSelected()) {
-            ComplaintsReport r = new ComplaintsReport(
-                    0, branch, 0L,
-                    start.atStartOfDay(), end.plusDays(1).atStartOfDay(),
-                    new HashMap<>(), 0, 0, 0, null
-            );
-            r.generate();
-            renderComplaintsReport(r);
+            // Use Java 8-friendly empty list
+            SimpleClient.getClient().sendToServer(new Message(key, criteria, Collections.emptyList()));
+            System.out.println("DEBUG(onGenerate): sent " + key + " with " + criteria);
+        } catch (IOException e) {
+            showInfo("Connection Error", "Failed to reach server.");
         }
     }
 
-    // ---------- RENDERERS ----------
+    /* ===================== SUBSCRIBERS (NEW) ===================== */
 
-    private void renderIncomeReport(IncomeReport r) {
-        // Chart: Revenue vs Expenses vs Net Profit
-        XYChart.Series<String, Number> s = new XYChart.Series<>();
-        s.setName("Income Summary");
-        s.getData().add(new XYChart.Data<>("Revenue", r.getTotalRevenue().doubleValue()));
-        s.getData().add(new XYChart.Data<>("Expenses", r.getTotalExpenses().doubleValue()));
-        s.getData().add(new XYChart.Data<>("Net Profit", r.getNetProfit().doubleValue()));
-        barChart.getData().add(s);
+    @Subscribe
+    public void onIncomeReport(Message msg) {
+        if (msg == null || !"report_income_data".equals(msg.getMessage())) return;
+        Platform.runLater(() -> {
+            @SuppressWarnings("unchecked")
+            Map<String,Object> data = (Map<String,Object>) msg.getObject();
+            if (data == null) { noData(); return; }
 
-        String text =
-                "Income Report — " + r.getBranch_name() + "\n" +
-                        "Period: " + fmtDate(r.getStartDate()) + " → " + fmtDate(r.getEndDate()) + "\n\n" +
-                        "Total Revenue:  " + money(r.getTotalRevenue()) + "\n" +
-                        "Total Expenses: " + money(r.getTotalExpenses()) + "\n" +
-                        "Net Profit:     " + money(r.getNetProfit()) + "\n" +
-                        "Avg Daily Net:  " + money(r.getAvgDailyNetProfit()) + "\n" +
-                        "Transactions:   " + r.getTotalTransactions() + "\n";
-        reportOutput.setText(text);
+            @SuppressWarnings("unchecked")
+            Map<String, Number> hist = (Map<String, Number>) data.getOrDefault("histogram", Collections.emptyMap());
+            Number totalRevenue = (Number) data.getOrDefault("totalRevenue", 0d);
+            Number totalExpenses = (Number) data.getOrDefault("totalExpenses", 0d);
+            Number netProfit = (Number) data.getOrDefault("netProfit", 0d);
+            Number avgDailyNet = (Number) data.getOrDefault("avgDailyNet", 0d);
+            Number transactions = (Number) data.getOrDefault("transactions", 0);
+
+            if (hist.isEmpty()) { noData(); return; }
+
+            clearChart();
+            XYChart.Series<String, Number> s = new XYChart.Series<>();
+            s.setName("Daily Revenue (₪)");
+            for (Map.Entry<String, Number> e : hist.entrySet()) {
+                s.getData().add(new XYChart.Data<>(e.getKey(), e.getValue()));
+            }
+            barChart.getData().add(s);
+
+            reportOutput.setText(
+                    "Income Report\n\n" +
+                            "Total Revenue:  " + money(numToBD(totalRevenue)) + "\n" +
+                            "Total Expenses: " + money(numToBD(totalExpenses)) + "\n" +
+                            "Net Profit:     " + money(numToBD(netProfit)) + "\n" +
+                            "Avg Daily Net:  " + money(numToBD(avgDailyNet)) + "\n" +
+                            "Transactions:   " + transactions
+            );
+        });
+
     }
 
-    private void renderOrdersReport(OrdersReport r) {
-        // Chart: histogram by type
-        XYChart.Series<String, Number> s = new XYChart.Series<>();
-        s.setName("Orders by Type");
-        if (r.getTypeHistogram() != null) {
-            r.getTypeHistogram().forEach((type, count) -> s.getData().add(new XYChart.Data<>(type, count)));
+    @Subscribe
+    public void onOrdersReport(Message msg) {
+        if (msg == null || !"report_orders_data".equals(msg.getMessage())) return;
+        Platform.runLater(() -> {
+            @SuppressWarnings("unchecked")
+            Map<String,Object> data = (Map<String,Object>) msg.getObject();
+            if (data == null) { noData(); return; }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Number> hist = (Map<String, Number>) data.getOrDefault("histogram", Collections.emptyMap());
+            Number total = (Number) data.getOrDefault("totalOrders", 0);
+            Number cancelled = (Number) data.getOrDefault("cancelled", 0);
+            Number net = (Number) data.getOrDefault("netOrders", 0);
+
+            if (hist.isEmpty()) { noData(); return; }
+
+            clearChart();
+            XYChart.Series<String, Number> s = new XYChart.Series<>();
+            s.setName("Orders by Item");
+            for (Map.Entry<String, Number> e : hist.entrySet()) {
+                s.getData().add(new XYChart.Data<>(e.getKey(), e.getValue()));
+            }
+            barChart.getData().add(s);
+
+            reportOutput.setText(
+                    "Orders Report\n\n" +
+                            "Total Orders: " + total + "\n" +
+                            "Cancelled:    " + cancelled + "\n" +
+                            "Net Orders:   " + net
+            );
+        });
+    }
+
+    @Subscribe
+    public void onComplaintsReport(Message msg) {
+        if (msg == null || !"report_complaints_data".equals(msg.getMessage())) return;
+        Platform.runLater(() -> {
+            @SuppressWarnings("unchecked")
+            Map<String,Object> data = (Map<String,Object>) msg.getObject();
+            if (data == null) { noData(); return; }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Number> hist = (Map<String, Number>) data.getOrDefault("histogram", Collections.emptyMap());
+            Number total = (Number) data.getOrDefault("total", 0);
+            Number resolved = (Number) data.getOrDefault("resolved", 0);
+            Number unresolved = (Number) data.getOrDefault("unresolved", 0);
+            String peakDay = Objects.toString(data.getOrDefault("peakDay","-"));
+
+            if (hist.isEmpty()) { noData(); return; }
+
+            clearChart();
+            XYChart.Series<String, Number> s = new XYChart.Series<>();
+            s.setName("Complaints per Day");
+            for (Map.Entry<String, Number> e : hist.entrySet()) {
+                s.getData().add(new XYChart.Data<>(e.getKey(), e.getValue()));
+            }
+            barChart.getData().add(s);
+
+            reportOutput.setText(
+                    "Complaints Report\n\n" +
+                            "Total:      " + total + "\n" +
+                            "Resolved:   " + resolved + "\n" +
+                            "Unresolved: " + unresolved + "\n" +
+                            "Peak Day:   " + peakDay
+            );
+        });
+    }
+
+    @Subscribe
+    public void onBranches(Message msg) {
+        if ("Branches".equals(msg.getMessage())) {
+            //noinspection unchecked
+            branches = (List<Branch>) msg.getObject();
+            Platform.runLater(this::loadBranchesForSystemManager);
         }
-        barChart.getData().add(s);
-
-        String text =
-                "Orders Report — " + r.getBranch_name() + "\n" +
-                        "Period: " + fmtDate(r.getStartDate()) + " → " + fmtDate(r.getEndDate()) + "\n\n" +
-                        "Total Orders:    " + r.getTotalOrders() + "\n" +
-                        "Cancelled:       " + r.getCancelledOrders() + "\n" +
-                        "Net Orders:      " + r.getNetOrders() + "\n";
-        reportOutput.setText(text);
     }
 
-    private void renderComplaintsReport(ComplaintsReport r) {
-        // Chart: complaints per day (format LocalDateTime → yyyy-MM-dd)
-        DateTimeFormatter df = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-        XYChart.Series<String, Number> s = new XYChart.Series<>();
-        s.setName("Complaints per Day");
-        if (r.getComplaintsHistogram() != null) {
-            r.getComplaintsHistogram().entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .forEach(e -> s.getData().add(new XYChart.Data<>(df.format(e.getKey()), e.getValue())));
-        }
-        barChart.getData().add(s);
-
-        String maxDate = (r.getMaxComplaintsDate() != null) ? df.format(r.getMaxComplaintsDate()) : "-";
-        String text =
-                "Complaints Report — " + r.getBranch_name() + "\n" +
-                        "Period: " + fmtDate(r.getStartDate()) + " → " + fmtDate(r.getEndDate()) + "\n\n" +
-                        "Total Complaints:    " + r.getTotalComplaints() + "\n" +
-                        "Resolved:            " + r.getResolvedComplaints() + "\n" +
-                        "Unresolved:          " + r.getUnresolvedComplaints() + "\n" +
-                        "Peak Complaints Day: " + maxDate + "\n";
-        reportOutput.setText(text);
+    private void noData() {
+        clearChart();
+        reportOutput.setText("No data for the selected filters.");
     }
 
-    // ---------- HELPERS ----------
+    /* ===================== HELPERS ===================== */
 
     private void clearChart() {
         if (barChart != null) barChart.getData().clear();
     }
 
-    private String fmtDate(LocalDateTime dt) {
-        if (dt == null) return "-";
-        return dt.toLocalDate().toString();
+    private BigDecimal numToBD(Number n) {
+        if (n == null) return BigDecimal.ZERO;
+        if (n instanceof BigDecimal) return (BigDecimal) n;
+        return BigDecimal.valueOf(n.doubleValue());
     }
 
     private String money(BigDecimal v) {
         return (v == null) ? "-" : v.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
-
-    /*private boolean isManager() {
-        User u = SessionManager.getInstance().getCurrentUser();
-        if (u == null) return false;
-        try {
-            Object role = u.getClass().getMethod("getRole").invoke(u);
-            return role != null && "MANAGER".equalsIgnoreCase(role.toString());
-        } catch (Exception ignored) { }
-        return false;
-    }*/
 
     private void showInfo(String title, String msg) {
         Platform.runLater(() -> {
@@ -258,29 +361,18 @@ public class ReportsViewController implements Initializable {
     private String userRole() {
         User u = SessionManager.getInstance().getCurrentUser();
         if (u == null) return "";
-        try { Object r = u.getClass().getMethod("getRole").invoke(u);
-            return r == null ? "" : r.toString(); } catch (Exception e) { return ""; }
+        try {
+            Object r = u.getClass().getMethod("getRole").invoke(u);
+            return r == null ? "" : r.toString();
+        } catch (Exception e) { return ""; }
     }
 
     private boolean isSystemManager() {
-        return "system_manager".equalsIgnoreCase(userRole());
+        return "manager".equalsIgnoreCase(userRole());
     }
 
     private boolean isBranchManager() {
-        return "manager".equalsIgnoreCase(userRole()) ||
-                "MANAGER".equalsIgnoreCase(userRole()); // if your older role name was MANAGER
-    }
-
-    // Try common method names to discover the manager's branch id/name
-    private Long currentUserBranchId() {
-        User u = SessionManager.getInstance().getCurrentUser();
-        if (u == null) return null;
-        for (String m : List.of("getBranchId","getStoreId","getBranch_id")) {
-            try { Object v = u.getClass().getMethod(m).invoke(u);
-                if (v instanceof Number) return ((Number)v).longValue();
-            } catch (Exception ignored) {}
-        }
-        return null;
+        return "branchmanager".equalsIgnoreCase(userRole());
     }
 
     private String currentUserBranchName() {
@@ -300,7 +392,7 @@ public class ReportsViewController implements Initializable {
             if (EventBus.getDefault().isRegistered(this)) {
                 EventBus.getDefault().unregister(this);
             }
-            App.setRoot("primary"); // or whatever your main screen id is
+            App.setRoot("primary");
             System.out.println("Navigated back to primary");
         } catch (IOException e) {
             e.printStackTrace();

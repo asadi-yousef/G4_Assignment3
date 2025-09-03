@@ -206,6 +206,14 @@ public class SimpleServer extends AbstractServer {
                 else if ("create_broadcast".equals(key)) {
                     handleCreateBroadcast(m, client, session);
                 }
+                else if ("request_report_income".equals(key)) {
+                    handleReportIncome(m, client, session);
+                } else if ("request_report_orders".equals(key)) {
+                    handleReportOrders(m, client, session);
+                } else if ("request_report_complaints".equals(key)) {
+                    handleReportComplaints(m, client, session);
+                }
+
                 else {
                     System.out.println("[WARN] Unhandled key: " + key);
                 }
@@ -533,7 +541,215 @@ public class SimpleServer extends AbstractServer {
             }
         }
     }
+    @SuppressWarnings("unchecked")
+    private void handleReportComplaints(Message m, ConnectionToClient client, Session session) {
+        try {
+            Map<String,Object> crit = (Map<String,Object>) m.getObject();
+            LocalDateTime from  = (LocalDateTime) crit.get("from");
+            LocalDateTime to    = (LocalDateTime) crit.get("to");
+            String branch       = crit.get("branch") == null ? null : crit.get("branch").toString();
 
+            StringBuilder hql = new StringBuilder(
+                    "SELECT c FROM Complaint c " +
+                            "LEFT JOIN FETCH c.branch b " +
+                            "WHERE 1=1 "
+            );
+            if (from != null)  hql.append("AND c.submittedAt >= :from ");
+            if (to != null)    hql.append("AND c.submittedAt < :to ");
+            if (branch != null && !branch.isBlank()) hql.append("AND b.name = :branch ");
+            hql.append("ORDER BY c.submittedAt ASC");
+
+            var q = session.createQuery(hql.toString(), Complaint.class);
+            if (from != null)  q.setParameter("from", from);
+            if (to != null)    q.setParameter("to", to);
+            if (branch != null && !branch.isBlank()) q.setParameter("branch", branch);
+
+            List<Complaint> list = q.getResultList();
+
+            Map<String, Long> perDay = new TreeMap<>();
+            long resolved = 0;
+            for (Complaint c : list) {
+                String day = (c.getSubmittedAt() == null ? "unknown" : c.getSubmittedAt().toLocalDate().toString());
+                perDay.merge(day, 1L, Long::sum);
+                if (Boolean.TRUE.equals(c.isResolved())) resolved++;
+            }
+            long total = list.size();
+            long unresolved = total - resolved;
+            String peakDay = perDay.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey).orElse("-");
+
+            Map<String,Object> payload = new HashMap<>();
+            payload.put("histogram", perDay);
+            payload.put("total", total);
+            payload.put("resolved", resolved);
+            payload.put("unresolved", unresolved);
+            payload.put("peakDay", peakDay);
+
+            sendMsg(client, new Message("report_complaints_data", payload, null), "report_complaints");
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("report_complaints_data", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleReportOrders(Message m, ConnectionToClient client, Session session) {
+        try {
+            Map<String,Object> crit = (Map<String,Object>) m.getObject();
+            LocalDateTime from  = (LocalDateTime) crit.get("from");
+            LocalDateTime to    = (LocalDateTime) crit.get("to");
+            String branch       = crit.get("branch") == null ? null : crit.get("branch").toString();
+
+            List<Order> orders = fetchOrdersForRange(session, from, to, branch);
+
+            Map<String, Integer> hist = new TreeMap<>();
+            int totalOrders = orders.size();
+            int cancelled = 0; // TODO: if you track status, compute cancelled count
+            int netOrders = totalOrders - cancelled;
+
+            for (Order o : orders) {
+                if (o.getItems() == null) continue;
+                for (OrderItem it : o.getItems()) {
+                    String key;
+                    if (it.getProduct() != null && it.getProduct().getName() != null) {
+                        key = it.getProduct().getName();
+                    } else if (it.getCustomBouquet() != null) {
+                        key = "Custom Bouquet";
+                    } else {
+                        key = "Unknown";
+                    }
+                    int qty = Math.max(1, it.getQuantity());
+                    hist.merge(key, qty, Integer::sum);
+                }
+            }
+
+            Map<String,Object> payload = new HashMap<>();
+            payload.put("histogram", hist);
+            payload.put("totalOrders", totalOrders);
+            payload.put("cancelled", cancelled);
+            payload.put("netOrders", netOrders);
+
+            sendMsg(client, new Message("report_orders_data", payload, null), "report_orders");
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("report_orders_data", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleReportIncome(Message m, ConnectionToClient client, Session session) {
+        try {
+            Map<String,Object> crit = (Map<String,Object>) m.getObject();
+            LocalDateTime from  = (LocalDateTime) crit.get("from");
+            LocalDateTime to    = (LocalDateTime) crit.get("to");
+            String branch       = crit.get("branch") == null ? null : crit.get("branch").toString();
+
+            List<Order> orders = fetchOrdersForRange(session, from, to, branch);
+
+            Map<String, Double> perDay = new TreeMap<>();
+            double totalRevenue = 0.0;
+            for (Order o : orders) {
+                double orderTotal = 0.0;
+                if (o.getItems() != null) {
+                    for (OrderItem it : o.getItems()) {
+                        if (it == null) continue;
+                        if (it.getProduct() != null) {
+                            orderTotal += it.getProduct().getPrice() * it.getQuantity();
+                        } else if (it.getCustomBouquet() != null) {
+                            CustomBouquet cb = it.getCustomBouquet();
+                            double price = 0.0;
+                            if (cb.getTotalPrice() != null) {
+                                price = cb.getTotalPrice().doubleValue();
+                            } else if (cb.getItems() != null) {
+                                // sum snapshots if available
+                                price = cb.getItems().stream()
+                                        .mapToDouble(li -> {
+                                            var unit = li.getUnitPriceSnapshot();
+                                            return (unit == null ? 0.0 : unit.doubleValue()) * Math.max(0, li.getQuantity());
+                                        }).sum();
+                            }
+                            orderTotal += price * Math.max(1, it.getQuantity());
+                        }
+                    }
+                }
+                totalRevenue += orderTotal;
+                String day = (o.getOrderDate() == null ? "unknown" : o.getOrderDate().toLocalDate().toString());
+                perDay.merge(day, orderTotal, Double::sum);
+            }
+
+            double totalExpenses = 0.0; // plug your COGS later
+            double net = totalRevenue - totalExpenses;
+
+            long days = 1;
+            if (from != null && to != null) {
+                long d = java.time.temporal.ChronoUnit.DAYS.between(from.toLocalDate(), to.toLocalDate());
+                if (d > 0) days = d;
+            }
+            double avgDailyNet = net / days;
+
+            Map<String,Object> payload = new HashMap<>();
+            payload.put("histogram", perDay);
+            payload.put("totalRevenue", totalRevenue);
+            payload.put("totalExpenses", totalExpenses);
+            payload.put("netProfit", net);
+            payload.put("avgDailyNet", avgDailyNet);
+            payload.put("transactions", orders.size());
+
+            sendMsg(client, new Message("report_income_data", payload, null), "report_income");
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("report_income_data", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
+    private List<Order> fetchOrdersForRange(Session session, LocalDateTime from, LocalDateTime to, String branch) {
+        Transaction tx = session.getTransaction().isActive() ? session.getTransaction() : session.beginTransaction();
+        try {
+            StringBuilder hql = new StringBuilder(
+                    "SELECT DISTINCT o FROM Order o " +
+                            "LEFT JOIN FETCH o.items i " +
+                            "LEFT JOIN FETCH i.product p " +
+                            "LEFT JOIN FETCH i.customBouquet cb " +
+                            "WHERE 1=1 "
+            );
+            if (from != null)  hql.append("AND o.orderDate >= :from ");
+            if (to != null)    hql.append("AND o.orderDate < :to ");
+            if (branch != null && !branch.isBlank()) hql.append("AND o.branchName = :branch ");
+            hql.append("ORDER BY o.orderDate ASC");
+
+            var q = session.createQuery(hql.toString(), Order.class);
+            if (from != null)  q.setParameter("from", from);
+            if (to != null)    q.setParameter("to", to);
+            if (branch != null && !branch.isBlank()) q.setParameter("branch", branch);
+
+            List<Order> res = q.getResultList();
+
+            // hydrate bouquet items so totalPrice is valid, if needed
+            List<Long> bouquetIds = res.stream()
+                    .flatMap(o -> o.getItems().stream())
+                    .map(OrderItem::getCustomBouquet)
+                    .filter(Objects::nonNull)
+                    .map(CustomBouquet::getId)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (!bouquetIds.isEmpty()) {
+                session.createQuery(
+                                "SELECT DISTINCT cb FROM CustomBouquet cb " +
+                                        "LEFT JOIN FETCH cb.items li " +
+                                        "LEFT JOIN FETCH li.flower f " +
+                                        "WHERE cb.id IN :ids", CustomBouquet.class)
+                        .setParameter("ids", bouquetIds)
+                        .getResultList();
+            }
+
+            if (tx.isActive()) tx.commit();
+            return res;
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            throw e;
+        }
+    }
 
     private void handleGetComplaintsCount(ConnectionToClient client, Session session) {
         try {
