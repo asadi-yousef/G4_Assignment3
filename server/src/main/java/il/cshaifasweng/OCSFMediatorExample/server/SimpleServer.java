@@ -1,19 +1,11 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
 import il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO;
-
 import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
-import jakarta.persistence.criteria.CriteriaBuilder;
-import jakarta.persistence.criteria.CriteriaQuery;
-import jakarta.persistence.criteria.Root;
-
-
 import org.hibernate.Session;
 import org.hibernate.Transaction;
-
-import java.awt.event.ActionEvent;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -25,17 +17,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.math.BigDecimal;
-import java.time.Duration;
 import java.util.Map;
-import java.util.UUID;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.UUID;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+
 
 
 public class SimpleServer extends AbstractServer {
@@ -194,9 +177,6 @@ public class SimpleServer extends AbstractServer {
                 } else if ("ping_echo".equals(key)) {
                     sendMsg(client, new Message("pong", "ok", null), "ping_echo");
                 }
-                else if ("get_my_complaints".equals(key) || "get_customer_complaints".equals(key)) {
-                    handleGetMyComplaints(m, client, session);
-                }
                 else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
                 }
@@ -214,9 +194,6 @@ public class SimpleServer extends AbstractServer {
                     handleGetInbox(m, client, session);
                 } else if ("mark_notification_read".equals(key)) {
                     handleMarkNotificationRead(m, client, session);
-                }
-                else if ("mark_notification_unread".equals(key)) {
-                    handleMarkNotificationUnread(m, client, session);
                 }
                 else if ("mark_notification_unread".equals(key)) {
                     handleMarkNotificationUnread(m, client, session);
@@ -345,8 +322,6 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-
-
     private void handleAdminUpdateUser(Message m, ConnectionToClient client, Session session) {
         var dto = (UserAdminDTO) m.getObject();
         if (dto == null || dto.getId() == null || dto.getUserType() == null) {
@@ -415,8 +390,6 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
-
-
 
     private UserAdminDTO toDTO(User u) {
         UserAdminDTO dto = new UserAdminDTO();
@@ -499,7 +472,7 @@ public class SimpleServer extends AbstractServer {
             int to    = Math.min(from + limit, total);
 
             Map<String,Object> page = new HashMap<>();
-            page.put("rows", new ArrayList<>(all.subList(from, to))); // <-- Serializable
+            page.put("rows", new ArrayList<>(all.subList(from, to)));
             page.put("total", total);
 
             client.sendToClient(new Message("admin_users_page", page, null));
@@ -509,10 +482,6 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
-
-
-
-
 
     private void handleLogout(ConnectionToClient client, Session session, Message message) {
         final String username = (message != null && message.getObject() instanceof String)
@@ -1612,27 +1581,52 @@ public class SimpleServer extends AbstractServer {
     }
 
     private void handleProductEdit(Message msg, ConnectionToClient client, Session session) {
-        Product product = (Product) msg.getObject();
-        if (product == null) return;
+        Product incoming = (Product) msg.getObject();
+        if (incoming == null) return;
 
-        boolean updateSuccess = updateProduct(session, product.getId(),
-                product.getName(), product.getColor(), product.getPrice(),
-                product.getDiscountPercentage(), product.getType(), product.getImagePath());
+        // Persist (this already normalizes and copies the image into images/ if accessible)
+        boolean updateSuccess = updateProduct(session, incoming.getId(),
+                incoming.getName(), incoming.getColor(), incoming.getPrice(),
+                incoming.getDiscountPercentage(), incoming.getType(), incoming.getImagePath());
 
-        if (updateSuccess) {
-            // refresh in-memory catalog + propagate to open carts
-            catalogLock.writeLock().lock();
-            try {
-                catalog.setFlowers(getListFromDB(session, Product.class));
-            } finally {
-                catalogLock.writeLock().unlock();
-            }
-            propagateProductEditToOpenCarts(session, product.getId());
+        if (!updateSuccess) return;
 
-            try { sendToAllClients(new Message(msg.getMessage(), product, null)); }
-            catch (Exception ignored) {}
+        // Re-read the managed product so we have the final (possibly new) imagePath
+        Product managed = session.get(Product.class, incoming.getId());
+        if (managed == null) return;
+
+        // Refresh in-memory catalog + propagate to open carts
+        catalogLock.writeLock().lock();
+        try {
+            catalog.setFlowers(getListFromDB(session, Product.class));
+        } finally {
+            catalogLock.writeLock().unlock();
         }
+        propagateProductEditToOpenCarts(session, managed.getId());
+
+        // Try to attach image bytes (same idea as in handleAddProduct)
+        List<Object> payload = null;
+        try {
+            String sp = managed.getImagePath();
+            if (sp != null && !sp.isBlank()) {
+                File f = resolveServerImageFile(sp);
+                if (f != null && f.exists() && f.isFile()) {
+                    byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+                    if (bytes != null && bytes.length > 0) {
+                        payload = java.util.List.of(java.util.Map.of("imageBytes", bytes));
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("[editProduct] couldn't attach image bytes: " + ex.getMessage());
+        }
+
+        try {
+            // Use the managed product (with final imagePath) in the broadcast
+            sendToAllClients(new Message(msg.getMessage(), managed, payload));
+        } catch (Exception ignored) {}
     }
+
 
     private void propagateProductEditToOpenCarts(Session session, Long productId) {
         if (productId == null) return;

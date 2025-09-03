@@ -231,7 +231,9 @@ public class AdminUsersController {
     }
 
     @FXML
-    private void onLoadMore() { refresh(false); }
+    private void onLoadMore() {
+        refresh(true);
+    }
 
     @FXML
     private void onSaveSelected() {

@@ -20,9 +20,6 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
-import org.hibernate.Session;
-import org.hibernate.cache.internal.SimpleCacheKeysFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -438,20 +435,37 @@ public class PrimaryController implements Initializable {
 				case "editProduct": {
 					Product edited = safeCastProduct(msg.getObject());
 					if (edited != null) {
+						// NEW: accept imageBytes if server included them (mirror add_product)
+						if (msg.getObjectList() != null && !msg.getObjectList().isEmpty()) {
+							Object o = msg.getObjectList().get(0);
+							if (o instanceof byte[] bytes) {
+								IMAGE_CACHE.put(edited.getId(), bytes);
+								persistImageBytesFor(edited, bytes);
+							} else if (o instanceof Map<?,?> meta) {
+								Object bytes = ((Map<?,?>) meta).get("imageBytes");
+								if (bytes instanceof byte[] b) {
+									IMAGE_CACHE.put(edited.getId(), b);
+									persistImageBytesFor(edited, b);
+								}
+							}
+						}
+
 						applyUpsertToFull(edited);
 						rebuildDerivedCatalogsFromFull();
-						// if we already have bytes for this product, ensure the cache file name
-						// matches the (possibly new) imagePath filename
+
+						// keep your existing safety net
 						try {
 							byte[] b = IMAGE_CACHE.get(edited.getId());
 							if (b != null && b.length > 0) persistImageBytesFor(edited, b);
 						} catch (Exception ignored) {}
+
 						refreshViewKeepingMode();
 					} else {
 						fallbackReloadKeepingMode();
 					}
 					break;
 				}
+
 
 				case "delete_product": {
 					Long id = safeCastLong(msg.getObject());

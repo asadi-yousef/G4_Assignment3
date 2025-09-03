@@ -11,7 +11,6 @@ import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
 import java.net.URL;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.ResourceBundle;
 
@@ -76,8 +75,6 @@ public class CancelOrderController implements Initializable {
             confirmButton.setDisable(true);
         }
     }
-
-
 
     @FXML
     private void handleConfirmCancel() {
