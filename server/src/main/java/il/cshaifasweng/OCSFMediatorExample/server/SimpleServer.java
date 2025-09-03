@@ -1954,14 +1954,21 @@ public class SimpleServer extends AbstractServer {
                     try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
                     return;
                 }
-                if (!Objects.equals(cached.getPassword(), password)) {
+                else if (!Objects.equals(cached.getPassword(), password)) {
                     System.out.println("Incorrect password");
                     try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
                     return;
                 }
-                if (cached.isLoggedIn()) {
+                else if (cached.isLoggedIn()) {
                     try { client.sendToClient(new Message("already_logged", null, null)); } catch (IOException ignored) {}
                     return;
+                }
+                else if(cached instanceof Customer) {
+                    Customer customer = (Customer) cached;
+                    if(customer.isFrozen()) {
+                        client.sendToClient(new Message("frozen", null, null));
+                        return;
+                    }
                 }
 
                 Transaction tx = session.beginTransaction();

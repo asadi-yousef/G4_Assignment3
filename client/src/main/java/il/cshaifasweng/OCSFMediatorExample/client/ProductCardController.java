@@ -23,6 +23,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.ByteArrayInputStream;
 import java.net.URL;
+import java.text.NumberFormat;
+import java.util.Locale;
 import java.util.function.Consumer;
 
 public class ProductCardController {
@@ -34,7 +36,10 @@ public class ProductCardController {
     @FXML private Label nameLabel;
     @FXML private Label typeLabel;
     @FXML private Rectangle colorDisplayRect;
-    @FXML private HBox priceBox;
+
+    @FXML private HBox  priceBox;
+    @FXML private Label priceLabel;     // <-- now wired to the FXML label
+
     @FXML private HBox buttonBox;
     @FXML private Label saleBadge;
 
@@ -47,6 +52,9 @@ public class ProductCardController {
     private static final File LOCAL_IMAGE_CACHE_DIR =
             new File(System.getProperty("user.home"), ".ocsf_app/images").getAbsoluteFile();
 
+    private static final NumberFormat CURRENCY =
+            NumberFormat.getCurrencyInstance(new Locale("he", "IL")); // ₪ formatting
+
     @FXML
     public void initialize() {
         if (editVBox != null) {
@@ -56,43 +64,36 @@ public class ProductCardController {
         if (productImageView != null) {
             productImageView.setCache(false); // avoid node-level caching glitches
         }
-        // ensure cache dir exists (best-effort)
-        try { if (!LOCAL_IMAGE_CACHE_DIR.exists()) LOCAL_IMAGE_CACHE_DIR.mkdirs(); } catch (Exception ignored) {}
+        try {
+            if (!LOCAL_IMAGE_CACHE_DIR.exists()) LOCAL_IMAGE_CACHE_DIR.mkdirs();
+        } catch (Exception ignored) {}
     }
 
     private void populateDisplayData() {
+        if (currentProduct == null) return;
+
         nameLabel.setText(currentProduct.getName());
         typeLabel.setText("Type: " + currentProduct.getType());
 
+        // Image (bytes → cache → path)
         boolean setFromBytes = false;
-
-        // 1) Prefer image bytes pushed from server (works for remote clients)
         try {
-            if (currentProduct != null && currentProduct.getId() != null &&
+            if (currentProduct.getId() != null &&
                     PrimaryController.hasImageBytes(currentProduct.getId())) {
                 byte[] data = PrimaryController.getImageBytes(currentProduct.getId());
                 if (data != null && data.length > 0) {
-                    // also persist into local cache using the server's filename when possible
                     String fileName = fileNameFromPath(currentProduct.getImagePath());
                     if (fileName == null || fileName.isBlank()) {
                         fileName = currentProduct.getId() + ".img";
                     }
                     File cached = new File(LOCAL_IMAGE_CACHE_DIR, fileName);
-                    try (OutputStream os = new FileOutputStream(cached)) {
-                        os.write(data);
-                    } catch (Exception ignored) { /* caching is best-effort */ }
-
-                    // display (use cached file URI so Image can handle background loading if reused)
-                    try (InputStream is = new ByteArrayInputStream(data)) {
-                        productImageView.setImage(new Image(is));
-                    }
+                    try (OutputStream os = new FileOutputStream(cached)) { os.write(data); } catch (Exception ignored) {}
+                    try (InputStream is = new ByteArrayInputStream(data)) { productImageView.setImage(new Image(is)); }
                     setFromBytes = true;
                 }
             }
-        } catch (Exception ignore) { /* fallback below */ }
+        } catch (Exception ignore) {}
 
-        // 2) Fallback: use the stored path (for local/classpath images). For "images/<uuid>.*"
-        // we will look them up in ~/.ocsf_app/images/<uuid>.* first.
         if (!setFromBytes) {
             setImageFromPath(currentProduct.getImagePath());
         }
@@ -103,21 +104,41 @@ public class ProductCardController {
             colorDisplayRect.setFill(Color.GRAY);
         }
 
+        // -------- PRICE (reuses FXML priceLabel; no invisible ad-hoc labels) --------
         priceBox.getChildren().clear();
-        if (currentProduct.getDiscountPercentage() > 0) {
-            Text oldPriceText = new Text(String.format("$%.2f", currentProduct.getPrice()));
+        priceLabel.setVisible(true);
+        priceLabel.setManaged(true);
+
+        double price = currentProduct.getPrice();
+        double discountPct = currentProduct.getDiscountPercentage();
+        boolean discounted = discountPct > 0.0;
+
+        if (discounted) {
+            // Old price (Text uses -fx-fill, not -fx-text-fill)
+            Text oldPriceText = new Text(CURRENCY.format(price));
             oldPriceText.setStrikethrough(true);
-            oldPriceText.setFill(Color.GREY);
-            Label salePriceLabel = new Label(String.format("$%.2f", currentProduct.getSalePrice()));
-            salePriceLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #c0392b;");
-            salePriceLabel.setFont(new Font("Bell MT", 16));
-            priceBox.getChildren().addAll(oldPriceText, salePriceLabel);
+            oldPriceText.setStyle("-fx-fill: #7f8c8d;");
+
+            // Sale price (use the FXML label, style explicitly so scene-level CSS can't hide it)
+            double salePrice = currentProduct.getSalePrice();
+            priceLabel.setText(CURRENCY.format(salePrice));
+            priceLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #c0392b;");
+            priceLabel.setFont(new Font("Bell MT", 16));
+
+            priceBox.getChildren().addAll(oldPriceText, priceLabel);
+
             saleBadge.setVisible(true);
+            saleBadge.setManaged(true);
         } else {
-            Label price = new Label(String.format("$%.2f", currentProduct.getPrice()));
-            price.setFont(new Font("Bell MT", 16));
-            priceBox.getChildren().add(price);
+            // Regular price in the FXML label
+            priceLabel.setText(CURRENCY.format(price));
+            priceLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #2c3e50;");
+            priceLabel.setFont(new Font("Bell MT", 16));
+
+            priceBox.getChildren().add(priceLabel);
+
             saleBadge.setVisible(false);
+            saleBadge.setManaged(false);
         }
     }
 
@@ -128,7 +149,6 @@ public class ProductCardController {
      * - absolute filesystem path
      * - classpath resource (for seeded images)
      * - server-relative "images/<file>" via the local cache (~/.ocsf_app/images/<file>)
-     *   or, if still missing, try to retrieve bytes from PrimaryController and populate cache.
      */
     private void setImageFromPath(String path) {
         if (path == null || path.isBlank()) {
@@ -138,26 +158,20 @@ public class ProductCardController {
 
         Image img = null;
         try {
-            // Special-case: server-relative path → look in local cache
             if (path.startsWith("images/") || path.startsWith("\\images\\") || path.startsWith("/images/")) {
                 String fileName = fileNameFromPath(path);
                 if (fileName != null) {
                     File cached = new File(LOCAL_IMAGE_CACHE_DIR, fileName);
                     if (cached.exists()) {
-                        try (InputStream is = new FileInputStream(cached)) {
-                            img = new Image(is);
-                        }
+                        try (InputStream is = new FileInputStream(cached)) { img = new Image(is); }
                     } else {
-                        // last-resort: if server bytes available now, write them and load
                         try {
                             if (currentProduct != null && currentProduct.getId() != null &&
                                     PrimaryController.hasImageBytes(currentProduct.getId())) {
                                 byte[] data = PrimaryController.getImageBytes(currentProduct.getId());
                                 if (data != null && data.length > 0) {
                                     try (OutputStream os = new FileOutputStream(cached)) { os.write(data); }
-                                    try (InputStream is = new ByteArrayInputStream(data)) {
-                                        img = new Image(is);
-                                    }
+                                    try (InputStream is = new ByteArrayInputStream(data)) { img = new Image(is); }
                                 }
                             } else {
                                 System.err.println("Cache miss for server path: " + path);
@@ -167,36 +181,24 @@ public class ProductCardController {
                         }
                     }
                 }
-            }
-            // 1) file: URL → read via InputStream to avoid URL caching quirks
-            else if (img == null && path.startsWith("file:")) {
+            } else if (img == null && path.startsWith("file:")) {
                 try {
                     File f = new File(java.net.URI.create(path));
                     if (f.exists()) {
-                        try (InputStream is = new FileInputStream(f)) {
-                            img = new Image(is);
-                        }
+                        try (InputStream is = new FileInputStream(f)) { img = new Image(is); }
                     } else {
                         System.err.println("file: URL does not exist: " + path);
                     }
                 } catch (IllegalArgumentException badUri) {
                     img = new Image(path, true);
                 }
-            }
-            // 2) Remote URL
-            else if (img == null && (path.startsWith("http://") || path.startsWith("https://"))) {
+            } else if (img == null && (path.startsWith("http://") || path.startsWith("https://"))) {
                 img = new Image(path, true);
-            }
-            // 3) Raw absolute filesystem path (no scheme)
-            else if (img == null) {
+            } else if (img == null) {
                 File f = new File(path);
                 if (f.isAbsolute() && f.exists()) {
-                    try (InputStream is = new FileInputStream(f)) {
-                        img = new Image(is);
-                    }
-                }
-                // 4) Fallback: classpath resource
-                else if (path.startsWith("/")) {
+                    try (InputStream is = new FileInputStream(f)) { img = new Image(is); }
+                } else if (path.startsWith("/")) {
                     URL res = getClass().getResource(path);
                     if (res != null) {
                         img = new Image(res.toExternalForm(), true);
@@ -207,7 +209,6 @@ public class ProductCardController {
                     System.err.println("Unrecognized image path: " + path);
                 }
             }
-
         } catch (Exception e) {
             System.err.println("Error loading image '" + path + "': " + e);
         }
@@ -222,7 +223,7 @@ public class ProductCardController {
 
     // === helpers ===
 
-    /** Extracts the trailing file name from paths like "images/uuid.ext" or "C:\...\name.png". */
+    /** Extracts the trailing file name from paths like "images/uuid.ext" or "C:\\...\\name.png". */
     private static String fileNameFromPath(String path) {
         if (path == null) return null;
         String norm = path.replace('\\', '/');
@@ -379,38 +380,31 @@ public class ProductCardController {
 
                 productToSave.setColor(toHexString(colorPicker.getValue()));
 
-                // ----- IMAGE PATH HANDLING (best-effort; actual cross-machine image distribution is server-side) -----
+                // IMAGE PATH handling (best-effort)
                 String pathFromField = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
-
                 if (pathFromField.isEmpty()) {
                     if (isNewProduct) {
                         productToSave.setImagePath("");
                     } else {
                         productToSave.setImagePath(currentProduct.getImagePath());
                     }
-                }
-                else if (pathFromField.startsWith("file:")) {
+                } else if (pathFromField.startsWith("file:")) {
                     productToSave.setImagePath(pathFromField);
-                }
-                else if (pathFromField.startsWith("/")) {
+                } else if (pathFromField.startsWith("/")) {
                     productToSave.setImagePath(pathFromField);
-                }
-                else {
+                } else {
                     File sourceFile = new File(pathFromField);
                     if (sourceFile.exists()) {
-                        // keep as absolute; server should ingest on add flow.
                         productToSave.setImagePath(sourceFile.getAbsolutePath());
                     } else {
                         productToSave.setImagePath(pathFromField);
                     }
                 }
 
-                System.out.println("DEBUG save imagePath: " + productToSave.getImagePath());
-
                 // Send to server
                 saveAction.accept(productToSave);
 
-                // On edit, update the in-card model and re-render immediately
+                // On edit, update in-card model and re-render immediately
                 if (!isNewProduct) {
                     this.currentProduct = productToSave;
                     switchToDisplayMode();
