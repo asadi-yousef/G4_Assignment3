@@ -184,6 +184,10 @@ public class SimpleServer extends AbstractServer {
                 else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
                 }
+                else if("update_budget".equals(key))
+                {
+                    handleBudgetUpdate(m, client, session);
+                }
                 else {
                     System.out.println("[WARN] Unhandled key: " + key);
                 }
@@ -1494,6 +1498,34 @@ public class SimpleServer extends AbstractServer {
             } catch (IOException ignored) {}
         }
     }
+
+    private void handleBudgetUpdate(Message msg, ConnectionToClient client, Session session) {
+        // Get the customer object from the message
+        Customer customer = (Customer) msg.getObject();
+
+        Transaction tx = session.beginTransaction();
+        try {
+            // Fetch managed entity from DB
+            Customer dbCustomer = session.get(Customer.class, customer.getId());
+
+            if (dbCustomer != null && dbCustomer.getBudget() != null) {
+                dbCustomer.getBudget().setBalance(customer.getBudget().getBalance());
+                session.update(dbCustomer.getBudget());
+            }
+
+            tx.commit();
+
+            // Send confirmation back to client
+            client.sendToClient(new Message("budget_updated", dbCustomer, null));
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try {
+                client.sendToClient(new Message("budget_update_failed", null, null));
+            } catch (IOException ignored) {}
+        }
+    }
+
 
     private CustomBouquet cloneBouquetForOrder(CustomBouquet src, Customer creator) {
         if (src == null) return null;

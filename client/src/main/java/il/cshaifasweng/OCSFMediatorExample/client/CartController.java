@@ -121,7 +121,6 @@ public class CartController implements Initializable {
             } else {
                 System.err.println("[CartController] Received editProduct with no payload.");
             }
-
         }
     }
 
@@ -348,6 +347,8 @@ public class CartController implements Initializable {
                 }
             }
         }
+
+        SessionManager.getInstance().setOrderTotal(cart.getTotalWithDiscount());
 
         EventBus.getDefault().unregister(this);
         Platform.runLater(() -> {

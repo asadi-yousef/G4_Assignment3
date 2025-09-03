@@ -14,6 +14,7 @@ public class SessionManager {
     private List<Product> cart;
     private List<Order> orders = new ArrayList<>();
     private Order selectedOrder;
+    private double orderTotal;
 
     private SessionManager() {
         cart = new ArrayList<>();  // Initialize the cart
@@ -74,5 +75,11 @@ public class SessionManager {
     }
     public Order getSelectedOrder() {
         return selectedOrder;
+    }
+    public void setOrderTotal(double orderTotal) {
+        this.orderTotal = orderTotal;
+    }
+    public double getOrderTotal() {
+        return orderTotal;
     }
 }

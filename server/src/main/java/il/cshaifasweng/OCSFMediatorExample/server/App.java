@@ -44,6 +44,7 @@ public class App {
         cfg.addAnnotatedClass(CustomBouquetItem.class);
         // 👇 IMPORTANT: Complaint must be mapped
         cfg.addAnnotatedClass(Complaint.class);
+        cfg.addAnnotatedClass(Budget.class);
 
         ServiceRegistry registry = new StandardServiceRegistryBuilder()
                 .applySettings(cfg.getProperties())

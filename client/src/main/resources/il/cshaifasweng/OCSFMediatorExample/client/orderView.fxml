@@ -243,7 +243,7 @@
                     </VBox.margin>
                 </VBox>
 
-                <!-- Payment Method Section (Always visible) -->
+                <!-- Payment Method Section -->
                 <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
                     <children>
                         <Label text="Payment Method" textFill="#34495e">
@@ -263,6 +263,28 @@
                                     </font>
                                 </Label>
                                 <ChoiceBox fx:id="paymentMethodChoice" prefWidth="200.0" style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8;" />
+
+                                <!-- Display current order total -->
+                                <Label fx:id="orderTotalLabel" text="Total: ₪0.00" textFill="#2c3e50">
+                                    <font>
+                                        <Font name="System Bold" size="14.0" />
+                                    </font>
+                                </Label>
+                            </children>
+                            <VBox.margin>
+                                <Insets bottom="15.0" left="30.0" right="30.0" />
+                            </VBox.margin>
+                        </HBox>
+
+                        <!-- Budget Info -->
+                        <HBox alignment="CENTER_LEFT" spacing="15.0" visible="false" managed="false" fx:id="budgetBox">
+                            <children>
+                                <Label fx:id="budgetBalanceLabel" text="Budget Balance: ₪0.00" textFill="#2c3e50">
+                                    <font>
+                                        <Font name="System Bold" size="14.0" />
+                                    </font>
+                                </Label>
+                                <Button fx:id="useBudgetButton" text="Use Budget" style="-fx-background-color: #27ae60; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 5 15 5 15; -fx-cursor: hand;" />
                             </children>
                             <VBox.margin>
                                 <Insets bottom="15.0" left="30.0" right="30.0" />
@@ -292,6 +314,7 @@
                         <Insets left="30.0" right="30.0" top="15.0" />
                     </VBox.margin>
                 </VBox>
+
 
                 <!-- Action Buttons Section -->
                 <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">

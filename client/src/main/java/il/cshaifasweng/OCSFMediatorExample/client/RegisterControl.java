@@ -1,6 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Branch;
+import il.cshaifasweng.OCSFMediatorExample.entities.Budget;
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import javafx.application.Platform;
@@ -150,7 +151,7 @@ public class RegisterControl implements Initializable {
             try {
                 boolean isSubscribed = "yearly subscription".equals(accountTypeComboBox.getValue());
                 boolean isNetworkAccount = ("Network Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
-
+                Budget initialBudget = new Budget(null);
                 // Create new Customer object with all form data
                 // IMPORTANT: ID is now the FIRST constructor parameter as requested
                 Customer newCustomer = new Customer(
@@ -171,8 +172,10 @@ public class RegisterControl implements Initializable {
                         expirationMonthComboBox.getValue(),
                         expirationYearComboBox.getValue(),
                         cvvField.getText().trim(),
-                        branchComboBox.isVisible() ? getSelectedBranch() : null
+                        branchComboBox.isVisible() ? getSelectedBranch() : null,
+                        initialBudget
                 );
+                initialBudget.setCustomer(newCustomer);
 
                 if (!isNetworkAccount) {
                     newCustomer.setBranch(getSelectedBranch());

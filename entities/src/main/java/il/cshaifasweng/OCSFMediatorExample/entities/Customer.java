@@ -38,6 +38,8 @@ public class Customer extends User implements Serializable {
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private Cart cart;
 
+    @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Budget budget;
 
     public Customer() {
         super();
@@ -46,7 +48,7 @@ public class Customer extends User implements Serializable {
     public Customer(String idNumber, String name, String username, String password, boolean isNetworkAccount,
                     boolean isSubscribed, LocalDate subStartDate, LocalDate subExpDate, String email, String phone,
                     String address, String city, String country, String cardNumber,
-                    int expirationMonth, int expirationYear, String cvv, Branch branch) {
+                    int expirationMonth, int expirationYear, String cvv, Branch branch, Budget budget) {
         super(name, username, password,branch,isNetworkAccount);
         this.idNumber = idNumber;
         this.email = email;
@@ -58,6 +60,7 @@ public class Customer extends User implements Serializable {
         this.subscription = new Subscription(subStartDate, subExpDate, true, this);
         this.isNetworkAccount = isNetworkAccount;
         this.isSubscribed = isSubscribed;
+        this.budget = budget;
     }
 
 
@@ -114,5 +117,12 @@ public class Customer extends User implements Serializable {
     }
     public void setSubscribed(boolean isSubscribed) {
         this.isSubscribed = isSubscribed;
+    }
+    public Budget getBudget() {
+        return budget;
+    }
+    public void setBudget(Budget budget) {
+        this.budget = budget;
+        if(budget != null) budget.setCustomer(this);
     }
 }
