@@ -99,11 +99,11 @@ public class ConnectionControl {
         if (!host.isEmpty() && !hostOk) {
             statusLabel.setText("Invalid host/IP format.");
         } else if (!portText.isEmpty() && !portOk) {
-            statusLabel.setText("Port must be 1–65535.");
+            statusLabel.setText("Port must be 3000-9000.");
         } else {
             // Clear only if we were showing validation messages
             if ("Invalid host/IP format.".equals(statusLabel.getText()) ||
-                    "Port must be 1–65535.".equals(statusLabel.getText())) {
+                    "Port must be 3000-9000.".equals(statusLabel.getText())) {
                 statusLabel.setText("");
             }
         }

@@ -2,6 +2,7 @@ package il.cshaifasweng.OCSFMediatorExample.server;
 
 import org.hibernate.SessionFactory;
 
+
 public final class HibernateUtil {
     private static volatile SessionFactory sessionFactory;
 

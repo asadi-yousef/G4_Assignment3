@@ -2,6 +2,7 @@ package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
@@ -27,6 +28,9 @@ public class Customer extends User implements Serializable {
     private String city;
     @Column
     private String country;
+
+    @Column
+    private boolean frozen = false;
 
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private CreditCard creditCard;
@@ -61,6 +65,7 @@ public class Customer extends User implements Serializable {
         this.isNetworkAccount = isNetworkAccount;
         this.isSubscribed = isSubscribed;
         this.budget = budget;
+
     }
 
 
@@ -106,6 +111,10 @@ public class Customer extends User implements Serializable {
         this.cart = cart;
         if (cart != null) cart.setCustomer(this);
     }
+
+
+    public boolean isFrozen() { return frozen; }
+    public void setFrozen(boolean frozen) { this.frozen = frozen; }
     public boolean isNetworkAccount() {
         return isNetworkAccount;
     }

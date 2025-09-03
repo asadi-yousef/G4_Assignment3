@@ -134,6 +134,7 @@ public class ComplaintsListController implements Initializable {
         payload.put("complaintId", selected.getId());
         payload.put("responseText", reply);
         if (comp != null) payload.put("compensation", comp);
+        else payload.put("compensation", 0);
 
         try {
             SimpleClient.getClient().sendToServer(new Message(
