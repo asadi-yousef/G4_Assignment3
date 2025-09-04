@@ -586,6 +586,7 @@ public class SimpleServer extends AbstractServer {
             payload.put("unresolved", unresolved);
             payload.put("peakDay", peakDay);
 
+            payload.put("slot", crit.get("slot"));
             sendMsg(client, new Message("report_complaints_data", payload, null), "report_complaints");
         } catch (Exception e) {
             e.printStackTrace();
@@ -629,7 +630,7 @@ public class SimpleServer extends AbstractServer {
             payload.put("totalOrders", totalOrders);
             payload.put("cancelled", cancelled);
             payload.put("netOrders", netOrders);
-
+            payload.put("slot", crit.get("slot"));
             sendMsg(client, new Message("report_orders_data", payload, null), "report_orders");
         } catch (Exception e) {
             e.printStackTrace();
@@ -649,6 +650,7 @@ public class SimpleServer extends AbstractServer {
 
             Map<String, Double> perDay = new TreeMap<>();
             double totalRevenue = 0.0;
+
             for (Order o : orders) {
                 double orderTotal = 0.0;
                 if (o.getItems() != null) {
@@ -662,7 +664,6 @@ public class SimpleServer extends AbstractServer {
                             if (cb.getTotalPrice() != null) {
                                 price = cb.getTotalPrice().doubleValue();
                             } else if (cb.getItems() != null) {
-                                // sum snapshots if available
                                 price = cb.getItems().stream()
                                         .mapToDouble(li -> {
                                             var unit = li.getUnitPriceSnapshot();
@@ -678,8 +679,8 @@ public class SimpleServer extends AbstractServer {
                 perDay.merge(day, orderTotal, Double::sum);
             }
 
-            double totalExpenses = 0.0; // plug your COGS later
-            double net = totalRevenue - totalExpenses;
+            double totalExpenses = 0.0; // plug COGS later if you want
+            double net           = totalRevenue - totalExpenses;
 
             long days = 1;
             if (from != null && to != null) {
@@ -688,14 +689,24 @@ public class SimpleServer extends AbstractServer {
             }
             double avgDailyNet = net / days;
 
+            // ---- Map payload only (no DTOs) ----
             Map<String,Object> payload = new HashMap<>();
-            payload.put("histogram", perDay);
-            payload.put("totalRevenue", totalRevenue);
-            payload.put("totalExpenses", totalExpenses);
-            payload.put("netProfit", net);
-            payload.put("avgDailyNet", avgDailyNet);
-            payload.put("transactions", orders.size());
+            payload.put("histogram", perDay);             // Map<String, Double>
+            payload.put("totalRevenue", totalRevenue);    // double
+            payload.put("totalExpenses", totalExpenses);  // double
+            payload.put("netProfit", net);                // double
+            payload.put("avgDailyNet", avgDailyNet);      // double
+            payload.put("transactions", orders.size());   // int
 
+            // Compare-mode routing (safe to include)
+            payload.put("requestId", crit.get("requestId"));
+            payload.put("slot",      crit.get("slot"));
+
+            // Optional extra labels (client won’t break if unused)
+            payload.put("branchLabel", (branch == null || branch.isBlank()) ? "All Branches" : branch);
+            payload.put("fromLabel",  from == null ? null : from.toLocalDate().toString());
+            payload.put("toLabel",    to   == null ? null : to.minusSeconds(1).toLocalDate().toString());
+            payload.put("slot", crit.get("slot"));
             sendMsg(client, new Message("report_income_data", payload, null), "report_income");
         } catch (Exception e) {
             e.printStackTrace();

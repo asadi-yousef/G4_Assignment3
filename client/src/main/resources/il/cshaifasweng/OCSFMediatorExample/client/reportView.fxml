@@ -4,6 +4,7 @@
 <?import javafx.scene.text.*?>
 <?import javafx.geometry.*?>
 <?import javafx.scene.chart.*?>
+<?import javafx.scene.shape.Rectangle?>   <!-- for legend color squares -->
 
 <BorderPane xmlns:fx="http://javafx.com/fxml"
             fx:controller="il.cshaifasweng.OCSFMediatorExample.client.ReportsViewController"
@@ -26,7 +27,6 @@
 
                 <Region HBox.hgrow="ALWAYS"/>
 
-                <!-- The button -->
                 <Button fx:id="backToCatalogButton"
                         text="← Back to Catalog"
                         onAction="#handleBackToCatalog"
@@ -36,52 +36,87 @@
             </children>
         </HBox>
     </top>
+
     <center>
-        <VBox alignment="TOP_CENTER" spacing="16" maxWidth="820" BorderPane.alignment="CENTER">
-            <padding><Insets top="20" right="20" bottom="20" left="20"/></padding>
+        <ScrollPane fx:id="scrollRoot"
+                    fitToWidth="true"
+                    fitToHeight="false"
+                    hbarPolicy="NEVER"
+                    vbarPolicy="AS_NEEDED"
+                    pannable="true"
+                    BorderPane.alignment="CENTER">
+            <content>
+                <StackPane alignment="TOP_CENTER" pickOnBounds="false">
+                    <VBox alignment="TOP_CENTER" spacing="16" maxWidth="820" StackPane.alignment="TOP_CENTER">
+                        <padding><Insets top="20" right="20" bottom="20" left="20"/></padding>
 
-            <Label text="Manager Reports">
-                <font><Font size="24"/></font>
-            </Label>
+                        <Label text="Manager Reports">
+                            <font><Font size="24"/></font>
+                        </Label>
 
-            <GridPane hgap="12" vgap="12">
-                <columnConstraints>
-                    <ColumnConstraints halignment="RIGHT" minWidth="140"/>
-                    <ColumnConstraints halignment="LEFT"  minWidth="440"/>
-                </columnConstraints>
+                        <GridPane hgap="12" vgap="12">
+                            <columnConstraints>
+                                <ColumnConstraints halignment="RIGHT" minWidth="140"/>
+                                <ColumnConstraints halignment="LEFT"  minWidth="440"/>
+                            </columnConstraints>
 
-                <Label text="Report Type:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
-                <HBox spacing="12" GridPane.rowIndex="0" GridPane.columnIndex="1">
-                    <RadioButton fx:id="incomeReportBtn" text="Income"/>
-                    <RadioButton fx:id="ordersReportBtn" text="Orders"/>
-                    <RadioButton fx:id="complaintsReportBtn" text="Complaints"/>
-                </HBox>
+                            <Label text="Report Type:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                            <HBox spacing="12" GridPane.rowIndex="0" GridPane.columnIndex="1">
+                                <RadioButton fx:id="incomeReportBtn" text="Income"/>
+                                <RadioButton fx:id="ordersReportBtn" text="Orders"/>
+                                <RadioButton fx:id="complaintsReportBtn" text="Complaints"/>
+                            </HBox>
 
-                <Label text="Branch:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
-                <ComboBox fx:id="branchComboBox" promptText="Choose branch..." GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+                            <Label text="Branch:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                            <ComboBox fx:id="branchComboBox" promptText="Choose branch..." GridPane.rowIndex="1" GridPane.columnIndex="1"/>
 
-                <Label text="Dates:" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
-                <HBox spacing="10" alignment="CENTER_LEFT" GridPane.rowIndex="2" GridPane.columnIndex="1">
-                    <DatePicker fx:id="startDatePicker"/>
-                    <Label text="→"/>
-                    <DatePicker fx:id="endDatePicker"/>
-                    <Button fx:id="generateButton" text="Generate" onAction="#onGenerate"/>
-                </HBox>
-            </GridPane>
+                            <Label text="Dates:" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                            <HBox spacing="10" alignment="CENTER_LEFT" GridPane.rowIndex="2" GridPane.columnIndex="1">
+                                <DatePicker fx:id="startDatePicker"/>
+                                <Label text="→"/>
+                                <DatePicker fx:id="endDatePicker"/>
+                                <Button fx:id="generateButton" text="Generate" onAction="#onGenerate"/>
+                                <Button fx:id="compareButton"  text="Compare…" onAction="#onCompare"/>
+                            </HBox>
+                        </GridPane>
 
-            <SplitPane orientation="VERTICAL" prefHeight="420" dividerPositions="0.6">
-                <items>
-                    <BorderPane>
-                        <center>
-                            <BarChart fx:id="barChart">
-                                <xAxis><CategoryAxis/></xAxis>
-                                <yAxis><NumberAxis/></yAxis>
-                            </BarChart>
-                        </center>
-                    </BorderPane>
-                    <TextArea fx:id="reportOutput" wrapText="true" editable="false" prefRowCount="6"/>
-                </items>
-            </SplitPane>
-        </VBox>
+                        <SplitPane orientation="VERTICAL" dividerPositions="0.55" VBox.vgrow="ALWAYS">
+                            <items>
+                                <!-- Chart + custom legend UNDER the chart -->
+                                <BorderPane>
+                                    <center>
+                                        <VBox spacing="8">
+                                            <!-- turn OFF built-in legend -->
+                                            <BarChart fx:id="barChart" prefHeight="380" minHeight="320" legendVisible="false">
+                                                <xAxis><CategoryAxis/></xAxis>
+                                                <yAxis><NumberAxis/></yAxis>
+                                            </BarChart>
+
+                                            <!-- Custom legend (A above B). Both hidden by default. -->
+                                            <VBox fx:id="legendBox" spacing="6">
+                                                <HBox fx:id="legendRowA" spacing="8" alignment="CENTER_LEFT" visible="false" managed="false">
+                                                    <Rectangle fx:id="legendASwatch" width="12" height="12" arcWidth="2" arcHeight="2"/>
+                                                    <Label fx:id="legendALabel" text="A"/>
+                                                </HBox>
+                                                <HBox fx:id="legendRowB" spacing="8" alignment="CENTER_LEFT" visible="false" managed="false">
+                                                    <Rectangle fx:id="legendBSwatch" width="12" height="12" arcWidth="2" arcHeight="2"/>
+                                                    <Label fx:id="legendBLabel" text="B"/>
+                                                </HBox>
+                                            </VBox>
+                                        </VBox>
+                                    </center>
+                                </BorderPane>
+
+                                <TextArea fx:id="reportOutput"
+                                          wrapText="true"
+                                          editable="false"
+                                          prefHeight="260"
+                                          minHeight="180"/>
+                            </items>
+                        </SplitPane>
+                    </VBox>
+                </StackPane>
+            </content>
+        </ScrollPane>
     </center>
 </BorderPane>

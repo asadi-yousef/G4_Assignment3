@@ -1,6 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.entities;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public class ComplaintsReport extends Report{
@@ -9,6 +10,7 @@ public class ComplaintsReport extends Report{
     private int resolvedComplaints;
     private int unresolvedComplaints;
     private LocalDateTime maxComplaintsDate;
+    private String slot, requestId;
 
     @Override
     public void generate() {
@@ -66,4 +68,7 @@ public class ComplaintsReport extends Report{
     public void setComplaintsHistogram(Map<LocalDateTime, Integer> complaintsHistogram) {
         this.complaintsHistogram = complaintsHistogram;
     }
+    private Map<String, Number> histogram = new LinkedHashMap<>();
+    public Map<String, Number> getHistogram(){ return histogram; }
+    public void setHistogram(Map<String, Number> h){ this.histogram = h; }
 }
