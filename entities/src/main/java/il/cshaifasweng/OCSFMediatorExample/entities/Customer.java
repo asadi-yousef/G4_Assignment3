@@ -10,8 +10,6 @@ import java.time.LocalDate;
 public class Customer extends User implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    @Column
-    private boolean isNetworkAccount;
 
     @Column
     private boolean isSubscribed;
@@ -59,7 +57,6 @@ public class Customer extends User implements Serializable {
         this.country = country;
         this.creditCard = new CreditCard(cardNumber, expirationMonth, expirationYear, cvv, this);
         this.subscription = new Subscription(subStartDate, subExpDate, true, this);
-        this.isNetworkAccount = isNetworkAccount;
         this.isSubscribed = isSubscribed;
         this.budget = budget;
 
@@ -112,12 +109,6 @@ public class Customer extends User implements Serializable {
 
     public boolean isFrozen() { return frozen; }
     public void setFrozen(boolean frozen) { this.frozen = frozen; }
-    public boolean isNetworkAccount() {
-        return isNetworkAccount;
-    }
-    public void setNetworkAccount(boolean isNetworkAccount) {
-        this.isNetworkAccount = isNetworkAccount;
-    }
     public boolean isSubscribed() {
         return isSubscribed;
     }

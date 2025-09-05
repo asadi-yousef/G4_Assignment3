@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -327,6 +328,17 @@ public class SimpleServer extends AbstractServer {
                 upsertUserCache(managed, username);
 
                 client.sendToClient(new Message("admin_freeze_ok", toDTO(managed), null));
+                if(frozen){
+                    for (SubscribedClient sc : subscribersList) {
+                        ConnectionToClient s = sc.getClient();
+                        Object uid = s.getInfo("userId"); // you must set this at login
+                        System.out.println("DEBUG: uid: " + uid+" userId: "+s.getInfo("userId"));
+                        if (uid instanceof Long && ((Long) uid) == customerId) {
+                            try { s.sendToClient(new Message("account_banned", "Your account was banned", null)); } catch (Exception ignored) {}
+                            System.out.println("DEBUG: banning user " + s.getInfo("username"));
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
@@ -785,14 +797,21 @@ public class SimpleServer extends AbstractServer {
 
             Transaction tx = session.beginTransaction();
             try {
+                String msg = message.getMessage();
+                String clientMsg = "";
                 cached.setLoggedIn(false);
                 User managed = (User) session.merge(cached);
                 tx.commit();
 
                 // keep cache updated
                 upsertUserCache(managed, username);
+                if(msg.equals("force_logout")) {
+                    clientMsg += "force_logout";
+                }
+                else
+                    clientMsg += "logout_success";
 
-                try { client.sendToClient(new Message("logout_success", username, null)); }
+                try { client.sendToClient(new Message(clientMsg, username, null)); }
                 catch (IOException ignored) {}
             } catch (Exception e) {
                 if (tx.isActive()) tx.rollback();
@@ -2266,6 +2285,8 @@ public class SimpleServer extends AbstractServer {
 
                     // keep cache consistent with DB state
                     upsertUserCache(managed, username);
+                    client.setInfo("userId",cached.getId());
+                    client.setInfo("username", username);
 
                     System.out.println(cached.getUsername());
                     System.out.println(cached.getPassword());

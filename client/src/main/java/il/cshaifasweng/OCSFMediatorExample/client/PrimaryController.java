@@ -505,16 +505,20 @@ public class PrimaryController implements Initializable {
 					break;
 				}
 
-				case "logout_success":
+				case "logout_success":{
 					SessionManager.getInstance().logout();
 					updateUIBasedOnUserStatus();
 					resetToFullCatalogAfterLogout();
 					showAlert("Success", "Logged out successfully!");
 					break;
-
+				}
 				case "inbox_list_error": {
 					String err = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Failed to load inbox.";
 					showAlert("Inbox Error", err);
+					break;
+				}
+				case "force_logout":{
+					showAlert("Alert!", "You have been banned/frozen contact administrator.");
 					break;
 				}
 

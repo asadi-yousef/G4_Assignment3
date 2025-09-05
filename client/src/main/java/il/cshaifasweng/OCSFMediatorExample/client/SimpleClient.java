@@ -20,7 +20,17 @@ public class SimpleClient extends AbstractClient {
     @Override
     protected void handleMessageFromServer(Object msg) {
         if (msg instanceof Message) {
-            EventBus.getDefault().post(msg);
+			Message message = (Message) msg;
+			if(message.getMessage().equals("account_banned")){
+				try{
+					client.sendToServer(new Message("force_logout",SessionManager.getInstance().getCurrentUser().getUsername(),null));
+					SessionManager.getInstance().logout();
+					App.setRoot("primary");
+				}catch(Exception ignored){}
+			}
+			else{
+				EventBus.getDefault().post(msg);
+			}
         }
     }
 

@@ -83,7 +83,7 @@ public class RegisterControl implements Initializable {
     }
 
     private void populateAccountTypes() {
-        accountTypeComboBox.getItems().addAll("Branch Account", "Network Account", "yearly subscription");
+        accountTypeComboBox.getItems().addAll("Branch Account", "Net Account", "yearly subscription");
     }
 
     private void populateExpirationDate() {
@@ -101,8 +101,8 @@ public class RegisterControl implements Initializable {
                         branchComboBox.setVisible(true);
                         branchComboBox.setManaged(true);
                         break;
-                    case "Network Account":
-                        accountTypeDescriptionLabel.setText("A yearly subscription with a 10% discount on all purchases!");
+                    case "Net Account":
+                        accountTypeDescriptionLabel.setText("A net account for all branches.");
                         branchComboBox.setVisible(false);
                         branchComboBox.setManaged(false);
                         break;
@@ -155,7 +155,9 @@ public class RegisterControl implements Initializable {
         if (validateFields()) {
             try {
                 boolean isSubscribed = "yearly subscription".equals(accountTypeComboBox.getValue());
-                boolean isNetworkAccount = ("Network Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
+                System.out.println("isSubscribed: " + isSubscribed);
+                boolean isNetworkAccount = ("Net Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
+                System.out.println("isNetworkAccount: " + isNetworkAccount);
                 Budget initialBudget = new Budget(null);
                 // Create new Customer object with all form data
                 // IMPORTANT: ID is now the FIRST constructor parameter as requested
