@@ -561,7 +561,7 @@ public class PrimaryController implements Initializable {
 		if (u == null) return false;
 		if (u instanceof Employee) {
 			String role = ((Employee) u).getRole();
-			return "manager".equalsIgnoreCase(role) || "branch_manager".equalsIgnoreCase(role);
+			return role.contains("manager");
 		}
 		return false;
 	}

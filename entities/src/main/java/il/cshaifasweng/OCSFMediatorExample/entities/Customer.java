@@ -17,8 +17,6 @@ public class Customer extends User implements Serializable {
     private boolean isSubscribed;
 
     @Column
-    private String idNumber;
-    @Column
     private String email;
     @Column
     private String phone;
@@ -49,12 +47,11 @@ public class Customer extends User implements Serializable {
         super();
     }
 
-    public Customer(String idNumber, String name, String username, String password, boolean isNetworkAccount,
+    public Customer(String idNumber, String firstName,String lastName, String username, String password, boolean isNetworkAccount,
                     boolean isSubscribed, LocalDate subStartDate, LocalDate subExpDate, String email, String phone,
                     String address, String city, String country, String cardNumber,
                     int expirationMonth, int expirationYear, String cvv, Branch branch, Budget budget) {
-        super(name, username, password,branch,isNetworkAccount);
-        this.idNumber = idNumber;
+        super(idNumber,firstName,lastName, username, password,branch,isNetworkAccount);
         this.email = email;
         this.phone = phone;
         this.address = address;

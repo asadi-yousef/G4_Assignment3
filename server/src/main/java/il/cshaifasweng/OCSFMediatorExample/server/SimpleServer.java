@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -335,8 +336,9 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private void handleAdminUpdateUser(Message m, ConnectionToClient client, Session session) {
-        var dto = (UserAdminDTO) m.getObject();
+        UserAdminDTO dto = (UserAdminDTO) m.getObject();
         if (dto == null || dto.getId() == null || dto.getUserType() == null) {
             try { client.sendToClient(new Message("admin_update_error", "Bad request", null)); }
             catch (IOException ignored) {}
@@ -345,99 +347,335 @@ public class SimpleServer extends AbstractServer {
 
         Transaction tx = session.beginTransaction();
         try {
-            Branch newBranch = findBranchByName(session, dto.getBranchName());
+            // Resolve branch (by name)
+            Branch newBranch = null;
+            if (dto.getBranchName() != null && !dto.getBranchName().isBlank()) {
+                newBranch = findBranchByName(session, dto.getBranchName().trim());
+                if (newBranch == null) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Branch not found: " + dto.getBranchName(), null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
+            }
 
             if ("EMPLOYEE".equalsIgnoreCase(dto.getUserType())) {
                 Employee e = session.get(Employee.class, dto.getId());
-                if (e == null) throw new IllegalArgumentException("Employee not found");
-                final String oldUsername = e.getUsername();
+                if (e == null) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Employee not found", null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
 
-                // Per-username lock around mutation
+                // Hard server-side gate: block any edit while logged in
+                if (e.isLoggedIn()) {
+                    tx.rollback();
+                    try {
+                        client.sendToClient(new Message(
+                                "admin_update_error",
+                                "User is logged in — only Freeze/Unfreeze is allowed.",
+                                null
+                        ));
+                    } catch (IOException ignored) {}
+                    return;
+                }
+
+                // Decide target values (incoming if provided, otherwise current).
+                final String targetUsername = dto.getUsername() == null ? e.getUsername() : dto.getUsername().trim();
+
+                // --- Uniqueness preflight (username)
+                if (dto.getUsername() != null                  // only if actually edited
+                        && !equalsIgnoreCaseSafe(targetUsername, e.getUsername())
+                        && usernameExists(session, targetUsername, e.getId())) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Username already in use: " + targetUsername, null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
+
+                // --- Uniqueness preflight (ID number) -> ONLY if dto supplied a new one AND it differs
+                if (dto.getIdNumber() != null) {
+                    final String candidateId = dto.getIdNumber().trim();
+                    if (!Objects.equals(candidateId, e.getIdNumber())
+                            && idNumberExists(session, candidateId, e.getId())) {
+                        tx.rollback();
+                        try { client.sendToClient(new Message("admin_update_error", "ID number already in use: " + candidateId, null)); }
+                        catch (IOException ignored) {}
+                        return;
+                    }
+                }
+
+                final String oldUsername = e.getUsername();
                 final Object lock = usernameLocks.computeIfAbsent(oldUsername, k -> new Object());
                 synchronized (lock) {
-                    if (dto.getName() != null) e.setName(dto.getName());
-                    if (dto.getUsername() != null) e.setUsername(dto.getUsername());
-                    if (dto.getPassword() != null) e.setPassword(dto.getPassword());
-                    if (dto.getNetworkAccount() != null) e.setNetworkAccount(dto.getNetworkAccount());
-                    if (newBranch != null) e.setBranch(newBranch);
-                    if (dto.getRole() != null) e.setRole(dto.getRole());
+                    // Basic fields (nulls = don't change)
+                    if (dto.getFirstName() != null) e.setFirstName(dto.getFirstName());
+                    if (dto.getLastName()  != null) e.setLastName(dto.getLastName()); // <-- fixed
+                    if (dto.getUsername()  != null) e.setUsername(targetUsername);
+                    if (dto.getPassword()  != null) e.setPassword(dto.getPassword());
+                    if (dto.getIdNumber()  != null) e.setIdNumber(dto.getIdNumber().trim());
+
+                    // Role + invariants
+                    if (dto.getRole() != null) {
+                        String newRole = dto.getRole().toLowerCase();
+                        e.setRole(newRole);
+
+                        boolean toNet = isNetRole(newRole);
+                        if (toNet) {
+                            e.setNetworkAccount(true);
+                            e.setBranch(null);
+                        } else {
+                            if (newBranch == null && e.getBranch() == null) {
+                                tx.rollback();
+                                try { client.sendToClient(new Message("admin_update_error", "Branch role requires a branch.", null)); }
+                                catch (IOException ignored) {}
+                                return;
+                            }
+                            if (newBranch != null) e.setBranch(newBranch);
+                            e.setNetworkAccount(false);
+                        }
+                    } else {
+                        // No role change; still allow branch or network changes with invariants
+                        if (newBranch != null) {
+                            if (e.isNetworkAccount()) {
+                                tx.rollback();
+                                try { client.sendToClient(new Message("admin_update_error", "Network employees cannot have a branch.", null)); }
+                                catch (IOException ignored) {}
+                                return;
+                            }
+                            e.setBranch(newBranch);
+                        }
+                        if (dto.getNetworkAccount() != null) {
+                            boolean na = dto.getNetworkAccount();
+                            e.setNetworkAccount(na);
+                            if (na) {
+                                e.setBranch(null);
+                            } else {
+                                if (newBranch == null && e.getBranch() == null) {
+                                    tx.rollback();
+                                    try { client.sendToClient(new Message("admin_update_error", "Non-network employees must have a branch.", null)); }
+                                    catch (IOException ignored) {}
+                                    return;
+                                }
+                                if (newBranch != null) e.setBranch(newBranch);
+                            }
+                        }
+                    }
 
                     Employee managed = (Employee) session.merge(e);
                     tx.commit();
 
-                    // Move/refresh cache and lock if username changed
                     upsertUserCache(managed, oldUsername);
-
                     client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
                 }
+
             } else if ("CUSTOMER".equalsIgnoreCase(dto.getUserType())) {
                 Customer c = session.get(Customer.class, dto.getId());
-                if (c == null) throw new IllegalArgumentException("Customer not found");
-                final String oldUsername = c.getUsername();
+                if (c == null) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Customer not found", null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
 
+                if (c.isLoggedIn()) {
+                    tx.rollback();
+                    try {
+                        client.sendToClient(new Message(
+                                "admin_update_error",
+                                "User is logged in — only Freeze/Unfreeze is allowed.",
+                                null
+                        ));
+                    } catch (IOException ignored) {}
+                    return;
+                }
+
+                final String targetUsername = dto.getUsername() == null ? c.getUsername() : dto.getUsername().trim();
+
+                // Username uniqueness only if actually edited
+                if (dto.getUsername() != null
+                        && !equalsIgnoreCaseSafe(targetUsername, c.getUsername())
+                        && usernameExists(session, targetUsername, c.getId())) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Username already in use: " + targetUsername, null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
+
+                // ID number uniqueness only if actually edited
+                if (dto.getIdNumber() != null) {
+                    final String candidateId = dto.getIdNumber().trim();
+                    if (!Objects.equals(candidateId, c.getIdNumber())
+                            && idNumberExists(session, candidateId, c.getId())) {
+                        tx.rollback();
+                        try { client.sendToClient(new Message("admin_update_error", "ID number already in use: " + candidateId, null)); }
+                        catch (IOException ignored) {}
+                        return;
+                    }
+                }
+
+                final String oldUsername = c.getUsername();
                 final Object lock = usernameLocks.computeIfAbsent(oldUsername, k -> new Object());
                 synchronized (lock) {
-                    if (dto.getName() != null) c.setName(dto.getName());
-                    if (dto.getUsername() != null) c.setUsername(dto.getUsername());
-                    if (dto.getPassword() != null) c.setPassword(dto.getPassword());
-                    if (dto.getNetworkAccount() != null) c.setNetworkAccount(dto.getNetworkAccount());
-                    if (newBranch != null) c.setBranch(newBranch);
-                   // if (dto.getBudget() != null) c.setBudget(dto.getBudget());
-                    // (frozen) handled in admin_freeze_customer
+                    // Basic fields
+                    if (dto.getFirstName() != null) c.setFirstName(dto.getFirstName());
+                    if (dto.getLastName()  != null) c.setLastName(dto.getLastName()); // <-- fixed
+                    if (dto.getUsername()  != null) c.setUsername(targetUsername);
+                    if (dto.getPassword()  != null) c.setPassword(dto.getPassword());
+                    if (dto.getIdNumber()  != null) c.setIdNumber(dto.getIdNumber().trim());
+
+                    // Customer-only fields
+                    if (dto.getBudget() != null && dto.getBudget().signum() >= 0) c.getBudget().setBalance(dto.getBudget().doubleValue());
+                    if (dto.getFrozen() != null) c.setFrozen(dto.getFrozen());
+
+                    // Network/branch invariants
+                    if (dto.getNetworkAccount() != null) {
+                        boolean na = dto.getNetworkAccount();
+                        c.setNetworkAccount(na);
+                        if (na) {
+                            c.setBranch(null);
+                        } else {
+                            if (newBranch == null && c.getBranch() == null) {
+                                tx.rollback();
+                                try { client.sendToClient(new Message("admin_update_error", "Non-network customers must have a branch.", null)); }
+                                catch (IOException ignored) {}
+                                return;
+                            }
+                            if (newBranch != null) c.setBranch(newBranch);
+                        }
+                    } else if (newBranch != null) {
+                        if (c.isNetworkAccount()) {
+                            tx.rollback();
+                            try { client.sendToClient(new Message("admin_update_error", "Network customers cannot have a branch.", null)); }
+                            catch (IOException ignored) {}
+                            return;
+                        }
+                        c.setBranch(newBranch);
+                    }
 
                     Customer managed = (Customer) session.merge(c);
                     tx.commit();
 
                     upsertUserCache(managed, oldUsername);
-
-                    client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
+                    try { client.sendToClient(new Message("admin_update_ok", toDTO(managed), null)); }
+                    catch (IOException ignored) {}
                 }
             } else {
-                throw new IllegalArgumentException("Unknown userType");
+                tx.rollback();
+                try { client.sendToClient(new Message("admin_update_error", "Unknown userType: " + dto.getUserType(), null)); }
+                catch (IOException ignored) {}
             }
-            System.out.println("DEBUG: updated user " + dto.getUsername());
+
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
-            e.printStackTrace();
+            e.printStackTrace(); // keep for server logs (optional)
             try { client.sendToClient(new Message("admin_update_error", e.getMessage(), null)); }
             catch (IOException ignored) {}
         }
     }
 
+
+    private void clientSendSafe(ConnectionToClient client, Message out) {
+        try { client.sendToClient(out); } catch (IOException ignored) {}
+    }
+
+    private boolean equalsIgnoreCaseSafe(String a, String b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.equalsIgnoreCase(b);
+    }
+    /** Use case-insensitive username uniqueness with cache fast path + optional DB fallback. */
+    private boolean usernameExists(Session session, String candidate, Long excludeId) {
+        if (candidate == null || candidate.isBlank()) return false;
+
+        final String keyLower = candidate.trim().toLowerCase();
+
+        // 1) CACHE FAST PATH (authoritative if your cache is complete)
+        User cached = userCache.get(keyLower);
+        if (cached != null && !Objects.equals(cached.getId(), excludeId)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /** ID-number uniqueness (DB). If you add an idNumber index to cache, mirror the same pattern. */
+    private boolean idNumberExists(Session session, String candidate, Long excludeId) {
+        if (candidate == null || candidate.isBlank()) return false;
+        final String keyLower = candidate.trim().toLowerCase();
+        Long cnt = session.createQuery(
+                        "select count(u.id) from User u where lower(u.idNumber) = :in and u.id <> :id", Long.class)
+                .setParameter("in", keyLower)
+                .setParameter("id", (excludeId == null ? -1L : excludeId))
+                .getSingleResult();
+        return cnt != null && cnt > 0L;
+    }
+
+
     private UserAdminDTO toDTO(User u) {
         UserAdminDTO dto = new UserAdminDTO();
+
         dto.setId(u.getId());
-        dto.setName(u.getName());
+
+        // userType without pattern matching (Java 15 safe)
+        String userType;
+        if (u instanceof Employee) {
+            userType = "EMPLOYEE";
+        } else if (u instanceof Customer) {
+            userType = "CUSTOMER";
+        } else {
+            userType = "USER";
+        }
+        dto.setUserType(userType);
+
+        // new identity fields
+        dto.setIdNumber(u.getIdNumber());
+        dto.setFirstName(u.getFirstName());
+        dto.setLastName(u.getLastName());
         dto.setUsername(u.getUsername());
-        dto.setBranchName(u.getBranch() != null ? u.getBranch().getName() : null);
+
+        // branch info
+        if (u.getBranch() != null) {
+            dto.setBranchId(u.getBranch().getId());
+            dto.setBranchName(u.getBranch().getName());
+        } else {
+            dto.setBranchId(null);
+            dto.setBranchName(null);
+        }
+
         dto.setNetworkAccount(u.isNetworkAccount());
         dto.setLoggedIn(u.isLoggedIn());
 
         if (u instanceof Employee) {
-            Employee e = (Employee) u;
-            dto.setUserType("EMPLOYEE");
+            Employee e = (Employee) u;     // classic cast
             dto.setRole(e.getRole());
         } else if (u instanceof Customer) {
-            Customer c = (Customer) u;
-            dto.setUserType("CUSTOMER");
-           // dto.setBudget(c.getBudget());
-            // assumes you added a 'frozen' boolean to Customer as discussed
+            Customer c = (Customer) u;     // classic cast
+            if (c.getBudget() != null) {
+                dto.setBudget(java.math.BigDecimal.valueOf(c.getBudget().getBalance()));
+            }
             try {
-                // if field exists
                 dto.setFrozen(c.isFrozen());
             } catch (Throwable ignore) {}
-        } else {
-            dto.setUserType("USER");
         }
         return dto;
     }
 
+
+
     private Branch findBranchByName(Session session, String name) {
         if (name == null || name.isBlank()) return null;
-        return session.createQuery("from Branch b where b.name = :n", Branch.class)
-                .setParameter("n", name.trim())
-                .uniqueResultOptional().orElse(null);
+        return session.createQuery("from Branch b where lower(b.name) = :n", Branch.class)
+                .setParameter("n", name.toLowerCase())
+                .setMaxResults(1)
+                .uniqueResult();
     }
+
+    private static boolean isNetRole(String role) {
+        return role != null && role.toLowerCase().startsWith("net") || role.equalsIgnoreCase("systemadmin") || role.equalsIgnoreCase("customerservice");
+    }
+
 
     @SuppressWarnings("unchecked")
     private void handleAdminListUsers(Message m, ConnectionToClient client, Session session) {
@@ -448,44 +686,64 @@ public class SimpleServer extends AbstractServer {
             Object payload = m.getObject();
             if (payload instanceof Map) {
                 Map<String,Object> q = (Map<String,Object>) payload;
-                if (q.get("search") instanceof String){
-                    String s = (String) q.get("search");
-                    search = s.trim();
-                }
-                if (q.get("offset") instanceof Number){
-                    Number o = (Number) q.get("offset");
-                    offset = Math.max(0, o.intValue());
-                }
-                if (q.get("limit") instanceof Number){
-                    Number l = (Number) q.get("limit");
-                    limit = Math.max(1, l.intValue());
-                }
+                if (q.get("search") instanceof String) search = ((String) q.get("search")).trim();
+                if (q.get("offset") instanceof Number) offset = Math.max(0, ((Number) q.get("offset")).intValue());
+                if (q.get("limit")  instanceof Number)  limit  = Math.max(1, ((Number) q.get("limit")).intValue());
             }
 
-            String jpql = "select u from User u left join fetch u.branch"
-                    + (search.isBlank() ? "" : " where lower(u.username) like :like");
+            var cb = session.getCriteriaBuilder();
 
-            var query = session.createQuery(jpql, User.class);
-            if (!search.isBlank()) query.setParameter("like", "%" + search.toLowerCase() + "%");
+            // ----------------- DATA query (with fetch join) -----------------
+            var cq = cb.createQuery(User.class);
+            var root = cq.from(User.class);
 
-            List<User> users = query.getResultList();
+            // fetch branch for display (LEFT JOIN FETCH)
+            root.fetch("branch", jakarta.persistence.criteria.JoinType.LEFT);
+
+            // WHERE (if search)
+            if (!search.isBlank()) {
+                String like = "%" + search.toLowerCase() + "%";
+                var p = cb.or(
+                        cb.like(cb.lower(root.get("username")),  like),
+                        cb.like(cb.lower(root.get("firstName")), like),
+                        cb.like(cb.lower(root.get("lastName")),  like),
+                        cb.like(cb.lower(root.get("idNumber")),  like)
+                );
+                cq.where(p);
+            }
+
+            // ORDER BY username ASC
+            cq.orderBy(cb.asc(root.get("username")));
+
+            var dataQ = session.createQuery(cq);
+            dataQ.setFirstResult(offset);
+            dataQ.setMaxResults(limit);
+            var pageUsers = dataQ.getResultList();
+
+            // ----------------- COUNT query (NO fetch join) -----------------
+            var ccq = cb.createQuery(Long.class);
+            var croot = ccq.from(User.class);
+            ccq.select(cb.count(croot));
+
+            if (!search.isBlank()) {
+                String like = "%" + search.toLowerCase() + "%";
+                var p = cb.or(
+                        cb.like(cb.lower(croot.get("username")),  like),
+                        cb.like(cb.lower(croot.get("firstName")), like),
+                        cb.like(cb.lower(croot.get("lastName")),  like),
+                        cb.like(cb.lower(croot.get("idNumber")),  like)
+                );
+                ccq.where(p);
+            }
+
+            long total = session.createQuery(ccq).getSingleResult();
 
             // Map to DTOs
-            List<UserAdminDTO> all = new ArrayList<>(users.size());
-            for (User u : users) all.add(toDTO(u));
-
-            // Sort + page
-            all.sort(Comparator.comparing(d -> {
-                String un = d.getUsername();
-                return un == null ? "" : un.toLowerCase();
-            }));
-
-            int total = all.size();
-            int from  = Math.min(offset, total);
-            int to    = Math.min(from + limit, total);
+            List<UserAdminDTO> rows = new ArrayList<>(pageUsers.size());
+            for (User user : pageUsers) rows.add(toDTO(user));
 
             Map<String,Object> page = new HashMap<>();
-            page.put("rows", new ArrayList<>(all.subList(from, to)));
+            page.put("rows", rows);
             page.put("total", total);
 
             client.sendToClient(new Message("admin_users_page", page, null));
@@ -495,6 +753,9 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
+
+
+
 
     private void handleLogout(ConnectionToClient client, Session session, Message message) {
         final String username = (message != null && message.getObject() instanceof String)
@@ -1733,17 +1994,32 @@ public class SimpleServer extends AbstractServer {
     }
 
 
-    private boolean checkExistence(String username) {
+    private boolean checkExistenceUsername(String username) {
         return userCache.containsKey(username);
+    }
+    private boolean checkExistenceIdNumber(String idNumber,Session session) {
+        boolean idNumberExists = false;
+        User user = session.createQuery(
+                        "SELECT u FROM User u WHERE u.idNumber = :idNumber", User.class)
+                .setParameter("idNumber", idNumber)
+                .uniqueResult();
+        if (user != null) {
+            idNumberExists = true;
+        }
+        return idNumberExists;
     }
 
     private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
         String username = ((User) (msg.getObject())).getUsername();
+        String idNumber = ((User) (msg.getObject())).getIdNumber();
         final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
         synchronized (lock) {
-            if (checkExistence(username)) {
+            if (checkExistenceUsername(username)) {
                 client.sendToClient(new Message("user already exists", msg.getObject(), null));
                 return;
+            }
+            if(checkExistenceIdNumber(idNumber, session)) {
+                client.sendToClient(new Message("id already exists", msg.getObject(), null));
             }
             Transaction tx = session.beginTransaction();
             try {

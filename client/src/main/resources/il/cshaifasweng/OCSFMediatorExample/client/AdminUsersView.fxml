@@ -20,12 +20,14 @@
         <TableView fx:id="table" editable="true">
             <columns>
                 <TableColumn fx:id="colType" text="Type" prefWidth="90"/>
-                <TableColumn fx:id="colUsername" text="Username" prefWidth="160"/>
-                <TableColumn fx:id="colName" text="Name" prefWidth="180"/>
-                <TableColumn fx:id="colBranch" text="Branch" prefWidth="140"/>
+                <TableColumn fx:id="colIdNumber" text="ID Number" prefWidth="130"/>
+                <TableColumn fx:id="colUsername" text="Username" prefWidth="150"/>
+                <TableColumn fx:id="colFirstName" text="First Name" prefWidth="140"/>
+                <TableColumn fx:id="colLastName" text="Last Name" prefWidth="140"/>
+                <TableColumn fx:id="colBranch" text="Branch" prefWidth="180"/>
                 <TableColumn fx:id="colNetwork" text="Network" prefWidth="90"/>
                 <TableColumn fx:id="colLogged" text="LoggedIn" prefWidth="90"/>
-                <TableColumn fx:id="colRole" text="Role (Emp)" prefWidth="120"/>
+                <TableColumn fx:id="colRole" text="Role (Emp)" prefWidth="160"/>
                 <TableColumn fx:id="colBudget" text="Budget (Cust)" prefWidth="120"/>
                 <TableColumn fx:id="colFrozen" text="Frozen (Cust)" prefWidth="110"/>
             </columns>

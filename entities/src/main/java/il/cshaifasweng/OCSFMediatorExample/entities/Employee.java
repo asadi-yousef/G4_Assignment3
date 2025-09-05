@@ -14,8 +14,8 @@ public class Employee extends User implements Serializable {
     private String role;
 
 
-    public Employee(String name, String username, String password, String role, Branch branch, boolean isNetworkEmployee) {
-        super(name, username, password,branch,isNetworkEmployee);
+    public Employee(String idNumber,String firstName,String lastName, String username, String password, String role, Branch branch, boolean isNetworkEmployee) {
+        super(idNumber, firstName,lastName,username, password,branch,isNetworkEmployee);
         this.role = role;
     }
 

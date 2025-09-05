@@ -24,7 +24,8 @@ public class RegisterControl implements Initializable {
 
     // Existing FXML fields
     @FXML private TextArea idField;            // NEW: ID textarea
-    @FXML private TextField nameField;
+    @FXML private TextField firstNameField;
+    @FXML private TextField lastNameField;
     @FXML private TextField usernameField;
     @FXML private PasswordField passwordField;
     @FXML private TextField emailField;
@@ -133,7 +134,11 @@ public class RegisterControl implements Initializable {
                 }
             } else if ("user already exists".equals(msg.getMessage())) {
                 showAlert(Alert.AlertType.ERROR, "Registration Failed", "A user with this username already exists.");
-            } else if (msg.getMessage().startsWith("Branches")) {
+            }
+            else if("id already exists".equals(msg.getMessage())) {
+                showAlert(Alert.AlertType.ERROR, "Registration Failed", "A user with this id number already exists.");
+            }
+            else if (msg.getMessage().startsWith("Branches")) {
                 this.branches = (List<Branch>) msg.getObject();
                 branchComboBox.getItems().clear();
                 for (Branch branch : branches) {
@@ -156,7 +161,8 @@ public class RegisterControl implements Initializable {
                 // IMPORTANT: ID is now the FIRST constructor parameter as requested
                 Customer newCustomer = new Customer(
                         idField.getText().trim(),
-                        nameField.getText().trim(),
+                        firstNameField.getText().trim(),
+                        lastNameField.getText().trim(),
                         usernameField.getText().trim(),
                         passwordField.getText(),
                         isNetworkAccount,
@@ -221,8 +227,11 @@ public class RegisterControl implements Initializable {
             errorMessage.append("Invalid Israeli ID number.\n");
         }
 
-        if (nameField.getText() == null || nameField.getText().trim().isEmpty()) {
+        if (firstNameField.getText() == null || firstNameField.getText().trim().isEmpty()) {
             errorMessage.append("Name is required.\n");
+        }
+        if (lastNameField.getText() == null || lastNameField.getText().trim().isEmpty()) {
+            errorMessage.append("Last name is required.\n");
         }
         if (usernameField.getText() == null || usernameField.getText().trim().isEmpty()) {
             errorMessage.append("Username is required.\n");
@@ -310,7 +319,8 @@ public class RegisterControl implements Initializable {
 
     private void clearForm() {
         if (idField != null) idField.clear();
-        nameField.clear();
+        firstNameField.clear();
+        lastNameField.clear();
         usernameField.clear();
         passwordField.clear();
         emailField.clear();

@@ -67,7 +67,7 @@ public class ReportsViewController implements Initializable {
             EventBus.getDefault().register(this);
         }
 
-        if (!(isSystemManager() || isBranchManager())) {
+        if (!(isNetManager() || isBranchManager())) {
             showInfo("Permission Denied", "You do not have permission to view reports.");
             return;
         }
@@ -94,7 +94,7 @@ public class ReportsViewController implements Initializable {
         LocalDate firstOfMonth = today.withDayOfMonth(1);
         LocalDate lastOfMonth  = today.withDayOfMonth(today.lengthOfMonth());
 
-        if (isSystemManager()) {
+        if (isNetManager()) {
             startDatePicker.setValue(today.minusMonths(1));
             endDatePicker.setValue(today);
         } else if (isBranchManager()) {
@@ -125,7 +125,7 @@ public class ReportsViewController implements Initializable {
         branchComboBox.getItems().clear();
         branchNameToId.clear();
 
-        if (isSystemManager()) {
+        if (isNetManager()) {
             branchComboBox.getItems().add("All Branches");
             branchNameToId.put("All Branches", null);
         }
@@ -176,7 +176,7 @@ public class ReportsViewController implements Initializable {
     @FXML
     private void onGenerate() {
         overlayMode = false; // single run
-        if (!(isSystemManager() || isBranchManager())) {
+        if (!(isNetManager() || isBranchManager())) {
             showInfo("Permission Denied", "You do not have permission to view reports.");
             return;
         }
@@ -226,7 +226,7 @@ public class ReportsViewController implements Initializable {
 
     @FXML
     private void onCompare() {
-        if (!isSystemManager()) {
+        if (!isNetManager()) {
             showInfo("Permission Denied", "Compare is available to system managers.");
             return;
         }
@@ -580,8 +580,8 @@ public class ReportsViewController implements Initializable {
         } catch (Exception e) { return ""; }
     }
 
-    private boolean isSystemManager() {
-        return "manager".equalsIgnoreCase(userRole());
+    private boolean isNetManager() {
+        return "netmanager".equalsIgnoreCase(userRole());
     }
 
     private boolean isBranchManager() {

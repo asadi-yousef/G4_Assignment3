@@ -43,7 +43,7 @@ public class App extends Application {
         stage.setTitle("Lilac");
         stage.getIcons().add(
                 new javafx.scene.image.Image(
-                        getClass().getResourceAsStream("/il/cshaifasweng/OCSFMediatorExample/client/images/Lilac.png")
+                        getClass().getResourceAsStream("/il/cshaifasweng/OCSFMediatorExample/client/images/Lilac1.png")
                 )
         );
         stage.setScene(scene);

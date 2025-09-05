@@ -1,21 +1,29 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
 import javafx.beans.property.*;
+import il.cshaifasweng.OCSFMediatorExample.entities.Branch;
+
 import java.math.BigDecimal;
 
 public class UserRow {
-    public final LongProperty id = new SimpleLongProperty();
-    public final StringProperty userType = new SimpleStringProperty();
-    public final StringProperty username = new SimpleStringProperty();
-    public final StringProperty name = new SimpleStringProperty();
-    public final StringProperty branchName = new SimpleStringProperty();
-    public final BooleanProperty network = new SimpleBooleanProperty();
-    public final BooleanProperty loggedIn = new SimpleBooleanProperty();
-    public final StringProperty role = new SimpleStringProperty();
-    public final ObjectProperty<BigDecimal> budget = new SimpleObjectProperty<>();
-    public final BooleanProperty frozen = new SimpleBooleanProperty();
-    public final BooleanProperty dirty = new SimpleBooleanProperty(false);
+    private final LongProperty id = new SimpleLongProperty();
+    private final StringProperty userType = new SimpleStringProperty();
+    private final StringProperty idNumber = new SimpleStringProperty();
+    private final StringProperty username = new SimpleStringProperty();
+    private final StringProperty firstName = new SimpleStringProperty();
+    private final StringProperty lastName = new SimpleStringProperty();
 
+    private final ObjectProperty<Branch> branch = new SimpleObjectProperty<>();
+    private final BooleanProperty network = new SimpleBooleanProperty();
+    private final BooleanProperty loggedIn = new SimpleBooleanProperty();
+
+    private final StringProperty role = new SimpleStringProperty();                 // employees
+    private final ObjectProperty<BigDecimal> budget = new SimpleObjectProperty<>(); // customers
+    private final BooleanProperty frozen = new SimpleBooleanProperty();             // customers
+
+    private final BooleanProperty dirty = new SimpleBooleanProperty(false);
+
+    // getters/setters + properties
     public long getId() { return id.get(); }
     public void setId(long v) { id.set(v); }
     public LongProperty idProperty() { return id; }
@@ -24,17 +32,25 @@ public class UserRow {
     public void setUserType(String v) { userType.set(v); }
     public StringProperty userTypeProperty() { return userType; }
 
+    public String getIdNumber() { return idNumber.get(); }
+    public void setIdNumber(String v) { idNumber.set(v); }
+    public StringProperty idNumberProperty() { return idNumber; }
+
     public String getUsername() { return username.get(); }
     public void setUsername(String v) { username.set(v); }
     public StringProperty usernameProperty() { return username; }
 
-    public String getName() { return name.get(); }
-    public void setName(String v) { name.set(v); }
-    public StringProperty nameProperty() { return name; }
+    public String getFirstName() { return firstName.get(); }
+    public void setFirstName(String v) { firstName.set(v); }
+    public StringProperty firstNameProperty() { return firstName; }
 
-    public String getBranchName() { return branchName.get(); }
-    public void setBranchName(String v) { branchName.set(v); }
-    public StringProperty branchNameProperty() { return branchName; }
+    public String getLastName() { return lastName.get(); }
+    public void setLastName(String v) { lastName.set(v); }
+    public StringProperty lastNameProperty() { return lastName; }
+
+    public Branch getBranch() { return branch.get(); }
+    public void setBranch(Branch b) { branch.set(b); }
+    public ObjectProperty<Branch> branchProperty() { return branch; }
 
     public boolean isNetwork() { return network.get(); }
     public void setNetwork(boolean v) { network.set(v); }

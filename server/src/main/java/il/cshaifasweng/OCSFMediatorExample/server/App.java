@@ -123,13 +123,16 @@ public class App {
                 System.out.println("Users in DB: " + userCount);
 
                 if (userCount == null || userCount == 0L) {
-                    Employee employee = new Employee("yosef", "yosef", "yosef2005", "Manager", null, true);
+                    Employee employee = new Employee("214734501","yosef","asadi", "yosef", "yosef2005", "netmanager", null, true);
                     session.save(employee);
                     session.flush();
-                    Employee employee2 = new Employee("silin", "silin", "silin", "customerservice", null, true);
+                    //Employee employee1 = new Employee("214732341","naaman","kopty", "_Naaman", "naaman1702", "branchmanager", null, false);
+                    //session.save(employee1);
+                    //session.flush();
+                    Employee employee2 = new Employee("214396675","silin","michael", "silin", "silin", "customerservice", null, true);
                     session.save(employee2);
                     session.flush();
-                    Employee e = new Employee("renata","renata","123","systemadmin",null,true);
+                    Employee e = new Employee("212735468","renata","haiek","renata","123","systemadmin",null,true);
                     session.save(e);
                     session.flush();
                 } else {
@@ -141,8 +144,10 @@ public class App {
                 ).getSingleResult();
 
                 if (branchCount == null || branchCount == 0L) {
-                    session.save(new Branch("Haifa"));
-                    session.save(new Branch("Tel Aviv"));
+                    //session.save(haifa);
+                    //session.flush();
+                    //session.save(telaviv);
+                    session.flush();
                 } else {
                     System.out.println("Branch table already contains data. Skipping insert.");
                 }
