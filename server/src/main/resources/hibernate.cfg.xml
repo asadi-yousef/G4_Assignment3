@@ -34,5 +34,6 @@
         <mapping class="il.cshaifasweng.OCSFMediatorExample.entities.Notification"/>
 
 
+
     </session-factory>
 </hibernate-configuration>

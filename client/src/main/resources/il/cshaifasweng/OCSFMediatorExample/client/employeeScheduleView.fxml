@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="il.cshaifasweng.OCSFMediatorExample.client.EmployeeScheduleController"
+      spacing="20"
+      alignment="TOP_CENTER"
+      style="-fx-background-color:#fafafa; -fx-padding:30;">
+
+    <!-- Header (like customer view) -->
+    <VBox style="-fx-background-color:#ffffff; -fx-background-radius:10; -fx-effect:dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
+        <VBox.margin><Insets left="30" right="30" top="25" /></VBox.margin>
+        <HBox alignment="CENTER_LEFT">
+            <padding><Insets bottom="20" left="25" right="25" top="25" /></padding>
+            <VBox alignment="CENTER_LEFT" spacing="5">
+                <Label text="📅" style="-fx-font-size:28px;">
+                    <VBox.margin><Insets bottom="5" /></VBox.margin>
+                </Label>
+                <Label text="Daily Schedule"
+                       style="-fx-font-size:28px; -fx-font-weight:bold; -fx-text-fill:#2c3e50;" />
+                <Label text="Update order states for today’s pickups &amp; deliveries"
+                       style="-fx-font-size:14px; -fx-text-fill:#7f8c8d;" />
+            </VBox>
+            <Region HBox.hgrow="ALWAYS" />
+            <HBox alignment="CENTER_RIGHT" spacing="8">
+                <Button text="←" onAction="#prevDay" style="-fx-background-color:#ecf0f1; -fx-background-radius:8;"/>
+                <DatePicker fx:id="dayPicker" />
+                <Button text="→" onAction="#nextDay" style="-fx-background-color:#ecf0f1; -fx-background-radius:8;"/>
+                <ChoiceBox fx:id="filterChoice" prefWidth="140"/>
+                <Button text="Refresh" onAction="#refresh"
+                        style="-fx-background-color:#3498db; -fx-text-fill:white; -fx-background-radius:8; -fx-font-weight:bold;"/>
+                <Button text="← Back to Main" onAction="#handleBack"
+                        style="-fx-background-color:#9b59b6; -fx-text-fill:white; -fx-background-radius:8; -fx-font-weight:bold;"/>
+            </HBox>
+        </HBox>
+    </VBox>
+
+    <!-- Content area like customer view -->
+    <StackPane prefWidth="1000" prefHeight="600">
+        <!-- No Orders message -->
+        <VBox alignment="CENTER" spacing="15">
+            <Label fx:id="noOrdersLabel" text="No orders for this day."
+                   style="-fx-font-size:18px; -fx-text-fill:#95a5a6;"/>
+            <Label text="Try another date or clear the filter."
+                   style="-fx-font-size:14px; -fx-text-fill:#bdc3c7;"/>
+        </VBox>
+
+        <!-- Table -->
+        <VBox alignment="TOP_CENTER" spacing="8" prefWidth="1000">
+            <ListView fx:id="cardList"
+                      prefHeight="560" prefWidth="1000"
+                      style="-fx-background-color: transparent; -fx-border-color: transparent; -fx-focus-color: transparent; -fx-faint-focus-color: transparent; -fx-cell-size: 120;">
+                <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+            </ListView>
+            <Label fx:id="statusLabel" text="Ready."
+                   style="-fx-text-fill:#7f8c8d; -fx-font-size:12;"/>
+        </VBox>
+    </StackPane>
+</VBox>

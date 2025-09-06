@@ -28,6 +28,9 @@ public class Order implements Serializable {
     private String note; // ברכה (optional)
     private String paymentMethod; // "SavedCard", "NewCard", "CashOnDelivery"
     private String paymentDetails; // e.g. card number or "Cash on Delivery"
+    private String status; // "PLACED","IN_PREP","READY_FOR_PICKUP","OUT_FOR_DELIVERY","DELIVERED","CANCELLED"
+    public String getStatus(){ return status; }
+    public void setStatus(String s){ this.status = s; }
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<OrderItem> items = new ArrayList<>();
@@ -124,10 +127,25 @@ public class Order implements Serializable {
         this.paymentDetails = paymentDetails;
     }
 
+    private java.time.LocalDateTime pickupDateTime; // nullable
+
+    public LocalDateTime getPickupDateTime() { return pickupDateTime; }
+    public void setPickupDateTime(LocalDateTime t) { this.pickupDateTime = t; }
+
     public List<OrderItem> getItems() {
         return items;
     }
     public void setItems(List<OrderItem> items) {
         this.items = items;
+    }
+
+    @jakarta.persistence.Transient
+    public LocalDateTime getScheduledAt() {
+        // delivery: deliveryDateTime; pickup: pickupDateTime if set; else fallback to orderDate
+        if (Boolean.TRUE.equals(getDelivery())) {
+            return getDeliveryDateTime();
+        }
+        return (getPickupDateTime() != null) ? getPickupDateTime()
+                : getOrderDate(); // fallback
     }
 }
