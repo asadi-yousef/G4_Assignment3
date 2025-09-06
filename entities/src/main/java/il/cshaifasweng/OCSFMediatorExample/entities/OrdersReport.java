@@ -11,6 +11,9 @@ public class OrdersReport extends Report implements Serializable {
     private int cancelledOrders;
     private int netOrders;
     private Map<String,Integer> typeHistogram;
+    private String slot;
+    private String requestId;
+
 
     public OrdersReport(int store_id, String branch_name, long branch_id, LocalDateTime startDate, LocalDateTime endDate,int totalOrders,int cancelledOrders,int netOrders,Map<String,Integer> typeHistogram) {
         super(store_id, branch_name, branch_id, startDate, endDate);
@@ -44,6 +47,8 @@ public class OrdersReport extends Report implements Serializable {
     public Map<String, Integer> getTypeHistogram() {
         return typeHistogram;
     }
+    public String getSlot(){return slot;} public void setSlot(String s){this.slot=s;}
+    public String getRequestId(){return requestId;} public void setRequestId(String r){this.requestId=r;}
     public void setCancelledOrders(int cancelledOrders) {
         this.cancelledOrders = cancelledOrders;
     }
@@ -56,4 +61,5 @@ public class OrdersReport extends Report implements Serializable {
     public void setTypeHistogram(Map<String, Integer> typeHistogram) {
         this.typeHistogram = typeHistogram;
     }
+
 }

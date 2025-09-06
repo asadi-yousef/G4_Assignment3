@@ -148,4 +148,16 @@ public class Order implements Serializable {
         return (getPickupDateTime() != null) ? getPickupDateTime()
                 : getOrderDate(); // fallback
     }
+    @Transient
+    public double calculateFinalTotal() {
+        double total = items.stream()
+                .mapToDouble(item -> item.getDisplayUnitPrice() * item.getQuantity())
+                .sum();
+
+        if (customer != null && customer.hasValidSubscription() && total > 50) {
+            total *= 0.9;
+        }
+        return total;
+    }
+
 }

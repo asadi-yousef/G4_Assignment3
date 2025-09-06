@@ -19,7 +19,7 @@ public class ComplaintDTO implements Serializable {
 
     public ComplaintDTO(Complaint c) {
         this.id = c.getId();
-        this.customerName = (c.getCustomer() != null ? c.getCustomer().getName() : "—");
+        this.customerName = (c.getCustomer() != null ? c.getCustomer().getFirstName() : "—");
         this.orderId = (c.getOrder() != null ? c.getOrder().getId() : null);
         this.text = c.getText();
         this.submittedAt = c.getSubmittedAt();

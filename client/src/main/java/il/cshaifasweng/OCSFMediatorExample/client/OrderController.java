@@ -3,6 +3,7 @@ package il.cshaifasweng.OCSFMediatorExample.client;
 import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
@@ -10,6 +11,7 @@ import javafx.stage.Stage;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
+import java.io.IOException;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -76,6 +78,17 @@ public class OrderController implements Initializable {
 
     private Customer currentCustomer;
     private boolean isNetworkCustomer;
+    @FXML
+    private Label orderTotalLabel;
+    @FXML
+    private HBox budgetBox;
+    @FXML
+    private Label budgetBalanceLabel;
+    @FXML
+    private Button useBudgetButton;
+
+
+    private double currentOrderTotal;
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
@@ -144,7 +157,6 @@ public class OrderController implements Initializable {
         // Initial sections: default Pickup (as in your original)
         deliveryDetailsSection.setVisible(false);
         deliveryDetailsSection.setManaged(false);
-
         storeLocationSection.setVisible(true);
         storeLocationSection.setManaged(true);
 
@@ -171,7 +183,6 @@ public class OrderController implements Initializable {
                 // Delivery selected
                 deliveryDetailsSection.setVisible(true);
                 deliveryDetailsSection.setManaged(true);
-
                 storeLocationSection.setVisible(false);
                 storeLocationSection.setManaged(false);
 
@@ -179,7 +190,6 @@ public class OrderController implements Initializable {
                 // Pickup selected
                 deliveryDetailsSection.setVisible(false);
                 deliveryDetailsSection.setManaged(false);
-
                 storeLocationSection.setVisible(true);
                 storeLocationSection.setManaged(true);
 
@@ -197,14 +207,63 @@ public class OrderController implements Initializable {
         });
 
         // Payment method setup
-        paymentMethodChoice.getItems().setAll("Saved Card", "New Card", "Pay Upon Delivery");
-        paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            boolean showNewCard = "New Card".equals(newVal);
-            newCardBox.setVisible(showNewCard);
-            newCardBox.setManaged(showNewCard);
-        });
+        paymentMethodChoice.getItems().setAll("Saved Card", "New Card", "Pay Upon Delivery", "My Budget");
+        // Initially hide budget box and new card box
+        budgetBox.setVisible(false);
+        budgetBox.setManaged(false);
         newCardBox.setVisible(false);
         newCardBox.setManaged(false);
+
+        // Show/hide budget or new card based on selection
+        paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            newCardBox.setVisible("New Card".equals(newVal));
+            newCardBox.setManaged("New Card".equals(newVal));
+
+            if ("My Budget".equals(newVal)) {
+                budgetBox.setVisible(true);
+                budgetBox.setManaged(true);
+                if (current != null && current.getBudget() != null) {
+                    budgetBalanceLabel.setText("Budget Balance: ₪" +
+                            String.format("%.2f", current.getBudget().getBalance()));
+                } else {
+                    budgetBalanceLabel.setText("Budget Balance: ₪0.00");
+                }
+            } else {
+                budgetBox.setVisible(false);
+                budgetBox.setManaged(false);
+            }
+        });
+        currentOrderTotal = SessionManager.getInstance().getOrderTotal();
+        orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
+        useBudgetButton.setOnAction(e -> {
+            if (current == null || current.getBudget() == null) return;
+
+            Budget budget = current.getBudget();
+            double fromBudget = Math.min(currentOrderTotal, budget.getBalance());
+            currentOrderTotal -= fromBudget;
+            budget.subtractFunds(fromBudget);
+
+            // Update UI
+            orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
+            budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", budget.getBalance()));
+
+            // Send server update
+            List<Object> payload = new ArrayList<>();
+            payload.add(current);
+            Message msg = new Message("update_budget", null, payload);
+            try {
+                SimpleClient.getClient().sendToServer(msg);
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                showAlert("Error", "Failed to update budget on server: " + ex.getMessage());
+            }
+
+            if (currentOrderTotal == 0) {
+                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Order fully paid with budget!");
+                alert.showAndWait();
+            }
+        });
+
 
         placeOrderButton.setOnAction(e -> placeOrder());
         cancelButton.setOnAction(e -> goBackToCart());
@@ -276,27 +335,66 @@ public class OrderController implements Initializable {
                     return;
                 }
             }
-
+            double orderTotal = SessionManager.getInstance().getOrderTotal();
             String paymentMethod = paymentMethodChoice.getValue();
             if (paymentMethod == null) {
                 showAlert("Missing Data", "Please select a payment method.");
                 return;
             }
             String paymentDetails = null;
-            if ("Saved Card".equals(paymentMethod)) {
-                if (customer.getCreditCard() == null || customer.getCreditCard().getCardNumber() == null) {
-                    showAlert("Missing Data", "No saved card on file.");
-                    return;
+            boolean isPaid = false;
+            while(!isPaid) {
+                if ("Saved Card".equals(paymentMethod)) {
+                    if (customer.getCreditCard() == null || customer.getCreditCard().getCardNumber() == null) {
+                        showAlert("Missing Data", "No saved card on file.");
+                        return;
+                    }
+                    isPaid = true;
+                    paymentDetails = customer.getCreditCard().getCardNumber();
+                } else if ("New Card".equals(paymentMethod)) {
+                    paymentDetails = newCardField.getText();
+                    if (paymentDetails == null || paymentDetails.trim().isEmpty()) {
+                        showAlert("Missing Data", "Please enter the new card number.");
+                        return;
+                    }
+                    isPaid = true;
+                } else if ("Pay Upon Delivery".equals(paymentMethod)) {
+                    paymentDetails = "Cash on Delivery";
+                    isPaid = true;
+                } else if ("My Budget".equals(paymentMethod)) {
+                    Budget budget = customer.getBudget();
+                    if (budget != null) {
+                        double fromBudget = Math.min(orderTotal, budget.getBalance());
+                        if (fromBudget == orderTotal) {
+                            orderTotal = 0;
+                            isPaid = true;
+                        }
+                        else {
+                            orderTotal -= fromBudget;
+                            double remaining = orderTotal;
+                            Platform.runLater(() -> {
+                                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                                alert.setTitle("Additional Payment Required");
+                                alert.setHeaderText(null);
+                                alert.setContentText("Your budget covered ₪"
+                                        + String.format("%.2f", fromBudget)
+                                        + ". You still need to pay ₪"
+                                        + String.format("%.2f", remaining)
+                                        + ". Please select another payment method.");
+                                alert.showAndWait();
+                            });
+
+                            // Optionally reset payment dropdown
+                            paymentMethodChoice.getSelectionModel().clearSelection();
+                        }
+                        budget.subtractFunds(fromBudget);
+                        List<Object> payload = new ArrayList<>();
+                        payload.add(customer);
+                        Message msg = new Message(("update_budget"), null, payload);
+                        SimpleClient.getClient().sendToServer(msg);
+
+                    }
                 }
-                paymentDetails = customer.getCreditCard().getCardNumber();
-            } else if ("New Card".equals(paymentMethod)) {
-                paymentDetails = newCardField.getText();
-                if (paymentDetails == null || paymentDetails.trim().isEmpty()) {
-                    showAlert("Missing Data", "Please enter the new card number.");
-                    return;
-                }
-            } else if ("Pay Upon Delivery".equals(paymentMethod)) {
-                paymentDetails = "Cash on Delivery";
             }
 
             Order order = new Order();

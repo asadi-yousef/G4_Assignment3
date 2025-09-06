@@ -30,6 +30,12 @@ public class CartController implements Initializable {
     private Button backToCatalogButton;
     @FXML
     private Button proceedToOrderButton;
+    @FXML
+    private Label originalTotalLabel;
+    @FXML
+    private Label discountBadge;
+    @FXML
+    private HBox discountContainer;
 
     private Cart cart;
 
@@ -64,7 +70,6 @@ public class CartController implements Initializable {
     @Subscribe
     public void onMessageFromServer(Message msg) {
         System.out.println("Message received on EventBus: " + msg.getMessage());
-
         if (msg.getMessage().equals("cart_data")) {
             Cart cart = (Cart) msg.getObject();
             System.out.println("Received cart id: " + cart.getId());
@@ -75,11 +80,7 @@ public class CartController implements Initializable {
                         : (ci.getCustomBouquet() != null ? "Custom Bouquet" : "Unknown");
                 System.out.println(what + ", qty: " + ci.getQuantity());
             }
-
             this.cart = cart;
-
-            // If you keep using SessionManager for the order view, only sync real products.
-            // (Skip bouquets – the server will handle them during checkout.)
             SessionManager.getInstance().clearCart();
             if (this.cart != null && this.cart.getItems() != null) {
                 for (CartItem ci : this.cart.getItems()) {
@@ -92,7 +93,6 @@ public class CartController implements Initializable {
                     }
                 }
             }
-
             if (this.cart != null) {
                 renderCart();
             } else {
@@ -121,7 +121,6 @@ public class CartController implements Initializable {
             } else {
                 System.err.println("[CartController] Received editProduct with no payload.");
             }
-
         }
     }
 
@@ -138,9 +137,7 @@ public class CartController implements Initializable {
      */
     private void updateCartWithEditedProduct(Product updated) {
         if (updated == null || this.cart == null || this.cart.getItems() == null) return;
-
         boolean anyChange = false;
-
         for (CartItem item : this.cart.getItems()) {
             // 1) Plain product line
             Product p = item.getProduct();
@@ -173,7 +170,6 @@ public class CartController implements Initializable {
         }
     }
 
-
     public void setCart(Cart cart) {
         this.cart = cart;
         renderCart();
@@ -189,6 +185,8 @@ public class CartController implements Initializable {
             if (cart == null || cart.getItems().isEmpty()) {
                 proceedToOrderButton.setDisable(true);
                 totalLabel.setText("Total: ₪0.00");
+                discountContainer.setVisible(false);
+                discountContainer.setManaged(false);
                 return;
             }
 
@@ -198,7 +196,7 @@ public class CartController implements Initializable {
                 total += displayUnitPrice(item) * item.getQuantity();
             }
 
-            totalLabel.setText("Total: ₪" + String.format("%.2f", total));
+            applyDiscountAndUpdateTotal(total);
             proceedToOrderButton.setDisable(false);
         });
     }
@@ -216,15 +214,10 @@ public class CartController implements Initializable {
 
         Label namePriceLabel = new Label(nameText + " - ₪" + String.format("%.2f", unit));
         namePriceLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #2c3e50; -fx-font-weight: bold;");
-
-        // Per-item total label
         Label totalItemLabel = new Label("₪" + String.format("%.2f", unit * item.getQuantity()));
         totalItemLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #555;");
-
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        // Quantity controls (on the RIGHT)
         Label qtyLbl = new Label("Qty:");
         qtyLbl.setStyle("-fx-text-fill: #2c3e50; -fx-font-size: 14px;");
 
@@ -235,14 +228,9 @@ public class CartController implements Initializable {
 
         quantitySpinner.valueProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null && !newVal.equals(oldVal) && quantitySpinner.isFocused()) {
-                // Update per-item total label immediately (UI feedback)
                 double unitNow = displayUnitPrice(item);
                 totalItemLabel.setText("₪" + String.format("%.2f", unitNow * newVal));
-
-                // Optimistic cart total update in UI
                 updateCartTotalPreview(item, newVal);
-
-                // Tell server to update DB & then it will push fresh cart_data
                 updateCartItemQuantity(item, newVal);
             }
         });
@@ -271,7 +259,26 @@ public class CartController implements Initializable {
                     : ci.getQuantity();
             total += displayUnitPrice(ci) * qty;
         }
-        totalLabel.setText("Total: ₪" + String.format("%.2f", total));
+
+        applyDiscountAndUpdateTotal(total);
+    }
+    private void applyDiscountAndUpdateTotal(double total) {
+        Customer customer = (Customer) (SessionManager.getInstance().getCurrentUser());
+        if (customer.isSubscribed() && customer.getSubscription().isActive() && total > 50) {
+            double discountedTotal = cart.getTotalWithDiscount();
+            discountContainer.setVisible(true);
+            discountContainer.setManaged(true);
+            originalTotalLabel.setText("Total: ₪" + String.format("%.2f", total));
+            originalTotalLabel.setStyle("-fx-background-color: transparent; -fx-strikethrough: true;");
+            totalLabel.setText("Total: ₪" + String.format("%.2f", discountedTotal));
+            totalLabel.setTextFill(javafx.scene.paint.Color.web("#27ae60")); // Green for savings
+
+        } else {
+            discountContainer.setVisible(false);
+            discountContainer.setManaged(false);
+            totalLabel.setText("Total: ₪" + String.format("%.2f", total));
+            totalLabel.setTextFill(javafx.scene.paint.Color.web("#2c3e50")); // Dark color for regular price
+        }
     }
 
     private void updateCartItemQuantity(CartItem item, int newQuantity) {
@@ -340,6 +347,8 @@ public class CartController implements Initializable {
                 }
             }
         }
+
+        SessionManager.getInstance().setOrderTotal(cart.getTotalWithDiscount());
 
         EventBus.getDefault().unregister(this);
         Platform.runLater(() -> {

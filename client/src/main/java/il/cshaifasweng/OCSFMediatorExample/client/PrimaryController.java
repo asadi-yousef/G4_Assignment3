@@ -20,11 +20,12 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
-
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class PrimaryController implements Initializable {
@@ -69,6 +70,11 @@ public class PrimaryController implements Initializable {
 	private volatile boolean customBouquetMode = false;
 	private final Map<Long, Integer> selectedFlowerQuantities = new LinkedHashMap<>();
 	private boolean preserveCustomModeOnNextCatalog = false;
+	// ---- image bytes sent by the server (productId -> byte[]) ----
+	private static final Map<Long, byte[]> IMAGE_CACHE = new ConcurrentHashMap<>();
+	public static byte[] getImageBytes(long productId) { return IMAGE_CACHE.get(productId); }
+	public static boolean hasImageBytes(long productId) { return IMAGE_CACHE.containsKey(productId); }
+
 
 	@Override
 	public void initialize(URL location, ResourceBundle resources) {
@@ -161,6 +167,48 @@ public class PrimaryController implements Initializable {
 			updateCustomStatusLabel();
 		});
 	}
+	/** Persist server-sent image bytes to the per-user cache using the product's server filename. */
+	private void persistImageBytesFor(Product p, byte[] data) {
+		if (p == null || p.getId() == null || data == null || data.length == 0) return;
+		try {
+			File target = cacheFileFor(p);  // uses imagePath's last segment or <id>.bin
+			writeBytes(target, data);       // will mkdirs() as needed
+		} catch (Exception ex) {
+			System.err.println("Failed to persist image for product " + p.getId() + ": " + ex.getMessage());
+		}
+	}
+
+	// Local image cache under the user home
+	private static final File LOCAL_IMAGE_CACHE_DIR =
+			new File(System.getProperty("user.home"), ".ocsf_app/images").getAbsoluteFile();
+
+	private static void ensureCacheDir() {
+		if (!LOCAL_IMAGE_CACHE_DIR.exists()) LOCAL_IMAGE_CACHE_DIR.mkdirs();
+	}
+
+	private static File cacheFileFor(Product p) {
+		// Prefer server-provided file name from product.getImagePath() -> last segment
+		String path = p.getImagePath();
+		String fileName = null;
+		if (path != null && !path.isBlank()) {
+			String norm = path.replace('\\','/');
+			int i = norm.lastIndexOf('/');
+			fileName = (i >= 0 && i < norm.length()-1) ? norm.substring(i+1) : norm;
+		}
+		if (fileName == null || fileName.isBlank()) {
+			// Fallback: id.bin
+			fileName = (p.getId() == null ? "noid" : p.getId().toString()) + ".bin";
+		}
+		return new File(LOCAL_IMAGE_CACHE_DIR, fileName);
+	}
+
+	private static void writeBytes(File target, byte[] data) throws IOException {
+		ensureCacheDir();
+		try (java.io.FileOutputStream fos = new java.io.FileOutputStream(target)) {
+			fos.write(data);
+		}
+	}
+
 
 	private Product safeCastProduct(Object o) {
 		try { return (Product) o; } catch (Exception ignored) { return null; }
@@ -307,23 +355,48 @@ public class PrimaryController implements Initializable {
 					if (list != null && list.size() >= 2) {
 						this.flowersOnlyCatalog = safeCast(list.get(0));
 						this.nonFlowerCatalog   = safeCast(list.get(1));
+
+						// index 2 (optional): Map<Long, byte[]> of productId -> image bytes
+						if (list.size() >= 3 && list.get(2) instanceof Map<?,?> blobs) {
+							for (Map.Entry<?,?> e : ((Map<?,?>) blobs).entrySet()) {
+								Object k = e.getKey();
+								Object v = e.getValue();
+								if (k instanceof Number && v instanceof byte[]) {
+									long pid = ((Number) k).longValue();
+									byte[] data = (byte[]) v;
+									IMAGE_CACHE.put(pid, data);
+								}
+							}
+						}
 					} else {
-						// in case server doesn't split, derive them here
+						// server didn't split: derive locally
 						rebuildDerivedCatalogsFromFull();
 					}
 
-					// choose current catalog: FULL for everyone by default
+					// choose current catalog: FULL by default (flowers-only if custom mode)
 					if (fullCatalog != null) {
 						this.catalog = customBouquetMode ? flowersOnlyCatalogOrDerived() : fullCatalog;
 						populateTypeFilter(this.catalog);
 					}
 
-					// preserve custom mode if requested for this one refresh
+					// persist any received image bytes to disk cache so ProductCard can load "images/<uuid>.*"
+					try {
+						if (fullCatalog != null && fullCatalog.getFlowers() != null) {
+							for (Product p : fullCatalog.getFlowers()) {
+								if (p == null || p.getId() == null) continue;
+								byte[] data = IMAGE_CACHE.get(p.getId());
+								if (data != null && data.length > 0) {
+									persistImageBytesFor(p, data);
+								}
+							}
+						}
+					} catch (Exception ex) {
+						System.err.println("Catalog image persistence error: " + ex.getMessage());
+					}
+
+					// keep custom mode flag if requested
 					if (preserveCustomModeOnNextCatalog) {
-						// keep customBouquetMode as-is
 						preserveCustomModeOnNextCatalog = false;
-					} else {
-						// we no longer force customBouquetMode = false here
 					}
 
 					updateCustomButtonState();
@@ -332,9 +405,24 @@ public class PrimaryController implements Initializable {
 				}
 
 				case "add_product": {
-					// expect payload Product
 					Product added = safeCastProduct(msg.getObject());
 					if (added != null) {
+						// server may include raw bytes in objectList[0]
+						if (msg.getObjectList() != null && !msg.getObjectList().isEmpty()) {
+							Object o = msg.getObjectList().get(0);
+							if (o instanceof byte[] bytes) {
+								IMAGE_CACHE.put(added.getId(), bytes);
+								// also persist to local cache immediately for cross-machine loading
+								persistImageBytesFor(added, bytes);
+							} else if (o instanceof Map<?,?> meta) {
+								Object bytes = meta.get("imageBytes");
+								if (bytes instanceof byte[] b) {
+									IMAGE_CACHE.put(added.getId(), b);
+									persistImageBytesFor(added, b);
+								}
+							}
+						}
+
 						applyUpsertToFull(added);
 						rebuildDerivedCatalogsFromFull();
 						refreshViewKeepingMode();
@@ -346,20 +434,41 @@ public class PrimaryController implements Initializable {
 				}
 
 				case "editProduct": {
-					// sometimes your server broadcasts edit without payload
 					Product edited = safeCastProduct(msg.getObject());
 					if (edited != null) {
+						// NEW: accept imageBytes if server included them (mirror add_product)
+						if (msg.getObjectList() != null && !msg.getObjectList().isEmpty()) {
+							Object o = msg.getObjectList().get(0);
+							if (o instanceof byte[] bytes) {
+								IMAGE_CACHE.put(edited.getId(), bytes);
+								persistImageBytesFor(edited, bytes);
+							} else if (o instanceof Map<?,?> meta) {
+								Object bytes = ((Map<?,?>) meta).get("imageBytes");
+								if (bytes instanceof byte[] b) {
+									IMAGE_CACHE.put(edited.getId(), b);
+									persistImageBytesFor(edited, b);
+								}
+							}
+						}
+
 						applyUpsertToFull(edited);
 						rebuildDerivedCatalogsFromFull();
+
+						// keep your existing safety net
+						try {
+							byte[] b = IMAGE_CACHE.get(edited.getId());
+							if (b != null && b.length > 0) persistImageBytesFor(edited, b);
+						} catch (Exception ignored) {}
+
 						refreshViewKeepingMode();
 					} else {
-						// must reload; keep custom mode after reload
 						fallbackReloadKeepingMode();
 					}
 					break;
 				}
 
-				case "delete_product": { // handle both just in case
+
+				case "delete_product": {
 					Long id = safeCastLong(msg.getObject());
 					if (id != null) {
 						applyDeleteFromFull(id);
@@ -383,10 +492,11 @@ public class PrimaryController implements Initializable {
 						e.printStackTrace();
 					}
 					break;
+
 				case "orders_data": {
 					@SuppressWarnings("unchecked")
 					List<Order> orders = (List<Order>) msg.getObject();
-					SessionManager.getInstance().setOrders(orders);   // <-- add this
+					SessionManager.getInstance().setOrders(orders);
 					try {
 						EventBus.getDefault().unregister(this);
 						App.setRoot("ordersScreenView");
@@ -396,20 +506,30 @@ public class PrimaryController implements Initializable {
 					break;
 				}
 
-                case "inbox_list_error": {
-                    String err = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Failed to load inbox.";
-                    showAlert("Inbox Error", err);
-                    break;
-                }
+				case "logout_success":{
+					SessionManager.getInstance().logout();
+					updateUIBasedOnUserStatus();
+					resetToFullCatalogAfterLogout();
+					showAlert("Success", "Logged out successfully!");
+					break;
+				}
+				case "inbox_list_error": {
+					String err = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Failed to load inbox.";
+					showAlert("Inbox Error", err);
+					break;
+				}
+				case "force_logout":{
+					showAlert("Alert!", "You have been banned/frozen contact administrator.");
+					break;
+				}
 
-
-
-                default:
+				default:
 					System.out.println("Received unhandled message from server: " + msg.getMessage());
 					break;
 			}
 		});
 	}
+
 
 	@SuppressWarnings("unchecked")
 	private Catalog safeCast(Object o) {
@@ -446,7 +566,7 @@ public class PrimaryController implements Initializable {
 		if (u == null) return false;
 		if (u instanceof Employee) {
 			String role = ((Employee) u).getRole();
-			return "manager".equalsIgnoreCase(role) || "system_manager".equalsIgnoreCase(role);
+			return role.contains("manager");
 		}
 		return false;
 	}
@@ -1011,13 +1131,15 @@ public class PrimaryController implements Initializable {
 	}
 
 	@FXML
-	public void handleLogout(ActionEvent actionEvent) {
-		SessionManager.getInstance().logout();
-		updateUIBasedOnUserStatus();
+	public void handleLogout(ActionEvent actionEvent) throws IOException {
+		String username = (String) (SessionManager.getInstance().getCurrentUser().getUsername());
+		SimpleClient.getClient().sendToServer(new Message("logout",username,null));
+		//SessionManager.getInstance().logout();
+		//updateUIBasedOnUserStatus();
 
-		resetToFullCatalogAfterLogout(); // <-- ensures full, unfiltered catalog
+		//resetToFullCatalogAfterLogout(); // <-- ensures full, unfiltered catalog
 
-		showAlert("Success", "Logged out successfully!");
+		//showAlert("Success", "Logged out successfully!");
 	}
 
 

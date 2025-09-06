@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns="http://javafx.com/javafx" xmlns:fx="http://javafx.com/fxml"
+            fx:controller="il.cshaifasweng.OCSFMediatorExample.client.AdminUsersController">
+
+    <top>
+        <HBox spacing="8" style="-fx-padding: 10;">
+            <TextField fx:id="searchField" promptText="Search by username..." HBox.hgrow="ALWAYS"/>
+            <Button text="Search" onAction="#onSearch"/>
+            <Button text="Save Changes" onAction="#onSaveSelected"/>
+            <Button text="Freeze/Unfreeze" onAction="#onToggleFreeze"/>
+            <!-- New hard delete button -->
+            <Button text="Delete" onAction="#onDeleteSelected"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Back" onAction="#onBack"/>
+        </HBox>
+    </top>
+
+    <center>
+        <TableView fx:id="table" editable="true">
+            <columns>
+                <TableColumn fx:id="colType" text="Type" prefWidth="90"/>
+                <TableColumn fx:id="colIdNumber" text="ID Number" prefWidth="130"/>
+                <TableColumn fx:id="colUsername" text="Username" prefWidth="150"/>
+                <TableColumn fx:id="colFirstName" text="First Name" prefWidth="140"/>
+                <TableColumn fx:id="colLastName" text="Last Name" prefWidth="140"/>
+                <TableColumn fx:id="colBranch" text="Branch" prefWidth="180"/>
+                <TableColumn fx:id="colNetwork" text="Network" prefWidth="90"/>
+                <TableColumn fx:id="colLogged" text="LoggedIn" prefWidth="90"/>
+                <TableColumn fx:id="colRole" text="Role (Emp)" prefWidth="160"/>
+                <TableColumn fx:id="colBudget" text="Budget (Cust)" prefWidth="120"/>
+                <TableColumn fx:id="colFrozen" text="Frozen (Cust)" prefWidth="110"/>
+            </columns>
+        </TableView>
+    </center>
+
+    <bottom>
+        <HBox spacing="8" style="-fx-padding: 10;">
+            <Label fx:id="statusLabel" text="Ready"/>
+            <Region HBox.hgrow="ALWAYS"/>
+            <Button text="Load More" onAction="#onLoadMore"/>
+        </HBox>
+    </bottom>
+</BorderPane>

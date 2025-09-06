@@ -5,61 +5,89 @@
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.shape.Rectangle?>
 <?import javafx.scene.text.*?>
+<?import javafx.scene.paint.*?>
 
-<ScrollPane fitToHeight="false" fitToWidth="true" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController">
+<ScrollPane fitToHeight="false" fitToWidth="true"
+            xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="il.cshaifasweng.OCSFMediatorExample.client.PrimaryController"
+            style="-fx-background-color: transparent; -fx-background: transparent;">
    <content>
-      <AnchorPane fx:id="mainAnchorPane" minHeight="670.0" minWidth="1200.0">
+      <AnchorPane fx:id="mainAnchorPane" minHeight="670.0" minWidth="1200.0"
+                  style="-fx-background-color: linear-gradient(to bottom right, #FFF7FB 0%, #F6ECFF 45%, #E9F7F5 100%);">
          <children>
-            <Rectangle arcHeight="5.0" arcWidth="5.0" fill="#ffc0cb" height="60.0" stroke="BLACK" strokeType="INSIDE" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0" />
-            <Label layoutX="19.0" layoutY="8.0" text="Lilac">
-               <font><Font name="Bell MT Italic" size="36.0" /></font>
+
+            <!-- Top bar: soft lilac -> blush gradient -->
+            <Rectangle arcHeight="12.0" arcWidth="12.0" height="60.0" stroke="transparent" strokeType="INSIDE"
+                       AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0">
+               <fill>
+                  <LinearGradient startX="0.0" startY="0.0" endX="1.0" endY="0.0" proportional="true" cycleMethod="NO_CYCLE">
+                     <stops>
+                        <Stop color="#f3e8ff" offset="0.0"/>
+                        <Stop color="#ffe4ec" offset="1.0"/>
+                     </stops>
+                  </LinearGradient>
+               </fill>
+            </Rectangle>
+
+            <Label layoutX="19.0" layoutY="8.0" text="Lilac" style="-fx-text-fill: black; -fx-font-size: 36px; -fx-font-family: 'Bell MT'; -fx-font-style: italic;">
+               <font><Font name="Bell MT Italic" size="36.0"/></font>
             </Label>
 
-            <Button fx:id="loginButton" onAction="#handleLogin" text="Login" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="15.0">
-               <font><Font name="Bell MT" size="14.0" /></font>
+            <Button fx:id="loginButton" onAction="#handleLogin" text="Login"
+                    AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="15.0"
+                    style="-fx-background-color:#b784e1; -fx-text-fill:white; -fx-background-radius:20; -fx-padding:7 16;">
+               <font><Font name="Bell MT" size="14.0"/></font>
             </Button>
 
-            <Label fx:id="userStatusLabel" text="Hi, username" visible="false" AnchorPane.rightAnchor="110.0" AnchorPane.topAnchor="20.0">
-               <font><Font name="Bell MT" size="12.0" /></font>
+            <Label fx:id="userStatusLabel" text="Hi, username" visible="false"
+                   AnchorPane.rightAnchor="110.0" AnchorPane.topAnchor="20.0"
+                   style="-fx-text-fill:#5b2e7e;">
+               <font><Font name="Bell MT" size="12.0"/></font>
             </Label>
 
-            <Button fx:id="logoutButton" mnemonicParsing="false" onAction="#handleLogout" style="-fx-background-color: #c0392b; -fx-text-fill: white; -fx-background-radius: 8;" text="Logout" visible="false" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="15.0">
-               <font><Font name="System Bold" size="14.0" /></font>
+            <Button fx:id="logoutButton" mnemonicParsing="false" onAction="#handleLogout"
+                    style="-fx-background-color:#e25b4f; -fx-text-fill:white; -fx-background-radius:20; -fx-padding:7 16;"
+                    text="Logout" visible="false" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="15.0">
+               <font><Font name="System Bold" size="14.0"/></font>
             </Button>
 
             <Separator layoutY="60.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" />
 
-            <HBox fx:id="customerMenuBar" alignment="CENTER" spacing="10.0" visible="false" AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0">
+            <!-- Customer bar: subtle translucent card -->
+            <HBox fx:id="customerMenuBar" alignment="CENTER" spacing="10.0" visible="false"
+                  AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0"
+                  style="-fx-background-color: rgba(255,255,255,0.65); -fx-background-radius:18; -fx-padding:8 12; -fx-border-color: rgba(155,89,182,0.25); -fx-border-radius:18;">
                <children>
-                  <Button onAction="#handleCatalog" text="Catalog" />
-                  <Button onAction="#handleCart" text="My Cart" />
-                  <Button onAction="#handleOrdersScreen" text="My Orders" />
-                  <Button text="Complaints" onAction="#handleOpenComplaints"/>
+                  <Button onAction="#handleCatalog" text="Catalog"
+                          style="-fx-background-color:#b784e1; -fx-text-fill:white; -fx-background-radius:20; -fx-padding:6 14;"/>
+                  <Button onAction="#handleCart" text="My Cart"
+                          style="-fx-background-color:#9ad6cb; -fx-text-fill:#1f3f3a; -fx-background-radius:20; -fx-padding:6 14;"/>
+                  <Button onAction="#handleOrdersScreen" text="My Orders"
+                          style="-fx-background-color:white; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-border-color:#d9c6ef; -fx-border-radius:20; -fx-padding:6 14;"/>
+                  <Button text="Complaints" onAction="#handleOpenComplaints"
+                          style="-fx-background-color:white; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-border-color:#d9c6ef; -fx-border-radius:20; -fx-padding:6 14;"/>
 
+                  <Button fx:id="makeCustomBouquetButton" text="Make a Custom Bouquet"
+                          onAction="#handleMakeCustomBouquet" visible="false" managed="false"
+                          style="-fx-background-color:#ffafcc; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-padding:6 14;"/>
 
-                   <!-- NEW: customer-only button (controller toggles visibility) -->
-                  <Button fx:id="makeCustomBouquetButton"
-                          text="Make a Custom Bouquet"
-                          onAction="#handleMakeCustomBouquet"
-                          visible="false" managed="false"/>
-
-
-
-                   <Pane HBox.hgrow="ALWAYS" />
-                   <!-- Inbox (top-right) -->
-                   <Button fx:id="inboxButton"
-                           text="📥 Inbox"
-                           onAction="#handleInbox"
-                           visible="false" managed="false">
-                       <font><Font name="System Bold" size="14.0"/></font>
-                   </Button>
-                  <Button onAction="#handleProfile" style="-fx-background-color: #9b59b6; -fx-text-fill: white; -fx-background-radius: 8;" text="👤 Profile">
-                     <font><Font name="System Bold" size="14.0" /></font>
+                  <Pane HBox.hgrow="ALWAYS" />
+                  <Button fx:id="inboxButton" text="📥 Inbox" onAction="#handleInbox" visible="false" managed="false"
+                          style="-fx-background-color:black; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-border-color:#d9c6ef; -fx-border-radius:20; -fx-padding:6 14;">
+                     <font><Font name="System Bold" size="14.0"/></font>
+                  </Button>
+                  <Button onAction="#handleProfile"
+                          style="-fx-background-color:#9b59b6; -fx-text-fill:white; -fx-background-radius:20; -fx-padding:6 16;"
+                          text="👤 Profile">
+                     <font><Font name="System Bold" size="14.0"/></font>
                   </Button>
                </children>
             </HBox>
 
-            <HBox fx:id="employeeMenuBar" alignment="CENTER" spacing="10.0" visible="false" AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0">
+            <!-- Employee bar: same card look -->
+            <HBox fx:id="employeeMenuBar" alignment="CENTER" spacing="10.0" visible="false"
+                  AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0"
+                  style="-fx-background-color: rgba(255,255,255,0.65); -fx-background-radius:18; -fx-padding:8 12; -fx-border-color: rgba(155,89,182,0.25); -fx-border-radius:18;">
                <children>
                   <Button onAction="#handleAddProduct" text="Add Product" />
                   <Button fx:id="reportButton" onAction="#handleViewReports" text="Reports" />
@@ -67,47 +95,65 @@
                    <Button fx:id="broadcastButton" text="Broadcast" onAction="#handleBroadcast"/>
                    <Button text="Schedule" onAction="#openEmployeeSchedule"/>
                    <Pane HBox.hgrow="ALWAYS" />
+                  <Button onAction="#handleAddProduct" text="Add Product"
+                          style="-fx-background-color:#b784e1; -fx-text-fill:white; -fx-background-radius:20; -fx-padding:6 14;"/>
+                  <Button fx:id="reportButton" onAction="#handleViewReports" text="Reports"
+                          style="-fx-background-color:#9ad6cb; -fx-text-fill:#1f3f3a; -fx-background-radius:20; -fx-padding:6 14;"/>
+                  <Button onAction="#handleManageComplaints" text="Manage Complaints"
+                          style="-fx-background-color:white; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-border-color:#d9c6ef; -fx-border-radius:20; -fx-padding:6 14;"/>
+                  <Button fx:id="broadcastButton" text="Broadcast" onAction="#handleBroadcast"
+                          style="-fx-background-color:#ffafcc; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-padding:6 14;"/>
+                  <Pane HBox.hgrow="ALWAYS" />
                </children>
             </HBox>
 
+            <!-- Title + filters row on white chip -->
             <HBox alignment="CENTER" layoutY="120.0" spacing="15.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
                <children>
-                  <Label fx:id="catalogLabel" text="Catalog">
-                     <font><Font name="Bell MT Bold" size="36.0" /></font>
+                  <Label fx:id="catalogLabel" text="Catalog" style="-fx-text-fill: black; -fx-font-size: 36px; -fx-font-family: 'Bell MT'; -fx-font-style: italic;">
+                     <font><Font name="Bell MT Bold" size="36.0"/></font>
                   </Label>
-                  <HBox alignment="CENTER" style="-fx-background-color: white; -fx-border-color: #cccccc; -fx-border-radius: 20; -fx-background-radius: 20;">
-                     <padding><Insets bottom="5" left="10" right="5" top="5" /></padding>
+
+                  <HBox alignment="CENTER"
+                        style="-fx-background-color: white; -fx-border-color: #e6d9f7; -fx-border-radius: 20; -fx-background-radius: 20; -fx-effect: dropshadow(gaussian, rgba(155,89,182,0.10), 6, 0.2, 0, 1);">
+                     <padding><Insets bottom="5" left="10" right="5" top="5"/></padding>
                      <children>
-                        <Label text="🔍"><font><Font size="16.0" /></font></Label>
-                        <TextField fx:id="searchTextField" promptText="Search by name..." style="-fx-background-color: transparent; -fx-border-color: transparent;" />
+                        <Label text="🔍"><font><Font size="16.0"/></font></Label>
+                        <TextField fx:id="searchTextField" promptText="Search by name..."
+                                   style="-fx-background-color: transparent; -fx-border-color: transparent; -fx-text-fill:#4f3a66;"/>
                      </children>
                   </HBox>
-                  <ComboBox fx:id="typeFilterComboBox" promptText="Filter by Type" />
-                  <TextField fx:id="minPriceField" promptText="Min Price" prefWidth="100" />
-                  <TextField fx:id="maxPriceField" promptText="Max Price" prefWidth="100" />
-                  <Button fx:id="clearFiltersButton" onAction="#handleClearFilters" text="Clear Filters" />
 
-                  <!-- NEW: optional status label for custom mode -->
-                  <Label fx:id="customStatusLabel"
-                         text=""
-                         visible="false" managed="false"/>
+                  <ComboBox fx:id="typeFilterComboBox" promptText="Filter by Type"
+                            style="-fx-background-radius:18; -fx-background-color:white; -fx-border-color:#e6d9f7; -fx-border-radius:18; -fx-padding:2 8;"/>
+                  <TextField fx:id="minPriceField" promptText="Min Price" prefWidth="100"
+                             style="-fx-background-radius:18; -fx-background-color:white; -fx-border-color:#e6d9f7; -fx-border-radius:18; -fx-padding:4 10; -fx-text-fill:#4f3a66;"/>
+                  <TextField fx:id="maxPriceField" promptText="Max Price" prefWidth="100"
+                             style="-fx-background-radius:18; -fx-background-color:white; -fx-border-color:#e6d9f7; -fx-border-radius:18; -fx-padding:4 10; -fx-text-fill:#4f3a66;"/>
+                  <Button fx:id="clearFiltersButton" onAction="#handleClearFilters" text="Clear Filters"
+                          style="-fx-background-color:white; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-border-color:#d9c6ef; -fx-border-radius:20; -fx-padding:6 14;"/>
+
+                  <Label fx:id="customStatusLabel" text="" visible="false" managed="false"
+                         style="-fx-text-fill:#5b2e7e;"/>
                </children>
             </HBox>
 
-            <ProgressIndicator fx:id="loadingIndicator" visible="false" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="350.0" />
+            <ProgressIndicator fx:id="loadingIndicator" visible="false"
+                               AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="350.0" />
 
             <VBox AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="180.0">
-               <padding><Insets bottom="20" left="20" right="20" /></padding>
+               <padding><Insets bottom="20" left="20" right="20"/></padding>
                <children>
                   <GridPane fx:id="catalogGrid" hgap="20" vgap="20">
                      <columnConstraints>
-                        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3" />
-                        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3" />
-                        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3" />
+                        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3"/>
+                        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3"/>
+                        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" percentWidth="33.3"/>
                      </columnConstraints>
                   </GridPane>
                </children>
             </VBox>
+
          </children>
       </AnchorPane>
    </content>

@@ -1,5 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
@@ -40,6 +41,11 @@ public class App extends Application {
         Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
         scene = new Scene(loadFXML("connection"),screenBounds.getWidth(),screenBounds.getHeight());
         stage.setTitle("Lilac");
+        stage.getIcons().add(
+                new javafx.scene.image.Image(
+                        getClass().getResourceAsStream("/il/cshaifasweng/OCSFMediatorExample/client/images/Lilac1.png")
+                )
+        );
         stage.setScene(scene);
         stage.show();
     }
@@ -75,6 +81,10 @@ public class App extends Application {
 
     @Override
     public void stop() throws Exception {
+        if(SessionManager.getInstance().getCurrentUser() != null) {
+            String username = (String) (SessionManager.getInstance().getCurrentUser().getUsername());
+            SimpleClient.getClient().sendToServer(new Message("logout",username,null));
+        }
         EventBus.getDefault().unregister(this);
         client.sendToServer("remove client");
         client.closeConnection();

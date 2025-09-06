@@ -9,19 +9,22 @@ import org.hibernate.service.ServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 
 import java.io.IOException;
+import java.util.Scanner;
 
 public class App {
 
     private static SessionFactory buildSessionFactoryFromCfg() {
-        // Loads hibernate.cfg.xml from classpath
         Configuration cfg = new Configuration().configure();
+        Scanner scanner = new Scanner(System.in);
 
-        // Optional: allow runtime password override (kept from your version)
-        System.out.print("Please enter your MySQL password: ");
-        String pw = new java.util.Scanner(System.in).nextLine();
-        if (pw != null && !pw.isEmpty()) {
-            cfg.setProperty("hibernate.connection.password", pw);
-        }
+        while (true) {
+            try {
+                // Ask for MySQL password
+                System.out.print("Please enter your MySQL password: ");
+                String pw = scanner.nextLine();
+                if (pw != null && !pw.isEmpty()) {
+                    cfg.setProperty("hibernate.connection.password", pw);
+                }
 
         // Register ALL annotated entities explicitly
         cfg.addAnnotatedClass(Product.class);
@@ -45,13 +48,28 @@ public class App {
         // 👇 IMPORTANT: Complaint must be mapped
         cfg.addAnnotatedClass(Complaint.class);
         cfg.addAnnotatedClass(Notification.class);
+        cfg.addAnnotatedClass(Budget.class);
 
-        ServiceRegistry registry = new StandardServiceRegistryBuilder()
-                .applySettings(cfg.getProperties())
-                .build();
+                ServiceRegistry registry = new StandardServiceRegistryBuilder()
+                        .applySettings(cfg.getProperties())
+                        .build();
 
-        return cfg.buildSessionFactory(registry);
+                // Attempt to create SessionFactory (will fail if wrong password)
+                SessionFactory sessionFactory = cfg.buildSessionFactory(registry);
+
+                System.out.println("✅ Connected to database successfully!");
+                return sessionFactory;
+
+            } catch (Exception e) {
+                System.err.println("❌ Failed to connect to database: " + e.getMessage());
+                System.err.println("Please try again.");
+                try {
+                    Thread.sleep(1000); // Small delay before retry
+                } catch (InterruptedException ignored) {}
+            }
+        }
     }
+
 
     public static void main(String[] args) throws IOException {
         // Build SessionFactory and make it available globally
@@ -105,9 +123,18 @@ public class App {
                 System.out.println("Users in DB: " + userCount);
 
                 if (userCount == null || userCount == 0L) {
-                    Employee employee = new Employee("yosef", "yosef", "yosef2005", "Manager", null, true);
+                    Employee employee = new Employee("214734501","yosef","asadi", "yosef", "yosef2005", "netmanager", null, true);
                     session.save(employee);
-                    Employee employee1 = new Employee("Renata", "Renata", "renata2002", "Employee", null, true);
+                    session.flush();
+                    //Employee employee1 = new Employee("214732341","naaman","kopty", "_Naaman", "naaman1702", "branchmanager", null, false);
+                    //session.save(employee1);
+                    //session.flush();
+                    Employee employee2 = new Employee("214396675","silin","michael", "silin", "silin", "customerservice", null, true);
+                    session.save(employee2);
+                    session.flush();
+                    Employee e = new Employee("212735468","renata","haiek","renata","123","systemadmin",null,true);
+                    session.save(e);
+                    session.flush();
                 } else {
                     System.out.println("User table already contains data. Skipping insert.");
                 }
@@ -117,8 +144,10 @@ public class App {
                 ).getSingleResult();
 
                 if (branchCount == null || branchCount == 0L) {
-                    session.save(new Branch("Haifa"));
-                    session.save(new Branch("Tel Aviv"));
+                    //session.save(haifa);
+                    //session.flush();
+                    //session.save(telaviv);
+                    session.flush();
                 } else {
                     System.out.println("Branch table already contains data. Skipping insert.");
                 }
@@ -133,8 +162,7 @@ public class App {
         }
         // ---- End seed ----
 
-        // Warm caches and start listening
-        server.initCaches();
+
         try {
             server.listen();
         } catch (Exception e) {
@@ -143,10 +171,29 @@ public class App {
 
         // Clean shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            System.out.println("🔒 Logging out all users...");
+
+            try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+                Transaction tx = session.beginTransaction();
+                try {
+                    int updated = session.createQuery(
+                            "update User u set u.isLoggedIn = false"
+                    ).executeUpdate();
+                    tx.commit();
+                    System.out.println("✅ Logged out " + updated + " users.");
+                } catch (Exception e) {
+                    if (tx != null) tx.rollback();
+                    e.printStackTrace();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
             HibernateUtil.shutdown();
             try {
                 com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
             } catch (Throwable ignored) {}
         }));
+
     }
 }

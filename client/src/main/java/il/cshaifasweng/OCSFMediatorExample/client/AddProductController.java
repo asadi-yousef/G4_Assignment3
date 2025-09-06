@@ -1,5 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.AddProductRequest;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import javafx.fxml.FXML;
@@ -85,68 +86,81 @@ public class AddProductController implements Initializable {
 
     @FXML
     private void handleSaveProduct() {
-        if (!validateForm()) {
-            return;
-        }
+        if (!validateForm()) return;
 
         saveButton.setDisable(true);
         showStatus("Creating product...", false);
 
-        Task<Product> createProductTask = new Task<>() {
+        Task<Product> task = new Task<>() {
             @Override
             protected Product call() throws Exception {
+                // Build product metadata (no file copy to resources)
                 Product product = new Product();
                 product.setName(nameField.getText().trim());
                 product.setType(typeField.getText().trim());
                 product.setPrice(Double.parseDouble(priceField.getText().trim()));
 
-                // Discount: default to 0 if empty, clamp to [0, 100]
                 double discount = 0.0;
                 String d = discountField.getText() == null ? "" : discountField.getText().trim();
                 if (!d.isEmpty()) {
-                    discount = Double.parseDouble(d);
+                    try { discount = Double.parseDouble(d); } catch (NumberFormatException ignored) {}
                 }
                 discount = Math.max(0, Math.min(100, discount));
                 product.setDiscountPercentage(discount);
 
                 product.setColor(toHexString(colorPicker.getValue()));
+                product.setImagePath(null); // stop using classpath path
 
-                String rawImagePath = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
-                String imagePath = processImagePath(rawImagePath);
-                System.out.println("DEBUG save imagePath (ADD): " + imagePath);
-                product.setImagePath(imagePath);
+                // Read selected image as bytes (optional)
+                byte[] imageBytes = null;
+                String imageName = null;
+                String chosenPath = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
+                if (!chosenPath.isEmpty()) {
+                    File f = new File(chosenPath);
+                    if (f.exists()) {
+                        imageName = f.getName();
+                        try (InputStream in = new FileInputStream(f);
+                             ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                            in.transferTo(baos);
+                            imageBytes = baos.toByteArray();
+                        }
+                    }
+                }
 
-                sendProductToServer(product);
+                // Send AddProductRequest to server
+                AddProductRequest req = new AddProductRequest();
+                req.productMeta = product;
+                req.imageBytes = imageBytes;
+                req.imageName = imageName;
+
+                Message msg = new Message("add_product", req, null);
+                SimpleClient.getClient().sendToServer(msg);
+
                 return product;
             }
         };
 
-        createProductTask.setOnSucceeded(e -> {
-            Product product = createProductTask.getValue();
-            showStatus("Product created and saved to server successfully!", false);
-            if (onProductSaved != null) {
-                onProductSaved.accept(product);
-            }
+        task.setOnSucceeded(e -> {
+            showStatus("Product create request sent.", false);
+            if (onProductSaved != null) onProductSaved.accept(task.getValue());
             clearForm();
             saveButton.setDisable(false);
         });
 
-        createProductTask.setOnFailed(e -> {
-            Throwable exception = createProductTask.getException();
-            showStatus("Failed to create product: " + (exception != null ? exception.getMessage() : "Unknown error"), true);
+        task.setOnFailed(e -> {
+            Throwable ex = task.getException();
+            showStatus("Failed: " + (ex != null ? ex.getMessage() : "Unknown"), true);
             saveButton.setDisable(false);
-
-            Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.setTitle("Error Creating Product");
-            alert.setHeaderText("Failed to create the product");
-            alert.setContentText(exception != null ? exception.getMessage() : "Unknown error");
-            alert.showAndWait();
+            new Alert(Alert.AlertType.ERROR,
+                    "Failed to create product:\n" + (ex != null ? ex.getMessage() : "Unknown error")).showAndWait();
         });
 
-        Thread thread = new Thread(createProductTask);
-        thread.setDaemon(true);
-        thread.start();
+        Thread t = new Thread(task);
+        t.setDaemon(true);
+        t.start();
     }
+
+
 
     private void sendProductToServer(Product product) throws Exception {
         try {
@@ -230,48 +244,75 @@ public class AddProductController implements Initializable {
         return true;
     }
 
-    /**
-     * Returns a path that JavaFX can load immediately.
-     * - If input starts with "file:", return as-is.
-     * - If input starts with "/" (classpath), return as-is (for seeded images).
-     * - Else, treat as raw filesystem path, copy into resources/images, and return a file: URL.
-     */
-    private String processImagePath(String imagePath) throws IOException {
-        if (imagePath == null || imagePath.isEmpty()) {
-            return "";
+    // ==== OLD IMAGE HANDLING LOGIC, adapted here ====
+    private Product createProductFromForm() {
+        Product product = new Product();
+
+        // Standard fields
+        product.setName(nameField.getText().trim());
+        product.setType(typeField.getText().trim());
+        product.setPrice(Double.parseDouble(priceField.getText().trim()));
+
+        // Discount: default to 0 if empty, clamp to [0, 100]
+        double discount = 0.0;
+        String d = discountField.getText() == null ? "" : discountField.getText().trim();
+        if (!d.isEmpty()) {
+            try {
+                discount = Double.parseDouble(d);
+            } catch (NumberFormatException ignored) {
+                discount = 0.0;
+            }
         }
+        discount = Math.max(0, Math.min(100, discount));
+        product.setDiscountPercentage(discount);
 
-        // Already a file URL → use as-is
-        if (imagePath.startsWith("file:")) {
-            return imagePath;
+        // Color
+        product.setColor(toHexString(colorPicker.getValue()));
+
+        // ---- EXACT old image logic starts here ----
+        String originalPath = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
+        if (!originalPath.isEmpty()) {
+            File sourceFile = new File(originalPath);
+            if (sourceFile.exists()) {
+                try {
+                    // Destination directory in resources
+                    File destDir = new File("src/main/resources/il/cshaifasweng/OCSFMediatorExample/client/images");
+                    if (!destDir.exists()) destDir.mkdirs();
+
+                    // Use original filename (or a unique one if you prefer later)
+                    String fileName = sourceFile.getName();
+                    File destFile = new File(destDir, fileName);
+
+                    // Copy file (byte buffer, as in your old code)
+                    try (InputStream in = new FileInputStream(sourceFile);
+                         OutputStream out = new FileOutputStream(destFile)) {
+                        byte[] buffer = new byte[1024];
+                        int length;
+                        while ((length = in.read(buffer)) > 0) {
+                            out.write(buffer, 0, length);
+                        }
+                    }
+
+                    // Save only the relative CLASSPATH path
+                    product.setImagePath("/il/cshaifasweng/OCSFMediatorExample/client/images/" + fileName);
+                    showStatus("Image copied successfully", false);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    showStatus("Failed to copy image file", true);
+                    product.setImagePath(null);
+                }
+            } else {
+                showStatus("Image file does not exist", true);
+                product.setImagePath(null);
+            }
+        } else {
+            product.setImagePath(null);
         }
+        // ---- old image logic ends here ----
 
-        // Classpath path (prepackaged) → keep as-is
-        if (imagePath.startsWith("/")) {
-            return imagePath;
-        }
-
-        // Otherwise: treat as a raw filesystem path and copy
-        File sourceFile = new File(imagePath);
-        if (!sourceFile.exists()) {
-            // If the typed path doesn't exist, just store what was provided
-            return imagePath;
-        }
-
-        File destDir = new File("src/main/resources/il/cshaifasweng/OCSFMediatorExample/client/images");
-        if (!destDir.exists()) destDir.mkdirs();
-
-        String fileName = sourceFile.getName();
-        File destFile = new File(destDir, fileName);
-
-        try (InputStream in = new FileInputStream(sourceFile);
-             OutputStream out = new FileOutputStream(destFile)) {
-            in.transferTo(out);
-        }
-
-        // Return a file URL so JavaFX can load it immediately at runtime
-        return destFile.toURI().toString();
+        return product;
     }
+    // ==============================================
 
     private void setupValidation() {
         nameField.textProperty().addListener((obs, oldText, newText) -> {

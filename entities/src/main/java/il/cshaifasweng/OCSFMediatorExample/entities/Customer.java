@@ -2,6 +2,7 @@ package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
@@ -9,14 +10,10 @@ import java.time.LocalDate;
 public class Customer extends User implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    @Column
-    private boolean isNetworkAccount;
 
     @Column
     private boolean isSubscribed;
 
-    @Column
-    private String idNumber;
     @Column
     private String email;
     @Column
@@ -28,6 +25,9 @@ public class Customer extends User implements Serializable {
     @Column
     private String country;
 
+    @Column
+    private boolean frozen = false;
+
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private CreditCard creditCard;
 
@@ -38,17 +38,18 @@ public class Customer extends User implements Serializable {
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private Cart cart;
 
+    @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Budget budget;
 
     public Customer() {
         super();
     }
 
-    public Customer(String idNumber, String name, String username, String password, boolean isNetworkAccount,
+    public Customer(String idNumber, String firstName,String lastName, String username, String password, boolean isNetworkAccount,
                     boolean isSubscribed, LocalDate subStartDate, LocalDate subExpDate, String email, String phone,
                     String address, String city, String country, String cardNumber,
-                    int expirationMonth, int expirationYear, String cvv, Branch branch) {
-        super(name, username, password,branch,isNetworkAccount);
-        this.idNumber = idNumber;
+                    int expirationMonth, int expirationYear, String cvv, Branch branch, Budget budget) {
+        super(idNumber,firstName,lastName, username, password,branch,isNetworkAccount);
         this.email = email;
         this.phone = phone;
         this.address = address;
@@ -56,6 +57,9 @@ public class Customer extends User implements Serializable {
         this.country = country;
         this.creditCard = new CreditCard(cardNumber, expirationMonth, expirationYear, cvv, this);
         this.subscription = new Subscription(subStartDate, subExpDate, true, this);
+        this.isSubscribed = isSubscribed;
+        this.budget = budget;
+
     }
 
 
@@ -87,15 +91,38 @@ public class Customer extends User implements Serializable {
     }
 
     public Subscription getSubscription() { return subscription; }
-    public void setSubscription(Subscription subscription) {
-        this.subscription = subscription;
-        subscription.setCustomer(this); // keep both sides in sync
+    public void setSubscription(Subscription s) {
+        if (this.subscription == s) return;
+        if (this.subscription != null) this.subscription.setCustomer(null);
+        this.subscription = s;
+        if (s != null && s.getCustomer() != this) s.setCustomer(this);
     }
 
-    // Cart methods from first file
+    public boolean hasValidSubscription() {
+        return isSubscribed && subscription != null && subscription.isCurrentlyActive();
+    }
+
+
     public Cart getCart() { return cart; }
     public void setCart(Cart cart) {
         this.cart = cart;
         if (cart != null) cart.setCustomer(this);
+    }
+
+
+    public boolean isFrozen() { return frozen; }
+    public void setFrozen(boolean frozen) { this.frozen = frozen; }
+    public boolean isSubscribed() {
+        return isSubscribed;
+    }
+    public void setSubscribed(boolean isSubscribed) {
+        this.isSubscribed = isSubscribed;
+    }
+    public Budget getBudget() {
+        return budget;
+    }
+    public void setBudget(Budget budget) {
+        this.budget = budget;
+        if(budget != null) budget.setCustomer(this);
     }
 }

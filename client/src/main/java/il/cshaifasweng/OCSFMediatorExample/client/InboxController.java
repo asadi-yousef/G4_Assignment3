@@ -50,6 +50,7 @@ public class InboxController implements Initializable {
         personalList.setCellFactory(v -> new GmailCell(true));
         broadcastList.setCellFactory(v -> new GmailCell(false));
 
+        // initialize() is called on the FX Application Thread, so this is safe
         handleRefresh();
     }
 
@@ -57,7 +58,7 @@ public class InboxController implements Initializable {
     @Subscribe
     public void onServer(Message msg) {
         switch (msg.getMessage()) {
-            case "inbox_list" -> javafx.application.Platform.runLater(() -> {
+            case "inbox_list" -> Platform.runLater(() -> {
                 InboxListDTO payload = (InboxListDTO) msg.getObject();
                 var personal = payload.getPersonal();
                 var broadcast = payload.getBroadcast();
@@ -69,10 +70,12 @@ public class InboxController implements Initializable {
                         personal.size(),
                         (int) personal.stream().filter(n -> !n.isRead()).count(),
                         broadcast.size()));
-
             });
-            case "inbox_read_ack", "inbox_unread_ack" -> handleRefresh();
-            case "inbox_list_error" -> javafx.application.Platform.runLater(() ->
+
+            // ACKs arrive on the client/network thread. Hop to FX before touching UI.
+            case "inbox_read_ack", "inbox_unread_ack" -> Platform.runLater(this::handleRefresh);
+
+            case "inbox_list_error" -> Platform.runLater(() ->
                     status("Error: " + java.util.Objects.toString(msg.getObject(), "unknown")));
             case "inbox_personal_new" -> Platform.runLater(() -> {
                 Long targetId = null;
@@ -143,8 +146,10 @@ public class InboxController implements Initializable {
         status(markRead ? "Marked as read." : "Marked as unread.");
     }
 
-
-    private void status(String s) { if (statusLabel != null) statusLabel.setText(s); }
+    // Always marshal UI updates onto the FX Application Thread
+    private void status(String s) {
+        Platform.runLater(() -> { if (statusLabel != null) statusLabel.setText(s); });
+    }
 
     @SuppressWarnings("unchecked")
     private Map<String,Object> castMap(Object o) {
@@ -216,5 +221,3 @@ public class InboxController implements Initializable {
         }
     }
 }
-
-

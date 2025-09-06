@@ -1,10 +1,12 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.Employee;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
+import javafx.event.Event;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
@@ -124,12 +126,29 @@ public class LoginControl implements Initializable {
                     SessionManager.getInstance().setCurrentUser(user);
                     EventBus.getDefault().unregister(this);
                     App.setRoot("primary");
+                    if(user instanceof Employee) {
+                        Employee employee = (Employee) user;
+                        if(employee.getRole().equals("customerservice")) {
+                            EventBus.getDefault().unregister(this);
+                            App.setRoot("complaintsList");
+                        }
+                        else if(employee.getRole().equals("systemadmin")) {
+                            EventBus.getDefault().unregister(this);
+                            App.setRoot("AdminUsersView");
+                        }
+                    }
                 } catch (IOException e) {
                     showError("Failed to load the main page.");
                     e.printStackTrace();
                 }
             } else if ("incorrect".equals(message.getMessage())) {
                 showError("Invalid username or password.");
+            }
+            else if ("already_logged".equals(message.getMessage())) {
+                showError("User already logged from another computer.");
+            }
+            else if("frozen".equals(message.getMessage())) {
+                showError("This account is frozen, contact the administrator.");
             }
         });
     }

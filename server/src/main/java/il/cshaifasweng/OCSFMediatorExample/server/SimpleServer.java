@@ -15,6 +15,11 @@ import java.util.*;
 import org.hibernate.query.Query;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -23,6 +28,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.math.BigDecimal;
 import java.util.Map;
+import java.time.LocalDate;
+
 import java.util.stream.Stream;
 
 
@@ -34,10 +41,6 @@ public class SimpleServer extends AbstractServer {
     // ---- In-memory catalog snapshot + lock ----
     private static volatile Catalog catalog = new Catalog(new ArrayList<>());
     private static final ReentrantReadWriteLock catalogLock = new ReentrantReadWriteLock();
-
-    // ---- Caches + per-username locks ----
-    private static final ConcurrentHashMap<String, User> userCache = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Object> usernameLocks = new ConcurrentHashMap<>();
 
     public SimpleServer(int port) {
         super(port);
@@ -62,8 +65,6 @@ public class SimpleServer extends AbstractServer {
             ex.printStackTrace();
         }
         // -------------------------------------------------------------------------------
-
-        initCaches(); // warm user cache before catalog
 
         // Initialize catalog snapshot once at startup
         catalogLock.writeLock().lock();
@@ -108,11 +109,6 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-    public void initCaches() {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            loadToCache(session, User.class, userCache, User::getUsername);
-        }
-    }
 
     /* ----------------------- Request dispatch ----------------------- */
 
@@ -142,6 +138,8 @@ public class SimpleServer extends AbstractServer {
                     handleRemoveFromCart(m, client, session);
                 } else if (key != null && key.startsWith("request_cart")) {
                     handleCartRequest(m, client, session);
+                } else if (key != null && key.startsWith("request_orders")) {
+                    handleOrdersRequest(m, client, session);
                 } else if ("request_customer_data".equals(key)) {
                     handleCustomerDataRequest(m, client, session);
                 } else if ("update_profile".equals(key)) {
@@ -175,13 +173,47 @@ public class SimpleServer extends AbstractServer {
                 } else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
                 } else if ("get_inbox".equals(key)) {
+                }
+                else if("update_budget".equals(key))
+                {
+                    handleBudgetUpdate(m, client, session);
+                }
+                else if("logout".equals(key)) {
+                    handleLogout(client,session,m);
+                }
+                else if ("admin_list_users".equals(key)) {
+                    handleAdminListUsers(m, client, session);
+                } else if ("admin_update_user".equals(key)) {
+                    handleAdminUpdateUser(m, client, session);
+                } else if ("admin_freeze_customer".equals(key)) {
+                    handleAdminFreezeCustomer(m, client, session);
+                }
+                else if ("get_inbox".equals(key)) {
                     handleGetInbox(m, client, session);
                 } else if ("mark_notification_read".equals(key)) {
                     handleMarkNotificationRead(m, client, session);
                 } else if ("mark_notification_unread".equals(key)) {
                     handleMarkNotificationUnread(m, client, session);
                 } else if ("create_broadcast".equals(key)) {
+                }
+                else if ("mark_notification_unread".equals(key)) {
+                    handleMarkNotificationUnread(m, client, session);
+                }
+                else if ("create_broadcast".equals(key)) {
                     handleCreateBroadcast(m, client, session);
+                }
+                else if ("request_report_income".equals(key)) {
+                    handleReportIncome(m, client, session);
+                } else if ("request_report_orders".equals(key)) {
+                    handleReportOrders(m, client, session);
+                } else if ("request_report_complaints".equals(key)) {
+                    handleReportComplaints(m, client, session);
+                }else if("admin_delete_user".equals(key)) {
+                    handleAdminDeleteUser(m, client, session);
+                }
+
+                else {
+                    System.out.println("[WARN] Unhandled key: " + key);
 
                     // ---------- CUSTOMER ORDERS (keep working behavior) ----------
                 } else if ("request_orders".equals(key)) {
@@ -220,7 +252,949 @@ public class SimpleServer extends AbstractServer {
 
 
     /* ----------------------- Handlers (all receive Session) ----------------------- */
+    @SuppressWarnings("unchecked")
+    private void handleAdminDeleteUser(Message m, ConnectionToClient client, Session session) {
+        Map<String,Object> req = (m.getObject() instanceof Map) ? (Map<String,Object>) m.getObject() : null;
+        Long userId = (req == null || !(req.get("userId") instanceof Number)) ? null
+                : ((Number) req.get("userId")).longValue();
 
+        if (userId == null) {
+            try { client.sendToClient(new Message("admin_delete_error", "Missing userId", null)); }
+            catch (IOException ignored) {}
+            return;
+        }
+
+        Transaction tx = session.beginTransaction();
+        try {
+            // Load once (handles inheritance via DTYPE)
+            User u = session.get(User.class, userId);
+            if (u == null) throw new IllegalArgumentException("User not found: " + userId);
+
+            // --- Employee-specific FK cleanup (safe no-op for customers) ---
+            // If Branch has a manager FK to Employee, break it before deleting the employee.
+            //session.createQuery("update Branch b set b.manager = null where b.manager.id = :uid")
+             //       .setParameter("uid", userId)
+                  //  .executeUpdate();
+
+            // --- Type-specific child graph cleanup (bulk HQL only) ---
+            if (u instanceof Customer) {
+                Customer c = (Customer) u;
+                // Uses the fixed version that deletes by parent IDs (orders->items, carts->items, bouquets->items, etc.)
+                deleteCustomerGraph(session, c);
+            } else if (u instanceof Employee) {
+                Employee e = (Employee) u;
+                deleteEmployeeGraph(session, e);
+            }
+
+            // --- Delete the parent row via BULK HQL (avoid OptimisticLockException) ---
+            int deleted = session.createQuery("delete from User u where u.id = :uid")
+                    .setParameter("uid", userId)
+                    .executeUpdate();
+            if (deleted == 0) throw new IllegalStateException("User already deleted: " + userId);
+
+            tx.commit();
+
+            // After bulk DML, clear 1st-level cache to avoid stale state
+            session.clear();
+
+            // --- Notify and force-logout the exact connected client (if online), then clear connection info ---
+            for (SubscribedClient sc : subscribersList) {
+                ConnectionToClient s = sc.getClient();
+                Object uid = s.getInfo("userId"); // set at login
+                if (uid instanceof Long && java.util.Objects.equals(uid, userId)) {
+                    try {
+                        s.sendToClient(new Message("account_deleted", "Your account was deleted", null));
+                        // Clear any per-connection user info
+                        s.setInfo("userId", null);
+                        s.setInfo("username", null);
+                        s.setInfo("userType", null);
+
+                        // Optional: s.close(); // only if your client UX supports reconnect cleanly
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            // --- Reply to the admin UI ---
+            try { client.sendToClient(new Message("admin_delete_ok", userId, null)); }
+            catch (IOException ignored) {}
+
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("admin_delete_error", e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+    private void deleteEmployeeGraph(Session session, Employee e) {
+        Long eid = e.getId();
+
+        // 1) Break the FK from complaints -> employee (keep responderName intact)
+        session.createQuery("update Complaint c set c.responder = null where c.responder.id = :eid")
+                .setParameter("eid", eid)
+                .executeUpdate();
+
+    }
+
+
+
+    /**
+     * Deletes all data that depends on a Customer in a FK-safe order.
+     */
+    private void deleteCustomerGraph(Session session, Customer c) {
+        Long cid = c.getId();
+
+        // ---- ORDERS (items first, then orders)
+        List<Long> orderIds = session.createQuery(
+                        "select o.id from Order o where o.customer.id = :cid", Long.class)
+                .setParameter("cid", cid)
+                .getResultList();
+
+        if (!orderIds.isEmpty()) {
+            session.createQuery("delete from OrderItem oi where oi.order.id in (:ids)")
+                    .setParameterList("ids", orderIds)
+                    .executeUpdate();
+            session.createQuery("delete from Order o where o.id in (:ids)")
+                    .setParameterList("ids", orderIds)
+                    .executeUpdate();
+        }
+
+        // ---- CART (items first, then carts)
+        List<Long> cartIds = session.createQuery(
+                        "select crt.id from Cart crt where crt.customer.id = :cid", Long.class)
+                .setParameter("cid", cid)
+                .getResultList();
+
+        if (!cartIds.isEmpty()) {
+            session.createQuery("delete from CartItem ci where ci.cart.id in (:ids)")
+                    .setParameterList("ids", cartIds)
+                    .executeUpdate();
+            session.createQuery("delete from Cart crt where crt.id in (:ids)")
+                    .setParameterList("ids", cartIds)
+                    .executeUpdate();
+        }
+
+        // ---- CUSTOM BOUQUETS (items first, then bouquets)
+        List<Long> bouquetIds = session.createQuery(
+                        "select cb.id from CustomBouquet cb where cb.createdBy.id = :cid", Long.class)
+                .setParameter("cid", cid)
+                .getResultList();
+
+        if (!bouquetIds.isEmpty()) {
+            // Primary: field is likely "bouquet" on CustomBouquetItem
+            int removed = session.createQuery(
+                            "delete from CustomBouquetItem cbi where cbi.bouquet.id in (:ids)")
+                    .setParameterList("ids", bouquetIds)
+                    .executeUpdate();
+
+            // Fallback if your field is named "customBouquet" instead of "bouquet"
+            if (removed == 0) {
+                session.createQuery(
+                                "delete from CustomBouquetItem cbi where cbi.bouquet.id in (:ids)")
+                        .setParameterList("ids", bouquetIds)
+                        .executeUpdate();
+            }
+
+            session.createQuery("delete from CustomBouquet cb where cb.id in (:ids)")
+                    .setParameterList("ids", bouquetIds)
+                    .executeUpdate();
+        }
+
+        // ---- SIMPLE 1:1 / 1:N leaves
+        session.createQuery("delete from Budget b where b.customer.id = :cid")
+                .setParameter("cid", cid)
+                .executeUpdate();
+
+        session.createQuery("delete from CreditCard cc where cc.customer.id = :cid")
+                .setParameter("cid", cid)
+                .executeUpdate();
+
+        session.createQuery("delete from Subscription s where s.customer.id = :cid")
+                .setParameter("cid", cid)
+                .executeUpdate();
+
+        // ---- Complaints created by this customer (if FK exists)
+        session.createQuery("delete from Complaint cp where cp.customer.id = :cid")
+                .setParameter("cid", cid)
+                .executeUpdate();
+    }
+
+
+    /** Resolve a product image path (server DB value) to a File on the server disk. */
+    private static File resolveServerImageFile(String storedPath) {
+        if (storedPath == null || storedPath.isBlank()) return null;
+        try {
+            String sp = storedPath.trim();
+
+            // Already server-relative "images/..." → live under IMAGES_DIR
+            if (sp.startsWith("images/") || sp.startsWith("images\\")) {
+                String fileName = java.nio.file.Paths.get(sp.replace('\\','/')).getFileName().toString();
+                return new File(IMAGES_DIR, fileName);
+            }
+            // file: URI (common in your legacy rows)
+            if (sp.startsWith("file:")) {
+                try {
+                    return new File(java.net.URI.create(sp));
+                } catch (Exception ignored) { /* fall through */ }
+            }
+            // Absolute or relative plain path
+            File f = new File(sp);
+            if (!f.isAbsolute()) f = new File(".", sp);
+            return f;
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+
+    @SuppressWarnings("unchecked")
+    private void handleAdminFreezeCustomer(Message m, ConnectionToClient client, Session session) {
+        Map<String,Object> req = (m.getObject() instanceof Map) ? (Map<String,Object>) m.getObject() : null;
+        if (req == null) {
+            try { client.sendToClient(new Message("admin_freeze_error", "Bad request", null)); } catch (IOException ignored) {}
+            return;
+        }
+
+        Long customerId = null;
+        Boolean frozen = null;
+        Object idObj = req.get("customerId");
+        Object frObj = req.get("frozen");
+        if (idObj instanceof Number) customerId = ((Number) idObj).longValue();
+        if (frObj instanceof Boolean) frozen = (Boolean) frObj;
+
+        if (customerId == null || frozen == null) {
+            try { client.sendToClient(new Message("admin_freeze_error", "Bad request", null)); } catch (IOException ignored) {}
+            return;
+        }
+
+        Transaction tx = session.beginTransaction();
+        try {
+            // Single atomic DB write; no need to merge a managed entity
+            int updated = session.createQuery(
+                            "update Customer c set c.frozen = :frozen, c.isLoggedIn = false where c.id = :id")
+                    .setParameter("frozen", frozen)
+                    .setParameter("id", customerId)
+                    .executeUpdate(); // returns number of rows changed
+            tx.commit();
+
+            if (updated == 0) {
+                try { client.sendToClient(new Message("admin_freeze_error", "Customer not found", null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            // Bulk JPQL bypasses the first-level cache—clear and reload a fresh view before sending
+            session.clear();
+            Customer fresh = session.find(Customer.class, customerId);
+
+            try { client.sendToClient(new Message("admin_freeze_ok", toDTO(fresh), null)); } catch (IOException ignored) {}
+
+            if (Boolean.TRUE.equals(frozen)) {
+                // Notify/force-logout the exact connected client for this user (if connected)
+                for (SubscribedClient sc : subscribersList) {
+                    ConnectionToClient s = sc.getClient();
+                    Object uid = s.getInfo("userId"); // set at login
+                    if (uid instanceof Long && java.util.Objects.equals(uid, customerId)) {
+                        try {
+                            s.sendToClient(new Message("account_banned", "Your account was banned", null));
+                            // Optionally: also close the connection if your client can reconnect cleanly
+                            // s.close(); // only if supported/desired by your OCSF layer
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("admin_freeze_error", e.getMessage(), null)); } catch (IOException ignored) {}
+        }
+    }
+
+
+    @SuppressWarnings("unchecked")
+    private void handleAdminUpdateUser(Message m, ConnectionToClient client, Session session) {
+        UserAdminDTO dto = (UserAdminDTO) m.getObject();
+        if (dto == null || dto.getId() == null || dto.getUserType() == null) {
+            try { client.sendToClient(new Message("admin_update_error", "Bad request", null)); }
+            catch (IOException ignored) {}
+            return;
+        }
+
+        Transaction tx = session.beginTransaction();
+        try {
+            // Resolve branch (by name)
+            Branch newBranch = null;
+            if (dto.getBranchName() != null && !dto.getBranchName().isBlank()) {
+                newBranch = findBranchByName(session, dto.getBranchName().trim());
+                if (newBranch == null) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Branch not found: " + dto.getBranchName(), null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
+            }
+
+            if ("EMPLOYEE".equalsIgnoreCase(dto.getUserType())) {
+                Employee e = session.get(Employee.class, dto.getId());
+                if (e == null) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Employee not found", null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
+
+                // Hard server-side gate: block any edit while logged in
+                if (e.isLoggedIn()) {
+                    tx.rollback();
+                    try {
+                        client.sendToClient(new Message(
+                                "admin_update_error",
+                                "User is logged in — only Freeze/Unfreeze is allowed.",
+                                null
+                        ));
+                    } catch (IOException ignored) {}
+                    return;
+                }
+
+                // Decide target values (incoming if provided, otherwise current).
+                final String targetUsername = dto.getUsername() == null ? e.getUsername() : dto.getUsername().trim();
+
+                // --- Uniqueness preflight (username)
+                if (dto.getUsername() != null                  // only if actually edited
+                        && !equalsIgnoreCaseSafe(targetUsername, e.getUsername())
+                        && usernameExists(session, targetUsername, e.getId())) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Username already in use: " + targetUsername, null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
+
+                // --- Uniqueness preflight (ID number) -> ONLY if dto supplied a new one AND it differs
+                if (dto.getIdNumber() != null) {
+                    final String candidateId = dto.getIdNumber().trim();
+                    if (!Objects.equals(candidateId, e.getIdNumber())
+                            && idNumberExists(session, candidateId, e.getId())) {
+                        tx.rollback();
+                        try { client.sendToClient(new Message("admin_update_error", "ID number already in use: " + candidateId, null)); }
+                        catch (IOException ignored) {}
+                        return;
+                    }
+                }
+
+                final String oldUsername = e.getUsername();
+                    // Basic fields (nulls = don't change)
+                    if (dto.getFirstName() != null) e.setFirstName(dto.getFirstName());
+                    if (dto.getLastName()  != null) e.setLastName(dto.getLastName()); // <-- fixed
+                    if (dto.getUsername()  != null) e.setUsername(targetUsername);
+                    if (dto.getPassword()  != null) e.setPassword(dto.getPassword());
+                    if (dto.getIdNumber()  != null) e.setIdNumber(dto.getIdNumber().trim());
+
+                    // Role + invariants
+                    if (dto.getRole() != null) {
+                        String newRole = dto.getRole().toLowerCase();
+                        e.setRole(newRole);
+
+                        boolean toNet = isNetRole(newRole);
+                        if (toNet) {
+                            e.setNetworkAccount(true);
+                            e.setBranch(null);
+                        } else {
+                            if (newBranch == null && e.getBranch() == null) {
+                                tx.rollback();
+                                try { client.sendToClient(new Message("admin_update_error", "Branch role requires a branch.", null)); }
+                                catch (IOException ignored) {}
+                                return;
+                            }
+                            if (newBranch != null) e.setBranch(newBranch);
+                            e.setNetworkAccount(false);
+                        }
+                    } else {
+                        // No role change; still allow branch or network changes with invariants
+                        if (newBranch != null) {
+                            if (e.isNetworkAccount()) {
+                                tx.rollback();
+                                try { client.sendToClient(new Message("admin_update_error", "Network employees cannot have a branch.", null)); }
+                                catch (IOException ignored) {}
+                                return;
+                            }
+                            e.setBranch(newBranch);
+                        }
+                        if (dto.getNetworkAccount() != null) {
+                            boolean na = dto.getNetworkAccount();
+                            e.setNetworkAccount(na);
+                            if (na) {
+                                e.setBranch(null);
+                            } else {
+                                if (newBranch == null && e.getBranch() == null) {
+                                    tx.rollback();
+                                    try { client.sendToClient(new Message("admin_update_error", "Non-network employees must have a branch.", null)); }
+                                    catch (IOException ignored) {}
+                                    return;
+                                }
+                                if (newBranch != null) e.setBranch(newBranch);
+                            }
+                        }
+                    }
+
+                    Employee managed = (Employee) session.merge(e);
+                    tx.commit();
+                    client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
+
+            } else if ("CUSTOMER".equalsIgnoreCase(dto.getUserType())) {
+                Customer c = session.get(Customer.class, dto.getId());
+                if (c == null) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Customer not found", null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
+
+                if (c.isLoggedIn()) {
+                    tx.rollback();
+                    try {
+                        client.sendToClient(new Message(
+                                "admin_update_error",
+                                "User is logged in — only Freeze/Unfreeze is allowed.",
+                                null
+                        ));
+                    } catch (IOException ignored) {}
+                    return;
+                }
+
+                final String targetUsername = dto.getUsername() == null ? c.getUsername() : dto.getUsername().trim();
+
+                // Username uniqueness only if actually edited
+                if (dto.getUsername() != null
+                        && !equalsIgnoreCaseSafe(targetUsername, c.getUsername())
+                        && usernameExists(session, targetUsername, c.getId())) {
+                    tx.rollback();
+                    try { client.sendToClient(new Message("admin_update_error", "Username already in use: " + targetUsername, null)); }
+                    catch (IOException ignored) {}
+                    return;
+                }
+
+                // ID number uniqueness only if actually edited
+                if (dto.getIdNumber() != null) {
+                    final String candidateId = dto.getIdNumber().trim();
+                    if (!Objects.equals(candidateId, c.getIdNumber())
+                            && idNumberExists(session, candidateId, c.getId())) {
+                        tx.rollback();
+                        try { client.sendToClient(new Message("admin_update_error", "ID number already in use: " + candidateId, null)); }
+                        catch (IOException ignored) {}
+                        return;
+                    }
+                }
+
+                final String oldUsername = c.getUsername();
+                    // Basic fields
+                    if (dto.getFirstName() != null) c.setFirstName(dto.getFirstName());
+                    if (dto.getLastName()  != null) c.setLastName(dto.getLastName()); // <-- fixed
+                    if (dto.getUsername()  != null) c.setUsername(targetUsername);
+                    if (dto.getPassword()  != null) c.setPassword(dto.getPassword());
+                    if (dto.getIdNumber()  != null) c.setIdNumber(dto.getIdNumber().trim());
+
+                    // Customer-only fields
+                    if (dto.getBudget() != null && dto.getBudget().signum() >= 0) c.getBudget().setBalance(dto.getBudget().doubleValue());
+                    if (dto.getFrozen() != null) c.setFrozen(dto.getFrozen());
+
+                    // Network/branch invariants
+                    if (dto.getNetworkAccount() != null) {
+                        boolean na = dto.getNetworkAccount();
+                        c.setNetworkAccount(na);
+                        if (na) {
+                            c.setBranch(null);
+                        } else {
+                            if (newBranch == null && c.getBranch() == null) {
+                                tx.rollback();
+                                try { client.sendToClient(new Message("admin_update_error", "Non-network customers must have a branch.", null)); }
+                                catch (IOException ignored) {}
+                                return;
+                            }
+                            if (newBranch != null) c.setBranch(newBranch);
+                        }
+                    } else if (newBranch != null) {
+                        if (c.isNetworkAccount()) {
+                            tx.rollback();
+                            try { client.sendToClient(new Message("admin_update_error", "Network customers cannot have a branch.", null)); }
+                            catch (IOException ignored) {}
+                            return;
+                        }
+                        c.setBranch(newBranch);
+                    }
+
+                    Customer managed = (Customer) session.merge(c);
+                    tx.commit();
+
+                    try { client.sendToClient(new Message("admin_update_ok", toDTO(managed), null)); }
+                    catch (IOException ignored) {}
+            } else {
+                tx.rollback();
+                try { client.sendToClient(new Message("admin_update_error", "Unknown userType: " + dto.getUserType(), null)); }
+                catch (IOException ignored) {}
+            }
+
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace(); // keep for server logs (optional)
+            try { client.sendToClient(new Message("admin_update_error", e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+
+    private void clientSendSafe(ConnectionToClient client, Message out) {
+        try { client.sendToClient(out); } catch (IOException ignored) {}
+    }
+
+    private boolean equalsIgnoreCaseSafe(String a, String b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.equalsIgnoreCase(b);
+    }
+    /** Use case-insensitive username uniqueness with cache fast path + optional DB fallback. */
+    private boolean usernameExists(Session session, String candidate, Long excludeId) {
+        if (candidate == null || candidate.isBlank()) return false;
+
+        final String keyLower = candidate.trim().toLowerCase();
+
+        Long count = session.createQuery(
+                        "select count(u.id) from User u where lower(u.username) = :un and (:id is null or u.id <> :id)",
+                        Long.class)
+                .setParameter("un", keyLower)
+                .setParameter("id", excludeId)
+                .getSingleResult();
+
+        return count != null && count > 0;
+    }
+
+
+    /** ID-number uniqueness (DB). If you add an idNumber index to cache, mirror the same pattern. */
+    private boolean idNumberExists(Session session, String candidate, Long excludeId) {
+        if (candidate == null || candidate.isBlank()) return false;
+        final String keyLower = candidate.trim().toLowerCase();
+        Long cnt = session.createQuery(
+                        "select count(u.id) from User u where lower(u.idNumber) = :in and u.id <> :id", Long.class)
+                .setParameter("in", keyLower)
+                .setParameter("id", (excludeId == null ? -1L : excludeId))
+                .getSingleResult();
+        return cnt != null && cnt > 0L;
+    }
+
+
+    private UserAdminDTO toDTO(User u) {
+        UserAdminDTO dto = new UserAdminDTO();
+
+        dto.setId(u.getId());
+
+        // userType without pattern matching (Java 15 safe)
+        String userType;
+        if (u instanceof Employee) {
+            userType = "EMPLOYEE";
+        } else if (u instanceof Customer) {
+            userType = "CUSTOMER";
+        } else {
+            userType = "USER";
+        }
+        dto.setUserType(userType);
+
+        // new identity fields
+        dto.setIdNumber(u.getIdNumber());
+        dto.setFirstName(u.getFirstName());
+        dto.setLastName(u.getLastName());
+        dto.setUsername(u.getUsername());
+
+        // branch info
+        if (u.getBranch() != null) {
+            dto.setBranchId(u.getBranch().getId());
+            dto.setBranchName(u.getBranch().getName());
+        } else {
+            dto.setBranchId(null);
+            dto.setBranchName(null);
+        }
+
+        dto.setNetworkAccount(u.isNetworkAccount());
+        dto.setLoggedIn(u.isLoggedIn());
+
+        if (u instanceof Employee) {
+            Employee e = (Employee) u;     // classic cast
+            dto.setRole(e.getRole());
+        } else if (u instanceof Customer) {
+            Customer c = (Customer) u;     // classic cast
+            if (c.getBudget() != null) {
+                dto.setBudget(java.math.BigDecimal.valueOf(c.getBudget().getBalance()));
+            }
+            try {
+                dto.setFrozen(c.isFrozen());
+            } catch (Throwable ignore) {}
+        }
+        return dto;
+    }
+
+
+
+    private Branch findBranchByName(Session session, String name) {
+        if (name == null || name.isBlank()) return null;
+        return session.createQuery("from Branch b where lower(b.name) = :n", Branch.class)
+                .setParameter("n", name.toLowerCase())
+                .setMaxResults(1)
+                .uniqueResult();
+    }
+
+    private static boolean isNetRole(String role) {
+        return role != null && role.toLowerCase().startsWith("net") || role.equalsIgnoreCase("systemadmin") || role.equalsIgnoreCase("customerservice");
+    }
+
+
+    @SuppressWarnings("unchecked")
+    private void handleAdminListUsers(Message m, ConnectionToClient client, Session session) {
+        try {
+            String search = "";
+            int offset = 0, limit = 50;
+
+            Object payload = m.getObject();
+            if (payload instanceof Map) {
+                Map<String,Object> q = (Map<String,Object>) payload;
+                if (q.get("search") instanceof String) search = ((String) q.get("search")).trim();
+                if (q.get("offset") instanceof Number) offset = Math.max(0, ((Number) q.get("offset")).intValue());
+                if (q.get("limit")  instanceof Number)  limit  = Math.max(1, ((Number) q.get("limit")).intValue());
+            }
+
+            var cb = session.getCriteriaBuilder();
+
+            // ---------- DATA query ----------
+            var cq = cb.createQuery(User.class);
+            var root = cq.from(User.class);
+
+            // LEFT JOIN FETCH branch for display
+            root.fetch("branch", jakarta.persistence.criteria.JoinType.LEFT);
+
+            if (!search.isBlank()) {
+                String like = "%" + search.toLowerCase() + "%";
+                cq.where(cb.or(
+                        cb.like(cb.lower(root.get("username")),  like),
+                        cb.like(cb.lower(root.get("firstName")), like),
+                        cb.like(cb.lower(root.get("lastName")),  like),
+                        cb.like(cb.lower(root.get("idNumber")),  like)
+                ));
+            }
+
+            // Stable, case-insensitive ordering for pagination
+            cq.orderBy(
+                    cb.asc(cb.lower(root.get("username"))),
+                    cb.asc(root.get("id"))
+            );
+            cq.distinct(true);
+
+            var dataQ = session.createQuery(cq)
+                    .setFirstResult(offset)
+                    .setMaxResults(limit);
+
+            var pageUsers = dataQ.getResultList();
+
+            // ---------- COUNT query ----------
+            var ccq = cb.createQuery(Long.class);
+            var croot = ccq.from(User.class);
+            if (!search.isBlank()) {
+                String like = "%" + search.toLowerCase() + "%";
+                ccq.where(cb.or(
+                        cb.like(cb.lower(croot.get("username")),  like),
+                        cb.like(cb.lower(croot.get("firstName")), like),
+                        cb.like(cb.lower(croot.get("lastName")),  like),
+                        cb.like(cb.lower(croot.get("idNumber")),  like)
+                ));
+            }
+            ccq.select(cb.count(croot));
+            long total = session.createQuery(ccq).getSingleResult();
+
+            // Map to DTOs
+            List<UserAdminDTO> rows = new ArrayList<>(pageUsers.size());
+            for (User u : pageUsers) rows.add(toDTO(u));
+
+            Map<String,Object> page = new HashMap<>();
+            page.put("rows", rows);
+            page.put("total", total);
+
+            client.sendToClient(new Message("admin_users_page", page, null));
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("admin_users_error", e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+    private void handleLogout(ConnectionToClient client, Session session, Message message) {
+        try {
+            final String username = (message != null && message.getObject() instanceof String)
+                    ? ((String) message.getObject()).trim()
+                    : null;
+
+            if (username == null || username.isBlank()) {
+                try { client.sendToClient(new Message("logout_error", "Missing username", null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            User user;
+            try {
+                user = session.createQuery(
+                                "select u from User u where lower(u.username) = :un", User.class)
+                        .setParameter("un", username.toLowerCase(java.util.Locale.ROOT))
+                        .uniqueResult();
+            } catch (org.hibernate.NonUniqueResultException e) {
+                try { client.sendToClient(new Message("logout_error", "Duplicate username", null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            if (user == null) {
+                try { client.sendToClient(new Message("logout_error", "User not found", null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            // Atomic logout: flip to false only if currently true
+            Transaction tx = session.beginTransaction();
+            int updated;
+            try {
+                updated = session.createQuery(
+                                "update User u set u.isLoggedIn = false " +
+                                        "where u.id = :id and u.isLoggedIn = true")
+                        .setParameter("id", user.getId())
+                        .executeUpdate();
+                tx.commit();
+            } catch (Exception e) {
+                if (tx.isActive()) tx.rollback();
+                throw e;
+            }
+
+            // Idempotent response
+            final String msgType = (message != null && "force_logout".equals(message.getMessage()))
+                    ? "force_logout" : "logout_success";
+            try { client.sendToClient(new Message(msgType, username, null)); } catch (IOException ignored) {}
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("logout_error", "Exception: " + e.getMessage(), null)); } catch (IOException ignored) {}
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleReportComplaints(Message m, ConnectionToClient client, Session session) {
+        try {
+            Map<String,Object> crit = (Map<String,Object>) m.getObject();
+            LocalDateTime from  = (LocalDateTime) crit.get("from");
+            LocalDateTime to    = (LocalDateTime) crit.get("to");
+            String branch       = crit.get("branch") == null ? null : crit.get("branch").toString();
+
+            StringBuilder hql = new StringBuilder(
+                    "SELECT c FROM Complaint c " +
+                            "LEFT JOIN FETCH c.branch b " +
+                            "WHERE 1=1 "
+            );
+            if (from != null)  hql.append("AND c.submittedAt >= :from ");
+            if (to != null)    hql.append("AND c.submittedAt < :to ");
+            if (branch != null && !branch.isBlank()) hql.append("AND b.name = :branch ");
+            hql.append("ORDER BY c.submittedAt ASC");
+
+            var q = session.createQuery(hql.toString(), Complaint.class);
+            if (from != null)  q.setParameter("from", from);
+            if (to != null)    q.setParameter("to", to);
+            if (branch != null && !branch.isBlank()) q.setParameter("branch", branch);
+
+            List<Complaint> list = q.getResultList();
+
+            Map<String, Long> perDay = new TreeMap<>();
+            long resolved = 0;
+            for (Complaint c : list) {
+                String day = (c.getSubmittedAt() == null ? "unknown" : c.getSubmittedAt().toLocalDate().toString());
+                perDay.merge(day, 1L, Long::sum);
+                if (Boolean.TRUE.equals(c.isResolved())) resolved++;
+            }
+            long total = list.size();
+            long unresolved = total - resolved;
+            String peakDay = perDay.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey).orElse("-");
+
+            Map<String,Object> payload = new HashMap<>();
+            payload.put("histogram", perDay);
+            payload.put("total", total);
+            payload.put("resolved", resolved);
+            payload.put("unresolved", unresolved);
+            payload.put("peakDay", peakDay);
+
+            payload.put("slot", crit.get("slot"));
+            sendMsg(client, new Message("report_complaints_data", payload, null), "report_complaints");
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("report_complaints_data", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleReportOrders(Message m, ConnectionToClient client, Session session) {
+        try {
+            Map<String,Object> crit = (Map<String,Object>) m.getObject();
+            LocalDateTime from  = (LocalDateTime) crit.get("from");
+            LocalDateTime to    = (LocalDateTime) crit.get("to");
+            String branch       = crit.get("branch") == null ? null : crit.get("branch").toString();
+
+            List<Order> orders = fetchOrdersForRange(session, from, to, branch);
+
+            Map<String, Integer> hist = new TreeMap<>();
+            int totalOrders = orders.size();
+            int cancelled = 0; // TODO: if you track status, compute cancelled count
+            int netOrders = totalOrders - cancelled;
+
+            for (Order o : orders) {
+                if (o.getItems() == null) continue;
+                for (OrderItem it : o.getItems()) {
+                    String key;
+                    if (it.getProduct() != null && it.getProduct().getName() != null) {
+                        key = it.getProduct().getName();
+                    } else if (it.getCustomBouquet() != null) {
+                        key = "Custom Bouquet";
+                    } else {
+                        key = "Unknown";
+                    }
+                    int qty = Math.max(1, it.getQuantity());
+                    hist.merge(key, qty, Integer::sum);
+                }
+            }
+
+            Map<String,Object> payload = new HashMap<>();
+            payload.put("histogram", hist);
+            payload.put("totalOrders", totalOrders);
+            payload.put("cancelled", cancelled);
+            payload.put("netOrders", netOrders);
+            payload.put("slot", crit.get("slot"));
+            sendMsg(client, new Message("report_orders_data", payload, null), "report_orders");
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("report_orders_data", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleReportIncome(Message m, ConnectionToClient client, Session session) {
+        try {
+            Map<String,Object> crit = (Map<String,Object>) m.getObject();
+            LocalDateTime from  = (LocalDateTime) crit.get("from");
+            LocalDateTime to    = (LocalDateTime) crit.get("to");
+            String branch       = crit.get("branch") == null ? null : crit.get("branch").toString();
+
+            List<Order> orders = fetchOrdersForRange(session, from, to, branch);
+
+            Map<String, Double> perDay = new TreeMap<>();
+            double totalRevenue = 0.0;
+
+            for (Order o : orders) {
+                double orderTotal = 0.0;
+                if (o.getItems() != null) {
+                    for (OrderItem it : o.getItems()) {
+                        if (it == null) continue;
+                        if (it.getProduct() != null) {
+                            orderTotal += it.getProduct().getPrice() * it.getQuantity();
+                        } else if (it.getCustomBouquet() != null) {
+                            CustomBouquet cb = it.getCustomBouquet();
+                            double price = 0.0;
+                            if (cb.getTotalPrice() != null) {
+                                price = cb.getTotalPrice().doubleValue();
+                            } else if (cb.getItems() != null) {
+                                price = cb.getItems().stream()
+                                        .mapToDouble(li -> {
+                                            var unit = li.getUnitPriceSnapshot();
+                                            return (unit == null ? 0.0 : unit.doubleValue()) * Math.max(0, li.getQuantity());
+                                        }).sum();
+                            }
+                            orderTotal += price * Math.max(1, it.getQuantity());
+                        }
+                    }
+                }
+                totalRevenue += orderTotal;
+                String day = (o.getOrderDate() == null ? "unknown" : o.getOrderDate().toLocalDate().toString());
+                perDay.merge(day, orderTotal, Double::sum);
+            }
+
+            double totalExpenses = 0.0; // plug COGS later if you want
+            double net           = totalRevenue - totalExpenses;
+
+            long days = 1;
+            if (from != null && to != null) {
+                long d = java.time.temporal.ChronoUnit.DAYS.between(from.toLocalDate(), to.toLocalDate());
+                if (d > 0) days = d;
+            }
+            double avgDailyNet = net / days;
+
+            // ---- Map payload only (no DTOs) ----
+            Map<String,Object> payload = new HashMap<>();
+            payload.put("histogram", perDay);             // Map<String, Double>
+            payload.put("totalRevenue", totalRevenue);    // double
+            payload.put("totalExpenses", totalExpenses);  // double
+            payload.put("netProfit", net);                // double
+            payload.put("avgDailyNet", avgDailyNet);      // double
+            payload.put("transactions", orders.size());   // int
+
+            // Compare-mode routing (safe to include)
+            payload.put("requestId", crit.get("requestId"));
+            payload.put("slot",      crit.get("slot"));
+
+            // Optional extra labels (client won’t break if unused)
+            payload.put("branchLabel", (branch == null || branch.isBlank()) ? "All Branches" : branch);
+            payload.put("fromLabel",  from == null ? null : from.toLocalDate().toString());
+            payload.put("toLabel",    to   == null ? null : to.minusSeconds(1).toLocalDate().toString());
+            payload.put("slot", crit.get("slot"));
+            sendMsg(client, new Message("report_income_data", payload, null), "report_income");
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("report_income_data", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
+    private List<Order> fetchOrdersForRange(Session session, LocalDateTime from, LocalDateTime to, String branch) {
+        Transaction tx = session.getTransaction().isActive() ? session.getTransaction() : session.beginTransaction();
+        try {
+            StringBuilder hql = new StringBuilder(
+                    "SELECT DISTINCT o FROM Order o " +
+                            "LEFT JOIN FETCH o.items i " +
+                            "LEFT JOIN FETCH i.product p " +
+                            "LEFT JOIN FETCH i.customBouquet cb " +
+                            "WHERE 1=1 "
+            );
+            if (from != null)  hql.append("AND o.orderDate >= :from ");
+            if (to != null)    hql.append("AND o.orderDate < :to ");
+            if (branch != null && !branch.isBlank()) hql.append("AND o.branchName = :branch ");
+            hql.append("ORDER BY o.orderDate ASC");
+
+            var q = session.createQuery(hql.toString(), Order.class);
+            if (from != null)  q.setParameter("from", from);
+            if (to != null)    q.setParameter("to", to);
+            if (branch != null && !branch.isBlank()) q.setParameter("branch", branch);
+
+            List<Order> res = q.getResultList();
+
+            // hydrate bouquet items so totalPrice is valid, if needed
+            List<Long> bouquetIds = res.stream()
+                    .flatMap(o -> o.getItems().stream())
+                    .map(OrderItem::getCustomBouquet)
+                    .filter(Objects::nonNull)
+                    .map(CustomBouquet::getId)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (!bouquetIds.isEmpty()) {
+                session.createQuery(
+                                "SELECT DISTINCT cb FROM CustomBouquet cb " +
+                                        "LEFT JOIN FETCH cb.items li " +
+                                        "LEFT JOIN FETCH li.flower f " +
+                                        "WHERE cb.id IN :ids", CustomBouquet.class)
+                        .setParameter("ids", bouquetIds)
+                        .getResultList();
+            }
+
+            if (tx.isActive()) tx.commit();
+            return res;
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            throw e;
+        }
+    }
 
     private void handleGetComplaintsCount(ConnectionToClient client, Session session) {
         try {
@@ -902,7 +1876,10 @@ public class SimpleServer extends AbstractServer {
             c.setResolvedAt(LocalDateTime.now());
             if (responseText != null) c.setResponseText(responseText);
             if (compensation != null) c.setCompensationAmount(compensation);
-            if (responder != null) c.setResponder(responder);
+            if (responder != null) {
+                c.setResponder(responder);
+                c.setResponderName(responder.toString());
+            }
 
             session.merge(c);
 
@@ -1194,6 +2171,12 @@ public class SimpleServer extends AbstractServer {
                 return;
             }
 
+            // Lock using current (old) username; capture it in case it changes
+            final String oldUsername = user.getUsername();
+            User mergedUser;
+                mergedUser = (User) session.merge(user);
+                if (customer != null) session.merge(customer);
+                tx.commit();
             session.merge(user);
             if (customer != null) session.merge(customer);
 
@@ -1217,6 +2200,7 @@ public class SimpleServer extends AbstractServer {
             } catch (IOException ignored) {}
         }
     }
+
 
     @SuppressWarnings("unchecked")
     private void handleDeleteProduct(Message msg, ConnectionToClient client, Session session) {
@@ -1343,10 +2327,66 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+    private static final File IMAGES_DIR = new File("images").getAbsoluteFile();
+
+    private static String getExtension(String name) {
+        if (name == null) return "bin";
+        int i = name.lastIndexOf('.');
+        return (i > 0 && i < name.length() - 1) ? name.substring(i + 1).toLowerCase() : "bin";
+    }
+
+    private static String normalizeRelative(String path) {
+        return path.replace('\\', '/');
+    }
+
     private void handleAddProduct(Message msg, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();
         try {
-            Product product = (Product) msg.getObject();
+            Object payload = msg.getObject();
+
+            // Back-compat: old clients send Product directly
+            if (!(payload instanceof AddProductRequest)) {
+                Product legacy = (Product) payload;
+                session.save(legacy);
+                tx.commit();
+
+                catalogLock.writeLock().lock();
+                try { catalog.getFlowers().add(legacy); }
+                finally { catalogLock.writeLock().unlock(); }
+
+                sendToAllClients(new Message("add_product", legacy, null));
+                return;
+            }
+
+            AddProductRequest req = (AddProductRequest) payload;
+            Product product = req.productMeta;
+
+            byte[] broadcastBytes = null;
+
+            // --- Save the image into SERVER images/ (if provided) ---
+            if (req.imageBytes != null && req.imageBytes.length > 0) {
+                if (!IMAGES_DIR.exists() && !IMAGES_DIR.mkdirs()) {
+                    throw new IOException("Cannot create images dir: " + IMAGES_DIR.getAbsolutePath());
+                }
+                String ext = getExtension(req.imageName);
+                String fileName = java.util.UUID.randomUUID().toString() + "." + ext;
+                File out = new File(IMAGES_DIR, fileName);
+
+                // WRITE FIRST
+                try (OutputStream os = new FileOutputStream(out)) {
+                    os.write(req.imageBytes);
+                }
+                // set path stored in DB as server-relative
+                String relative = normalizeRelative("images/" + fileName);
+                product.setImagePath(relative);
+
+                // BROADCAST the bytes we already have (don’t re-read)
+                broadcastBytes = req.imageBytes;
+            } else {
+                product.setImagePath(null);
+            }
+            // --------------------------------------------------------
+
             session.save(product);
             tx.commit();
 
@@ -1358,7 +2398,13 @@ public class SimpleServer extends AbstractServer {
                 catalogLock.writeLock().unlock();
             }
 
-            sendToAllClients(new Message("add_product", product, null));
+            // Broadcast new product + its image bytes to all clients
+            sendToAllClients(new Message(
+                    "add_product",
+                    product,
+                    (broadcastBytes != null ? java.util.List.of(broadcastBytes) : null)
+            ));
+
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
@@ -1367,26 +2413,50 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-    private boolean checkExistence(String username) {
-        return userCache.containsKey(username);
+
+    private boolean checkExistenceUsername(Session session, String username) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+
+        Long count = session.createQuery(
+                        "select count(u.id) from User u where lower(u.username) = :un",
+                        Long.class)
+                .setParameter("un", username.trim().toLowerCase())
+                .getSingleResult();
+
+        return count != null && count > 0;
+    }
+    private boolean checkExistenceIdNumber(String idNumber,Session session) {
+        boolean idNumberExists = false;
+        User user = session.createQuery(
+                        "SELECT u FROM User u WHERE u.idNumber = :idNumber", User.class)
+                .setParameter("idNumber", idNumber)
+                .uniqueResult();
+        if (user != null) {
+            idNumberExists = true;
+        }
+        return idNumberExists;
     }
 
     private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
-        String username = ((User) (msg.getObject())).getUsername();
-        final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
-
-        synchronized (lock) {
-            if (checkExistence(username)) {
+        String username = ((Customer) (msg.getObject())).getUsername();
+        String idNumber = ((Customer) (msg.getObject())).getIdNumber();
+            if (checkExistenceUsername(session,username)) {
                 client.sendToClient(new Message("user already exists", msg.getObject(), null));
+                return;
+            }
+            if(checkExistenceIdNumber(idNumber, session)) {
+                client.sendToClient(new Message("id already exists", msg.getObject(), null));
                 return;
             }
             Transaction tx = session.beginTransaction();
             try {
-                User user = (User) msg.getObject();
-                session.save(user);
+                Customer incoming = (Customer) msg.getObject();
+
+                session.save(incoming);
                 tx.commit();
 
-                userCache.putIfAbsent(user.getUsername(), user);
                 client.sendToClient(new Message("registered", null, null));
             } catch (Exception e) {
                 if (tx.isActive()) tx.rollback();
@@ -1394,40 +2464,101 @@ public class SimpleServer extends AbstractServer {
                 catch (IOException ignored) {}
                 e.printStackTrace();
             }
-        }
     }
+
 
     private void handleCatalogRequest(ConnectionToClient client) {
         try {
-            Message message = new Message("catalog", catalog, null);
-            client.sendToClient(message);
+            Catalog full = catalog;
+            java.util.List<Product> all = (full != null && full.getFlowers() != null)
+                    ? full.getFlowers()
+                    : java.util.List.of();
+
+            Catalog flowersOnly = new Catalog(
+                    all.stream().filter(SimpleServer::isFlower).collect(java.util.stream.Collectors.toList()));
+            Catalog nonFlowers  = new Catalog(
+                    all.stream().filter(p -> !isFlower(p)).collect(java.util.stream.Collectors.toList()));
+
+            // Build productId -> image bytes (now also supports legacy file:/ and absolute paths)
+            Map<Long, byte[]> imageBlobs = new java.util.HashMap<>();
+            for (Product p : all) {
+                if (p == null || p.getId() == null) continue;
+                String sp = p.getImagePath();
+                if (sp == null || sp.isBlank()) continue;
+
+                try {
+                    File f = resolveServerImageFile(sp);
+                    if (f != null && f.exists() && f.isFile()) {
+                        byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+                        if (bytes != null && bytes.length > 0) {
+                            imageBlobs.put(p.getId(), bytes);
+                        }
+                    } else {
+                        System.out.println("[catalog] image not found on server: " + sp);
+                    }
+                } catch (Exception ex) {
+                    System.err.println("[catalog] failed reading image '" + sp + "': " + ex.getMessage());
+                }
+            }
+
+            // Send: object = full catalog; objectList = [flowersOnly, nonFlowers, imageBlobs]
+            client.sendToClient(new Message("catalog", full, java.util.List.of(flowersOnly, nonFlowers, imageBlobs)));
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private void handleProductEdit(Message msg, ConnectionToClient client, Session session) {
-        Product product = (Product) msg.getObject();
-        if (product == null) return;
-
-        boolean updateSuccess = updateProduct(session, product.getId(),
-                product.getName(), product.getColor(), product.getPrice(),
-                product.getDiscountPercentage(), product.getType(), product.getImagePath());
-
-        if (updateSuccess) {
-            // refresh in-memory catalog + propagate to open carts
-            catalogLock.writeLock().lock();
-            try {
-                catalog.setFlowers(getListFromDB(session, Product.class));
-            } finally {
-                catalogLock.writeLock().unlock();
-            }
-            propagateProductEditToOpenCarts(session, product.getId());
-
-            try { sendToAllClients(new Message(msg.getMessage(), product, null)); }
-            catch (Exception ignored) {}
-        }
+    private static boolean isFlower(Product p) {
+        return p != null && p.getType() != null && p.getType().equalsIgnoreCase("flower");
     }
+
+    private void handleProductEdit(Message msg, ConnectionToClient client, Session session) {
+        Product incoming = (Product) msg.getObject();
+        if (incoming == null) return;
+
+        // Persist (this already normalizes and copies the image into images/ if accessible)
+        boolean updateSuccess = updateProduct(session, incoming.getId(),
+                incoming.getName(), incoming.getColor(), incoming.getPrice(),
+                incoming.getDiscountPercentage(), incoming.getType(), incoming.getImagePath());
+
+        if (!updateSuccess) return;
+
+        // Re-read the managed product so we have the final (possibly new) imagePath
+        Product managed = session.get(Product.class, incoming.getId());
+        if (managed == null) return;
+
+        // Refresh in-memory catalog + propagate to open carts
+        catalogLock.writeLock().lock();
+        try {
+            catalog.setFlowers(getListFromDB(session, Product.class));
+        } finally {
+            catalogLock.writeLock().unlock();
+        }
+        propagateProductEditToOpenCarts(session, managed.getId());
+
+        // Try to attach image bytes (same idea as in handleAddProduct)
+        List<Object> payload = null;
+        try {
+            String sp = managed.getImagePath();
+            if (sp != null && !sp.isBlank()) {
+                File f = resolveServerImageFile(sp);
+                if (f != null && f.exists() && f.isFile()) {
+                    byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
+                    if (bytes != null && bytes.length > 0) {
+                        payload = java.util.List.of(java.util.Map.of("imageBytes", bytes));
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            System.err.println("[editProduct] couldn't attach image bytes: " + ex.getMessage());
+        }
+
+        try {
+            // Use the managed product (with final imagePath) in the broadcast
+            sendToAllClients(new Message(msg.getMessage(), managed, payload));
+        } catch (Exception ignored) {}
+    }
+
 
     private void propagateProductEditToOpenCarts(Session session, Long productId) {
         if (productId == null) return;
@@ -1493,39 +2624,91 @@ public class SimpleServer extends AbstractServer {
         subscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
     }
 
-    private void handleUserAuthentication(Message msg, ConnectionToClient client, Session session) throws Exception {
+    @SuppressWarnings("unchecked")
+    private void handleUserAuthentication(Message msg, ConnectionToClient client, Session session) {
         try {
-            @SuppressWarnings("unchecked")
-            List<String> info = (List<String>) msg.getObject();
-            String username = info.get(0);
-            String password = info.get(1);
+            if (msg == null || !(msg.getObject() instanceof java.util.List)) {
+                try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
+                return;
+            }
+            java.util.List<String> info = (java.util.List<String>) msg.getObject();
+            if (info.size() < 2) {
+                try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
+                return;
+            }
 
-            User user = userCache.get(username);
+            final String username = info.get(0);
+            final String password = info.get(1);
+
+            // Case-insensitive unique username is enforced in DB, so uniqueResult() is OK.
+            User user;
+            try {
+                user = session.createQuery(
+                                "select u from User u where lower(u.username) = :un", User.class)
+                        .setParameter("un", username.toLowerCase(java.util.Locale.ROOT))
+                        .uniqueResult(); // throws NonUniqueResultException if invariant is violated
+            } catch (org.hibernate.NonUniqueResultException e) {
+                // Defensive: if the DB invariant is ever violated, fail closed.
+                try { client.sendToClient(new Message("authentication_error", "Duplicate username", null)); } catch (IOException ignored) {}
+                return;
+            }
 
             if (user == null) {
-                System.out.println("user not found");
-                client.sendToClient(new Message("incorrect", null, null));
-            } else {
-                if (user.getPassword().equals(password)) {
-                    System.out.println(user.getUsername());
-                    System.out.println(user.getPassword());
-                    client.sendToClient(new Message("correct", user, null));
-                } else {
-                    System.out.println("Incorrect password");
-                    client.sendToClient(new Message("incorrect", null, null));
-                }
+                try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
+                return;
             }
+            if (!java.util.Objects.equals(user.getPassword(), password)) {
+                try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
+                return;
+            }
+            if (user instanceof Customer && ((Customer) user).isFrozen()) {
+                try { client.sendToClient(new Message("frozen", null, null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            // Atomic login: flip to true only if currently false (and not frozen for customers)
+            Transaction tx = session.beginTransaction();
+            int updated;
+            try {
+                if (user instanceof Customer) {
+                    updated = session.createQuery(
+                                    "update Customer c set c.isLoggedIn = true " +
+                                            "where c.id = :id and c.isLoggedIn = false and c.frozen = false")
+                            .setParameter("id", user.getId())
+                            .executeUpdate();
+                } else {
+                    updated = session.createQuery(
+                                    "update User u set u.isLoggedIn = true " +
+                                            "where u.id = :id and u.isLoggedIn = false")
+                            .setParameter("id", user.getId())
+                            .executeUpdate();
+                }
+                tx.commit();
+            } catch (Exception e) {
+                if (tx.isActive()) tx.rollback();
+                throw e;
+            }
+
+            if (updated == 0) {
+                // Someone else logged in first, or (for customers) account got frozen in the meantime
+                try { client.sendToClient(new Message("already_logged", null, null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            // Bulk JPQL bypasses the first-level cache → clear & reload before sending the entity out
+            session.clear();
+            User fresh = session.find(User.class, user.getId());
+
+            client.setInfo("userId", fresh.getId());
+            client.setInfo("username", fresh.getUsername());
+            try { client.sendToClient(new Message("correct", fresh, null)); } catch (IOException ignored) {}
+
         } catch (Exception e) {
             e.printStackTrace();
-            try {
-                System.out.println(e.getMessage());
-                client.sendToClient(new Message("authentication_error", null, null));
-            } catch (IOException ioException) {
-                System.out.println(ioException.getMessage());
-                ioException.printStackTrace();
-            }
+            try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
         }
     }
+
 
     public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,
                                  double newPrice, double newDiscount, String newType, String newImagePath) {
@@ -1533,21 +2716,53 @@ public class SimpleServer extends AbstractServer {
         Transaction tx = session.beginTransaction();
         try {
             Product product = session.get(Product.class, productId);
-            if (product != null) {
-                product.setPrice(newPrice);
-                product.setDiscountPercentage(newDiscount);
-                product.setName(newProductName);
-                product.setType(newType);
-                product.setImagePath(newImagePath);
-                product.setColor(newColor);
-                session.update(product);
-                tx.commit();
-                return true;
-            } else {
+            if (product == null) {
                 System.out.println("Product not found with ID: " + productId);
                 tx.rollback();
                 return false;
             }
+
+            product.setPrice(newPrice);
+            product.setDiscountPercentage(newDiscount);
+            product.setName(newProductName);
+            product.setType(newType);
+            product.setColor(newColor);
+
+            // ---- Image path normalization (server-side) ----
+            String finalPath = product.getImagePath(); // keep old unless we can improve it
+            if (newImagePath != null) {
+                String sp = newImagePath.trim();
+                if (sp.isEmpty()) {
+                    finalPath = null; // explicit clear
+                } else if (sp.startsWith("images/") || sp.startsWith("images\\")) {
+                    // already in server images/ -> normalize slashes
+                    finalPath = normalizeRelative(sp);
+                } else {
+                    // Try to copy a reachable file on the SERVER into images/
+                    File source = resolveServerImageFile(sp);
+                    if (source != null && source.exists() && source.isFile()) {
+                        if (!IMAGES_DIR.exists()) IMAGES_DIR.mkdirs();
+                        String ext = getExtension(source.getName());
+                        String fileName = java.util.UUID.randomUUID().toString() + "." + ext;
+                        File out = new File(IMAGES_DIR, fileName);
+                        java.nio.file.Files.copy(
+                                source.toPath(),
+                                out.toPath(),
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                        );
+                        finalPath = normalizeRelative("images/" + fileName);
+                    } else {
+                        // not reachable by the server → keep previous imagePath
+                        System.err.println("[updateProduct] Provided image path not accessible on server: " + sp);
+                    }
+                }
+            }
+            product.setImagePath(finalPath);
+            // -----------------------------------------------
+
+            session.update(product);
+            tx.commit();
+            return true;
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
@@ -1556,6 +2771,7 @@ public class SimpleServer extends AbstractServer {
             catalogLock.writeLock().unlock();
         }
     }
+
 
     private void handleAddToCart(Message message, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();
@@ -1988,6 +3204,34 @@ public class SimpleServer extends AbstractServer {
             } catch (IOException ignored) {}
         }
     }
+
+    private void handleBudgetUpdate(Message msg, ConnectionToClient client, Session session) {
+        // Get the customer object from the message
+        Customer customer = (Customer) msg.getObject();
+
+        Transaction tx = session.beginTransaction();
+        try {
+            // Fetch managed entity from DB
+            Customer dbCustomer = session.get(Customer.class, customer.getId());
+
+            if (dbCustomer != null && dbCustomer.getBudget() != null) {
+                dbCustomer.getBudget().setBalance(customer.getBudget().getBalance());
+                session.update(dbCustomer.getBudget());
+            }
+
+            tx.commit();
+
+            // Send confirmation back to client
+            client.sendToClient(new Message("budget_updated", dbCustomer, null));
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try {
+                client.sendToClient(new Message("budget_update_failed", null, null));
+            } catch (IOException ignored) {}
+        }
+    }
+
 
     private CustomBouquet cloneBouquetForOrder(CustomBouquet src, Customer creator) {
         if (src == null) return null;

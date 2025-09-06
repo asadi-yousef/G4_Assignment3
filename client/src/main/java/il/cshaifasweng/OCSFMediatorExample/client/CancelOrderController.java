@@ -11,32 +11,23 @@ import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
 import java.net.URL;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.ResourceBundle;
 
 public class CancelOrderController implements Initializable {
-
     @FXML
     private Label orderIdLabel;
-
     @FXML
     private Label orderDateLabel;
-
     @FXML
     private Label deliveryDateLabel;
-
     @FXML
     private Label compensationLabel; // placeholder for future compensation
-
     @FXML
     private Button confirmButton;
-
     @FXML
     private Button backButton;
-
     private Order selectedOrder;
-
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
         if (!EventBus.getDefault().isRegistered(this)) {
@@ -76,8 +67,6 @@ public class CancelOrderController implements Initializable {
             confirmButton.setDisable(true);
         }
     }
-
-
 
     @FXML
     private void handleConfirmCancel() {

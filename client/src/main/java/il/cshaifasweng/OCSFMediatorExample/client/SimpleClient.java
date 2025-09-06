@@ -17,10 +17,30 @@ public class SimpleClient extends AbstractClient {
 		super(host, port);
 	}
 
+	private static String delete_msg = "account_deleted";
+	public static String ban_msg = "account_banned";
     @Override
     protected void handleMessageFromServer(Object msg) {
         if (msg instanceof Message) {
-            EventBus.getDefault().post(msg);
+			Message message = (Message) msg;
+			if(message.getMessage().equals(ban_msg)) {
+				try{
+					client.sendToServer(new Message("force_logout",SessionManager.getInstance().getCurrentUser().getUsername(),null));
+					SessionManager.getInstance().logout();
+					App.setRoot("primary");
+				}catch(Exception ignored){}
+			}
+			else if(message.getMessage().equals(delete_msg)) {
+				try {
+					SessionManager.getInstance().logout();
+					App.setRoot("primary");
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+			else{
+				EventBus.getDefault().post(msg);
+			}
         }
     }
 
