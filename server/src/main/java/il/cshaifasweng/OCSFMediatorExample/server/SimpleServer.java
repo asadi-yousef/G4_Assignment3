@@ -2001,6 +2001,7 @@ public class SimpleServer extends AbstractServer {
             }
             if(checkExistenceIdNumber(idNumber, session)) {
                 client.sendToClient(new Message("id already exists", msg.getObject(), null));
+                return;
             }
             Transaction tx = session.beginTransaction();
             try {

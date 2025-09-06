@@ -286,8 +286,11 @@ public class RegisterControl implements Initializable {
     }
 
     private boolean isValidIsraeliID(String idRaw) {
-        return (idRaw.length() == 9);
+        if (idRaw == null) return false;
+        // Accept only if the string is exactly 9 characters long and all digits
+        return idRaw.matches("\\d{9}");
     }
+
 
     private boolean isValidPhone(String phone) {
         return phone.matches("^\\+?[0-9]{7,15}$");

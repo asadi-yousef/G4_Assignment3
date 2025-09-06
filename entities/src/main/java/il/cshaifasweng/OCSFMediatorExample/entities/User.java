@@ -19,7 +19,7 @@ public class User implements Serializable {
     protected String firstName;
     @Column
     protected String lastName;
-    @Column
+    @Column(unique = true, nullable = false)
     protected String username;
     @Column
     protected String password;
