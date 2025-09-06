@@ -43,6 +43,10 @@ public class AdminUsersController {
     @FXML private TextField searchField;
     @FXML private Label statusLabel;
 
+    // De-dupe using a string key to avoid null-ID collisions.
+    private final Set<String> seenKeys = new HashSet<>();
+
+
     private final ObservableList<UserRow> data = FXCollections.observableArrayList();
     private final ObservableList<Branch> branches = FXCollections.observableArrayList();
 
@@ -449,7 +453,9 @@ public class AdminUsersController {
         if (reset) {
             offset = 0;
             data.clear();
+            seenKeys.clear();
         }
+
         Map<String,Object> q = new HashMap<>();
         q.put("search", currentSearch);
         q.put("offset", offset);
@@ -484,14 +490,34 @@ public class AdminUsersController {
                     @SuppressWarnings("unchecked")
                     List<UserAdminDTO> rows = (List<UserAdminDTO>) page.get("rows");
                     Number total = (Number) page.get("total");
+
                     if (rows != null) {
-                        for (var dto : rows) data.add(fromDTO(dto));
+                        int added = 0, skipped = 0;
+                        for (var dto : rows) {
+                            // Build a stable de-dupe key: prefer ID; otherwise username (which you enforce unique)
+                            String uname = dto.getUsername() == null ? "" : dto.getUsername().trim().toLowerCase();
+                            String key = (dto.getId() != null) ? ("id:" + dto.getId()) : ("user:" + uname);
+
+                            if (!seenKeys.add(key)) { skipped++; continue; } // already showing it
+
+                            data.add(fromDTO(dto));
+                            added++;
+                        }
+
+                        // Advance offset by what the server returned (keeps contract stable)
                         offset += rows.size();
-                        statusLabel.setText("Loaded " + data.size() + " / " + (total == null ? "?" : total));
+
+                        statusLabel.setText(
+                                "Loaded " + data.size() + " / " + (total == null ? "?" : total)
+                                        + (skipped > 0 ? (" (+" + added + ", skipped " + skipped + ")") : "")
+                        );
+
+                        // Optional: table.refresh(); // not required when adding to ObservableList
                     } else {
                         statusLabel.setText("No results");
                     }
                 }
+
 
                 case "admin_update_ok" -> {
                     UserAdminDTO dto = (UserAdminDTO) msg.getObject();
@@ -571,7 +597,7 @@ public class AdminUsersController {
 
     @FXML
     private void onLoadMore() {
-        refresh(false); // do NOT reset
+        refresh(true);
     }
 
     @FXML

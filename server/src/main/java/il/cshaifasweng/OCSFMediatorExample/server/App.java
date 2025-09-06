@@ -162,8 +162,7 @@ public class App {
         }
         // ---- End seed ----
 
-        // Warm caches and start listening
-        server.initCaches();
+
         try {
             server.listen();
         } catch (Exception e) {

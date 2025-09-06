@@ -10,12 +10,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -32,10 +30,6 @@ public class SimpleServer extends AbstractServer {
     // ---- In-memory catalog snapshot + lock ----
     private static volatile Catalog catalog = new Catalog(new ArrayList<>());
     private static final ReentrantReadWriteLock catalogLock = new ReentrantReadWriteLock();
-
-    // ---- Caches + per-username locks ----
-    private static final ConcurrentHashMap<String, User> userCache = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Object> usernameLocks = new ConcurrentHashMap<>();
 
     public SimpleServer(int port) {
         super(port);
@@ -60,8 +54,6 @@ public class SimpleServer extends AbstractServer {
             ex.printStackTrace();
         }
         // -------------------------------------------------------------------------------
-
-        initCaches(); // warm user cache before catalog
 
         // Initialize catalog snapshot once at startup
         catalogLock.writeLock().lock();
@@ -106,11 +98,6 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-    public void initCaches() {
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            loadToCache(session, User.class, userCache, User::getUsername);
-        }
-    }
 
     /* ----------------------- Request dispatch ----------------------- */
 
@@ -266,34 +253,12 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-    /** Put/replace user in cache, and migrate the key if username changed. */
-    private void upsertUserCache(User managedUser, String oldUsernameIfKnown) {
-        if (managedUser == null) return;
-        final String newUsername = managedUser.getUsername();
-
-        // If username changed, move the cache entry and the per-username lock
-        if (oldUsernameIfKnown != null && !oldUsernameIfKnown.equals(newUsername)) {
-            userCache.remove(oldUsernameIfKnown);
-            Object lock = usernameLocks.remove(oldUsernameIfKnown);
-            if (lock != null) {
-                usernameLocks.putIfAbsent(newUsername, lock);
-            }
-        }
-        userCache.put(newUsername, managedUser);
-    }
-
-    /** Resolve a lock object for a username that might be null/unknown. */
-    private Object lockForUsername(String username) {
-        return usernameLocks.computeIfAbsent(username == null ? "<null>" : username, k -> new Object());
-    }
-
 
     @SuppressWarnings("unchecked")
     private void handleAdminFreezeCustomer(Message m, ConnectionToClient client, Session session) {
         Map<String,Object> req = (m.getObject() instanceof Map) ? (Map<String,Object>) m.getObject() : null;
         if (req == null) {
-            try { client.sendToClient(new Message("admin_freeze_error", "Bad request", null)); }
-            catch (IOException ignored) {}
+            try { client.sendToClient(new Message("admin_freeze_error", "Bad request", null)); } catch (IOException ignored) {}
             return;
         }
 
@@ -301,52 +266,57 @@ public class SimpleServer extends AbstractServer {
         Boolean frozen = null;
         Object idObj = req.get("customerId");
         Object frObj = req.get("frozen");
-        if (idObj instanceof Number) customerId = ((Number)idObj).longValue();
+        if (idObj instanceof Number) customerId = ((Number) idObj).longValue();
         if (frObj instanceof Boolean) frozen = (Boolean) frObj;
 
         if (customerId == null || frozen == null) {
-            try { client.sendToClient(new Message("admin_freeze_error", "Bad request", null)); }
-            catch (IOException ignored) {}
+            try { client.sendToClient(new Message("admin_freeze_error", "Bad request", null)); } catch (IOException ignored) {}
             return;
         }
 
         Transaction tx = session.beginTransaction();
         try {
-            Customer c = session.get(Customer.class, customerId);
-            if (c == null) throw new IllegalArgumentException("Customer not found");
+            // Single atomic DB write; no need to merge a managed entity
+            int updated = session.createQuery(
+                            "update Customer c set c.frozen = :frozen, c.isLoggedIn = false where c.id = :id")
+                    .setParameter("frozen", frozen)
+                    .setParameter("id", customerId)
+                    .executeUpdate(); // returns number of rows changed
+            tx.commit();
 
-            final String username = c.getUsername();
-            final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
+            if (updated == 0) {
+                try { client.sendToClient(new Message("admin_freeze_error", "Customer not found", null)); } catch (IOException ignored) {}
+                return;
+            }
 
-            synchronized (lock) {
-                // assumes you added a 'frozen' boolean to Customer
-                c.setFrozen(frozen);
-                Customer managed = (Customer) session.merge(c);
-                tx.commit();
+            // Bulk JPQL bypasses the first-level cache—clear and reload a fresh view before sending
+            session.clear();
+            Customer fresh = session.find(Customer.class, customerId);
 
-                // refresh cache entry
-                upsertUserCache(managed, username);
+            try { client.sendToClient(new Message("admin_freeze_ok", toDTO(fresh), null)); } catch (IOException ignored) {}
 
-                client.sendToClient(new Message("admin_freeze_ok", toDTO(managed), null));
-                if(frozen){
-                    for (SubscribedClient sc : subscribersList) {
-                        ConnectionToClient s = sc.getClient();
-                        Object uid = s.getInfo("userId"); // you must set this at login
-                        System.out.println("DEBUG: uid: " + uid+" userId: "+s.getInfo("userId"));
-                        if (uid instanceof Long && ((Long) uid) == customerId) {
-                            try { s.sendToClient(new Message("account_banned", "Your account was banned", null)); } catch (Exception ignored) {}
-                            System.out.println("DEBUG: banning user " + s.getInfo("username"));
-                        }
+            if (Boolean.TRUE.equals(frozen)) {
+                // Notify/force-logout the exact connected client for this user (if connected)
+                for (SubscribedClient sc : subscribersList) {
+                    ConnectionToClient s = sc.getClient();
+                    Object uid = s.getInfo("userId"); // set at login
+                    if (uid instanceof Long && java.util.Objects.equals(uid, customerId)) {
+                        try {
+                            s.sendToClient(new Message("account_banned", "Your account was banned", null));
+                            // Optionally: also close the connection if your client can reconnect cleanly
+                            // s.close(); // only if supported/desired by your OCSF layer
+                        } catch (Exception ignored) {}
                     }
                 }
             }
+
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
-            try { client.sendToClient(new Message("admin_freeze_error", e.getMessage(), null)); }
-            catch (IOException ignored) {}
+            try { client.sendToClient(new Message("admin_freeze_error", e.getMessage(), null)); } catch (IOException ignored) {}
         }
     }
+
 
     @SuppressWarnings("unchecked")
     private void handleAdminUpdateUser(Message m, ConnectionToClient client, Session session) {
@@ -419,8 +389,6 @@ public class SimpleServer extends AbstractServer {
                 }
 
                 final String oldUsername = e.getUsername();
-                final Object lock = usernameLocks.computeIfAbsent(oldUsername, k -> new Object());
-                synchronized (lock) {
                     // Basic fields (nulls = don't change)
                     if (dto.getFirstName() != null) e.setFirstName(dto.getFirstName());
                     if (dto.getLastName()  != null) e.setLastName(dto.getLastName()); // <-- fixed
@@ -477,10 +445,7 @@ public class SimpleServer extends AbstractServer {
 
                     Employee managed = (Employee) session.merge(e);
                     tx.commit();
-
-                    upsertUserCache(managed, oldUsername);
                     client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
-                }
 
             } else if ("CUSTOMER".equalsIgnoreCase(dto.getUserType())) {
                 Customer c = session.get(Customer.class, dto.getId());
@@ -528,8 +493,6 @@ public class SimpleServer extends AbstractServer {
                 }
 
                 final String oldUsername = c.getUsername();
-                final Object lock = usernameLocks.computeIfAbsent(oldUsername, k -> new Object());
-                synchronized (lock) {
                     // Basic fields
                     if (dto.getFirstName() != null) c.setFirstName(dto.getFirstName());
                     if (dto.getLastName()  != null) c.setLastName(dto.getLastName()); // <-- fixed
@@ -569,10 +532,8 @@ public class SimpleServer extends AbstractServer {
                     Customer managed = (Customer) session.merge(c);
                     tx.commit();
 
-                    upsertUserCache(managed, oldUsername);
                     try { client.sendToClient(new Message("admin_update_ok", toDTO(managed), null)); }
                     catch (IOException ignored) {}
-                }
             } else {
                 tx.rollback();
                 try { client.sendToClient(new Message("admin_update_error", "Unknown userType: " + dto.getUserType(), null)); }
@@ -603,14 +564,16 @@ public class SimpleServer extends AbstractServer {
 
         final String keyLower = candidate.trim().toLowerCase();
 
-        // 1) CACHE FAST PATH (authoritative if your cache is complete)
-        User cached = userCache.get(keyLower);
-        if (cached != null && !Objects.equals(cached.getId(), excludeId)) {
-            return true;
-        }
+        Long count = session.createQuery(
+                        "select count(u.id) from User u where lower(u.username) = :un and (:id is null or u.id <> :id)",
+                        Long.class)
+                .setParameter("un", keyLower)
+                .setParameter("id", excludeId)
+                .getSingleResult();
 
-        return false;
+        return count != null && count > 0;
     }
+
 
     /** ID-number uniqueness (DB). If you add an idNumber index to cache, mirror the same pattern. */
     private boolean idNumberExists(Session session, String candidate, Long excludeId) {
@@ -705,54 +668,54 @@ public class SimpleServer extends AbstractServer {
 
             var cb = session.getCriteriaBuilder();
 
-            // ----------------- DATA query (with fetch join) -----------------
+            // ---------- DATA query ----------
             var cq = cb.createQuery(User.class);
             var root = cq.from(User.class);
 
-            // fetch branch for display (LEFT JOIN FETCH)
+            // LEFT JOIN FETCH branch for display
             root.fetch("branch", jakarta.persistence.criteria.JoinType.LEFT);
 
-            // WHERE (if search)
             if (!search.isBlank()) {
                 String like = "%" + search.toLowerCase() + "%";
-                var p = cb.or(
+                cq.where(cb.or(
                         cb.like(cb.lower(root.get("username")),  like),
                         cb.like(cb.lower(root.get("firstName")), like),
                         cb.like(cb.lower(root.get("lastName")),  like),
                         cb.like(cb.lower(root.get("idNumber")),  like)
-                );
-                cq.where(p);
+                ));
             }
 
-            // ORDER BY username ASC
-            cq.orderBy(cb.asc(root.get("username")));
+            // Stable, case-insensitive ordering for pagination
+            cq.orderBy(
+                    cb.asc(cb.lower(root.get("username"))),
+                    cb.asc(root.get("id"))
+            );
+            cq.distinct(true);
 
-            var dataQ = session.createQuery(cq);
-            dataQ.setFirstResult(offset);
-            dataQ.setMaxResults(limit);
+            var dataQ = session.createQuery(cq)
+                    .setFirstResult(offset)
+                    .setMaxResults(limit);
+
             var pageUsers = dataQ.getResultList();
 
-            // ----------------- COUNT query (NO fetch join) -----------------
+            // ---------- COUNT query ----------
             var ccq = cb.createQuery(Long.class);
             var croot = ccq.from(User.class);
-            ccq.select(cb.count(croot));
-
             if (!search.isBlank()) {
                 String like = "%" + search.toLowerCase() + "%";
-                var p = cb.or(
+                ccq.where(cb.or(
                         cb.like(cb.lower(croot.get("username")),  like),
                         cb.like(cb.lower(croot.get("firstName")), like),
                         cb.like(cb.lower(croot.get("lastName")),  like),
                         cb.like(cb.lower(croot.get("idNumber")),  like)
-                );
-                ccq.where(p);
+                ));
             }
-
+            ccq.select(cb.count(croot));
             long total = session.createQuery(ccq).getSingleResult();
 
             // Map to DTOs
             List<UserAdminDTO> rows = new ArrayList<>(pageUsers.size());
-            for (User user : pageUsers) rows.add(toDTO(user));
+            for (User u : pageUsers) rows.add(toDTO(u));
 
             Map<String,Object> page = new HashMap<>();
             page.put("rows", rows);
@@ -766,61 +729,59 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-
-
-
     private void handleLogout(ConnectionToClient client, Session session, Message message) {
-        final String username = (message != null && message.getObject() instanceof String)
-                ? ((String) message.getObject()).trim()
-                : null;
+        try {
+            final String username = (message != null && message.getObject() instanceof String)
+                    ? ((String) message.getObject()).trim()
+                    : null;
 
-        if (username == null || username.isBlank()) {
-            try { client.sendToClient(new Message("logout_error", "Missing username", null)); }
-            catch (IOException ignored) {}
-            return;
-        }
-
-        final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
-
-        synchronized (lock) {
-            User cached = userCache.get(username);
-            if (cached == null) {
-                try { client.sendToClient(new Message("logout_error", "User not found in cache", null)); }
-                catch (IOException ignored) {}
-                return;
-            }
-            if (!cached.isLoggedIn()) {
-                try { client.sendToClient(new Message("logout_success", username, null)); }
-                catch (IOException ignored) {}
+            if (username == null || username.isBlank()) {
+                try { client.sendToClient(new Message("logout_error", "Missing username", null)); } catch (IOException ignored) {}
                 return;
             }
 
-            Transaction tx = session.beginTransaction();
+            User user;
             try {
-                String msg = message.getMessage();
-                String clientMsg = "";
-                cached.setLoggedIn(false);
-                User managed = (User) session.merge(cached);
+                user = session.createQuery(
+                                "select u from User u where lower(u.username) = :un", User.class)
+                        .setParameter("un", username.toLowerCase(java.util.Locale.ROOT))
+                        .uniqueResult();
+            } catch (org.hibernate.NonUniqueResultException e) {
+                try { client.sendToClient(new Message("logout_error", "Duplicate username", null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            if (user == null) {
+                try { client.sendToClient(new Message("logout_error", "User not found", null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            // Atomic logout: flip to false only if currently true
+            Transaction tx = session.beginTransaction();
+            int updated;
+            try {
+                updated = session.createQuery(
+                                "update User u set u.isLoggedIn = false " +
+                                        "where u.id = :id and u.isLoggedIn = true")
+                        .setParameter("id", user.getId())
+                        .executeUpdate();
                 tx.commit();
-
-                // keep cache updated
-                upsertUserCache(managed, username);
-                if(msg.equals("force_logout")) {
-                    clientMsg += "force_logout";
-                }
-                else
-                    clientMsg += "logout_success";
-
-                try { client.sendToClient(new Message(clientMsg, username, null)); }
-                catch (IOException ignored) {}
             } catch (Exception e) {
                 if (tx.isActive()) tx.rollback();
-                e.printStackTrace();
-                try { client.sendToClient(new Message("logout_error", "Exception: " + e.getMessage(), null)); }
-                catch (IOException ignored) {}
+                throw e;
             }
+
+            // Idempotent response
+            final String msgType = (message != null && "force_logout".equals(message.getMessage()))
+                    ? "force_logout" : "logout_success";
+            try { client.sendToClient(new Message(msgType, username, null)); } catch (IOException ignored) {}
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("logout_error", "Exception: " + e.getMessage(), null)); } catch (IOException ignored) {}
         }
     }
+
     @SuppressWarnings("unchecked")
     private void handleReportComplaints(Message m, ConnectionToClient client, Session session) {
         try {
@@ -1768,10 +1729,7 @@ public class SimpleServer extends AbstractServer {
 
             // Lock using current (old) username; capture it in case it changes
             final String oldUsername = user.getUsername();
-            final Object lock = usernameLocks.computeIfAbsent(oldUsername, k -> new Object());
-
             User mergedUser;
-            synchronized (lock) {
                 mergedUser = (User) session.merge(user);
                 if (customer != null) session.merge(customer);
                 tx.commit();
@@ -1787,10 +1745,6 @@ public class SimpleServer extends AbstractServer {
 
 
             tx.commit();
-
-                // (Possibly) move cache key if username changed
-                upsertUserCache(mergedUser, oldUsername);
-            }
 
             client.sendToClient(new Message("profile_updated_success", null, null));
         } catch (Exception e) {
@@ -2013,8 +1967,18 @@ public class SimpleServer extends AbstractServer {
     }
 
 
-    private boolean checkExistenceUsername(String username) {
-        return userCache.containsKey(username);
+    private boolean checkExistenceUsername(Session session, String username) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+
+        Long count = session.createQuery(
+                        "select count(u.id) from User u where lower(u.username) = :un",
+                        Long.class)
+                .setParameter("un", username.trim().toLowerCase())
+                .getSingleResult();
+
+        return count != null && count > 0;
     }
     private boolean checkExistenceIdNumber(String idNumber,Session session) {
         boolean idNumberExists = false;
@@ -2029,11 +1993,9 @@ public class SimpleServer extends AbstractServer {
     }
 
     private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
-        String username = ((User) (msg.getObject())).getUsername();
-        String idNumber = ((User) (msg.getObject())).getIdNumber();
-        final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
-        synchronized (lock) {
-            if (checkExistenceUsername(username)) {
+        String username = ((Customer) (msg.getObject())).getUsername();
+        String idNumber = ((Customer) (msg.getObject())).getIdNumber();
+            if (checkExistenceUsername(session,username)) {
                 client.sendToClient(new Message("user already exists", msg.getObject(), null));
                 return;
             }
@@ -2042,32 +2004,11 @@ public class SimpleServer extends AbstractServer {
             }
             Transaction tx = session.beginTransaction();
             try {
-                User incoming = (User) msg.getObject();
+                Customer incoming = (Customer) msg.getObject();
+
                 session.save(incoming);
-                // Obtain managed fresh state
-                User managed = session.get(User.class, incoming.getId());
-                User user = (User) msg.getObject();
-
-                // Extra: handle subscription if it's a Customer
-                if (user instanceof Customer) {
-                    Customer customer = (Customer) user;
-                    if (customer.isSubscribed()) {
-                        Subscription sub = new Subscription();
-                        sub.setStartDate(LocalDate.now());
-                        sub.setEndDate(LocalDate.now().plusYears(1));
-                        sub.setActive(true);
-                        sub.setCustomer(customer);
-                        customer.setSubscription(sub); // link both sides
-                    }
-                }
-
-                session.save(user);
                 tx.commit();
 
-                // cache + lock ready for this username
-                upsertUserCache(managed, null);
-
-                userCache.putIfAbsent(user.getUsername(), user);
                 client.sendToClient(new Message("registered", null, null));
             } catch (Exception e) {
                 if (tx.isActive()) tx.rollback();
@@ -2075,7 +2016,6 @@ public class SimpleServer extends AbstractServer {
                 catch (IOException ignored) {}
                 e.printStackTrace();
             }
-        }
     }
 
 
@@ -2236,14 +2176,14 @@ public class SimpleServer extends AbstractServer {
         subscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
     }
 
+    @SuppressWarnings("unchecked")
     private void handleUserAuthentication(Message msg, ConnectionToClient client, Session session) {
         try {
-            if (msg == null || !(msg.getObject() instanceof List)) {
+            if (msg == null || !(msg.getObject() instanceof java.util.List)) {
                 try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
                 return;
             }
-            @SuppressWarnings("unchecked")
-            List<String> info = (List<String>) msg.getObject();
+            java.util.List<String> info = (java.util.List<String>) msg.getObject();
             if (info.size() < 2) {
                 try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
                 return;
@@ -2251,64 +2191,75 @@ public class SimpleServer extends AbstractServer {
 
             final String username = info.get(0);
             final String password = info.get(1);
-            final Object lock = usernameLocks.computeIfAbsent(username, k -> new Object());
 
-            synchronized (lock) {
-                User cached = userCache.get(username);
-                if (cached == null) {
-                    System.out.println("user not found");
-                    try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
-                    return;
-                }
-                else if (!Objects.equals(cached.getPassword(), password)) {
-                    System.out.println("Incorrect password");
-                    try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
-                    return;
-                }
-                else if (cached.isLoggedIn()) {
-                    try { client.sendToClient(new Message("already_logged", null, null)); } catch (IOException ignored) {}
-                    return;
-                }
-                else if(cached instanceof Customer) {
-                    Customer customer = (Customer) cached;
-                    if(customer.isFrozen()) {
-                        client.sendToClient(new Message("frozen", null, null));
-                        return;
-                    }
-                }
-
-                Transaction tx = session.beginTransaction();
-                try {
-                    cached.setLoggedIn(true);
-                    User managed = (User) session.merge(cached);
-                    tx.commit();
-
-                    // keep cache consistent with DB state
-                    upsertUserCache(managed, username);
-                    client.setInfo("userId",cached.getId());
-                    client.setInfo("username", username);
-
-                    System.out.println(cached.getUsername());
-                    System.out.println(cached.getPassword());
-                    try { client.sendToClient(new Message("correct", managed, null)); } catch (IOException ignored) {}
-                } catch (Exception e) {
-                    if (tx.isActive()) tx.rollback();
-                    e.printStackTrace();
-                    try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
-                }
+            // Case-insensitive unique username is enforced in DB, so uniqueResult() is OK.
+            User user;
+            try {
+                user = session.createQuery(
+                                "select u from User u where lower(u.username) = :un", User.class)
+                        .setParameter("un", username.toLowerCase(java.util.Locale.ROOT))
+                        .uniqueResult(); // throws NonUniqueResultException if invariant is violated
+            } catch (org.hibernate.NonUniqueResultException e) {
+                // Defensive: if the DB invariant is ever violated, fail closed.
+                try { client.sendToClient(new Message("authentication_error", "Duplicate username", null)); } catch (IOException ignored) {}
+                return;
             }
+
+            if (user == null) {
+                try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
+                return;
+            }
+            if (!java.util.Objects.equals(user.getPassword(), password)) {
+                try { client.sendToClient(new Message("incorrect", null, null)); } catch (IOException ignored) {}
+                return;
+            }
+            if (user instanceof Customer && ((Customer) user).isFrozen()) {
+                try { client.sendToClient(new Message("frozen", null, null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            // Atomic login: flip to true only if currently false (and not frozen for customers)
+            Transaction tx = session.beginTransaction();
+            int updated;
+            try {
+                if (user instanceof Customer) {
+                    updated = session.createQuery(
+                                    "update Customer c set c.isLoggedIn = true " +
+                                            "where c.id = :id and c.isLoggedIn = false and c.frozen = false")
+                            .setParameter("id", user.getId())
+                            .executeUpdate();
+                } else {
+                    updated = session.createQuery(
+                                    "update User u set u.isLoggedIn = true " +
+                                            "where u.id = :id and u.isLoggedIn = false")
+                            .setParameter("id", user.getId())
+                            .executeUpdate();
+                }
+                tx.commit();
+            } catch (Exception e) {
+                if (tx.isActive()) tx.rollback();
+                throw e;
+            }
+
+            if (updated == 0) {
+                // Someone else logged in first, or (for customers) account got frozen in the meantime
+                try { client.sendToClient(new Message("already_logged", null, null)); } catch (IOException ignored) {}
+                return;
+            }
+
+            // Bulk JPQL bypasses the first-level cache → clear & reload before sending the entity out
+            session.clear();
+            User fresh = session.find(User.class, user.getId());
+
+            client.setInfo("userId", fresh.getId());
+            client.setInfo("username", fresh.getUsername());
+            try { client.sendToClient(new Message("correct", fresh, null)); } catch (IOException ignored) {}
+
         } catch (Exception e) {
             e.printStackTrace();
-            try {
-                System.out.println(e.getMessage());
-                client.sendToClient(new Message("authentication_error", null, null));
-            } catch (IOException ioException) {
-                System.out.println(ioException.getMessage());
-                ioException.printStackTrace();
-            }
+            try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
         }
     }
-
 
 
     public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,

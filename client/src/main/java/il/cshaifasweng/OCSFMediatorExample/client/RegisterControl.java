@@ -285,25 +285,8 @@ public class RegisterControl implements Initializable {
         return true;
     }
 
-    // Israeli ID checksum validation (pads to 9 digits and verifies check digit)
     private boolean isValidIsraeliID(String idRaw) {
-        if (idRaw == null) return false;
-        String id = idRaw.replaceAll("\\D", "");
-        if (id.isEmpty()) return false;
-
-        // Pad with leading zeros to 9 digits (standard Israeli ID format)
-        id = String.format("%9s", id).replace(' ', '0');
-        if (!id.matches("\\d{9}")) return false;
-
-        int sum = 0;
-        for (int i = 0; i < 9; i++) {
-            int digit = id.charAt(i) - '0';
-            int factor = (i % 2 == 0) ? 1 : 2;
-            int prod = digit * factor;
-            // sum digits (equivalent to (prod > 9 ? prod - 9 : prod))
-            sum += (prod / 10) + (prod % 10);
-        }
-        return sum % 10 == 0;
+        return (idRaw.length() == 9);
     }
 
     private boolean isValidPhone(String phone) {

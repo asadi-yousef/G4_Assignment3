@@ -91,10 +91,13 @@ public class Customer extends User implements Serializable {
     }
 
     public Subscription getSubscription() { return subscription; }
-    public void setSubscription(Subscription subscription) {
-        this.subscription = subscription;
-        subscription.setCustomer(this); // keep both sides in sync
+    public void setSubscription(Subscription s) {
+        if (this.subscription == s) return;
+        if (this.subscription != null) this.subscription.setCustomer(null);
+        this.subscription = s;
+        if (s != null && s.getCustomer() != this) s.setCustomer(this);
     }
+
     public boolean hasValidSubscription() {
         return isSubscribed && subscription != null && subscription.isCurrentlyActive();
     }

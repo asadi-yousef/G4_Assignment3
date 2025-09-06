@@ -42,7 +42,7 @@ public class Complaint implements Serializable {
     private BigDecimal compensationAmount;     // optional
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "responder_id")
+    @JoinColumn(name = "responder_id",nullable = true)
     private Employee responder;                // who resolved
 
     private LocalDateTime resolvedAt;          // timestamp of resolve
