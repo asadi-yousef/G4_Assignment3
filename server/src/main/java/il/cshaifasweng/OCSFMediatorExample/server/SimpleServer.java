@@ -201,6 +201,8 @@ public class SimpleServer extends AbstractServer {
                     handleReportOrders(m, client, session);
                 } else if ("request_report_complaints".equals(key)) {
                     handleReportComplaints(m, client, session);
+                }else if("admin_delete_user".equals(key)) {
+                    handleAdminDeleteUser(m, client, session);
                 }
 
                 else {
@@ -227,6 +229,174 @@ public class SimpleServer extends AbstractServer {
     }
 
     /* ----------------------- Handlers (all receive Session) ----------------------- */
+    @SuppressWarnings("unchecked")
+    private void handleAdminDeleteUser(Message m, ConnectionToClient client, Session session) {
+        Map<String,Object> req = (m.getObject() instanceof Map) ? (Map<String,Object>) m.getObject() : null;
+        Long userId = (req == null || !(req.get("userId") instanceof Number)) ? null
+                : ((Number) req.get("userId")).longValue();
+
+        if (userId == null) {
+            try { client.sendToClient(new Message("admin_delete_error", "Missing userId", null)); }
+            catch (IOException ignored) {}
+            return;
+        }
+
+        Transaction tx = session.beginTransaction();
+        try {
+            // Load once (handles inheritance via DTYPE)
+            User u = session.get(User.class, userId);
+            if (u == null) throw new IllegalArgumentException("User not found: " + userId);
+
+            // --- Employee-specific FK cleanup (safe no-op for customers) ---
+            // If Branch has a manager FK to Employee, break it before deleting the employee.
+            //session.createQuery("update Branch b set b.manager = null where b.manager.id = :uid")
+             //       .setParameter("uid", userId)
+                  //  .executeUpdate();
+
+            // --- Type-specific child graph cleanup (bulk HQL only) ---
+            if (u instanceof Customer) {
+                Customer c = (Customer) u;
+                // Uses the fixed version that deletes by parent IDs (orders->items, carts->items, bouquets->items, etc.)
+                deleteCustomerGraph(session, c);
+            } else if (u instanceof Employee) {
+                Employee e = (Employee) u;
+                deleteEmployeeGraph(session, e);
+            }
+
+            // --- Delete the parent row via BULK HQL (avoid OptimisticLockException) ---
+            int deleted = session.createQuery("delete from User u where u.id = :uid")
+                    .setParameter("uid", userId)
+                    .executeUpdate();
+            if (deleted == 0) throw new IllegalStateException("User already deleted: " + userId);
+
+            tx.commit();
+
+            // After bulk DML, clear 1st-level cache to avoid stale state
+            session.clear();
+
+            // --- Notify and force-logout the exact connected client (if online), then clear connection info ---
+            for (SubscribedClient sc : subscribersList) {
+                ConnectionToClient s = sc.getClient();
+                Object uid = s.getInfo("userId"); // set at login
+                if (uid instanceof Long && java.util.Objects.equals(uid, userId)) {
+                    try {
+                        s.sendToClient(new Message("account_deleted", "Your account was deleted", null));
+                        // Clear any per-connection user info
+                        s.setInfo("userId", null);
+                        s.setInfo("username", null);
+                        s.setInfo("userType", null);
+
+                        // Optional: s.close(); // only if your client UX supports reconnect cleanly
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            // --- Reply to the admin UI ---
+            try { client.sendToClient(new Message("admin_delete_ok", userId, null)); }
+            catch (IOException ignored) {}
+
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("admin_delete_error", e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+    private void deleteEmployeeGraph(Session session, Employee e) {
+        Long eid = e.getId();
+
+        // 1) Break the FK from complaints -> employee (keep responderName intact)
+        session.createQuery("update Complaint c set c.responder = null where c.responder.id = :eid")
+                .setParameter("eid", eid)
+                .executeUpdate();
+
+    }
+
+
+
+    /**
+     * Deletes all data that depends on a Customer in a FK-safe order.
+     */
+    private void deleteCustomerGraph(Session session, Customer c) {
+        Long cid = c.getId();
+
+        // ---- ORDERS (items first, then orders)
+        List<Long> orderIds = session.createQuery(
+                        "select o.id from Order o where o.customer.id = :cid", Long.class)
+                .setParameter("cid", cid)
+                .getResultList();
+
+        if (!orderIds.isEmpty()) {
+            session.createQuery("delete from OrderItem oi where oi.order.id in (:ids)")
+                    .setParameterList("ids", orderIds)
+                    .executeUpdate();
+            session.createQuery("delete from Order o where o.id in (:ids)")
+                    .setParameterList("ids", orderIds)
+                    .executeUpdate();
+        }
+
+        // ---- CART (items first, then carts)
+        List<Long> cartIds = session.createQuery(
+                        "select crt.id from Cart crt where crt.customer.id = :cid", Long.class)
+                .setParameter("cid", cid)
+                .getResultList();
+
+        if (!cartIds.isEmpty()) {
+            session.createQuery("delete from CartItem ci where ci.cart.id in (:ids)")
+                    .setParameterList("ids", cartIds)
+                    .executeUpdate();
+            session.createQuery("delete from Cart crt where crt.id in (:ids)")
+                    .setParameterList("ids", cartIds)
+                    .executeUpdate();
+        }
+
+        // ---- CUSTOM BOUQUETS (items first, then bouquets)
+        List<Long> bouquetIds = session.createQuery(
+                        "select cb.id from CustomBouquet cb where cb.createdBy.id = :cid", Long.class)
+                .setParameter("cid", cid)
+                .getResultList();
+
+        if (!bouquetIds.isEmpty()) {
+            // Primary: field is likely "bouquet" on CustomBouquetItem
+            int removed = session.createQuery(
+                            "delete from CustomBouquetItem cbi where cbi.bouquet.id in (:ids)")
+                    .setParameterList("ids", bouquetIds)
+                    .executeUpdate();
+
+            // Fallback if your field is named "customBouquet" instead of "bouquet"
+            if (removed == 0) {
+                session.createQuery(
+                                "delete from CustomBouquetItem cbi where cbi.bouquet.id in (:ids)")
+                        .setParameterList("ids", bouquetIds)
+                        .executeUpdate();
+            }
+
+            session.createQuery("delete from CustomBouquet cb where cb.id in (:ids)")
+                    .setParameterList("ids", bouquetIds)
+                    .executeUpdate();
+        }
+
+        // ---- SIMPLE 1:1 / 1:N leaves
+        session.createQuery("delete from Budget b where b.customer.id = :cid")
+                .setParameter("cid", cid)
+                .executeUpdate();
+
+        session.createQuery("delete from CreditCard cc where cc.customer.id = :cid")
+                .setParameter("cid", cid)
+                .executeUpdate();
+
+        session.createQuery("delete from Subscription s where s.customer.id = :cid")
+                .setParameter("cid", cid)
+                .executeUpdate();
+
+        // ---- Complaints created by this customer (if FK exists)
+        session.createQuery("delete from Complaint cp where cp.customer.id = :cid")
+                .setParameter("cid", cid)
+                .executeUpdate();
+    }
+
+
     /** Resolve a product image path (server DB value) to a File on the server disk. */
     private static File resolveServerImageFile(String storedPath) {
         if (storedPath == null || storedPath.isBlank()) return null;
@@ -1224,9 +1394,6 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-
-
-
     @SuppressWarnings("unchecked")
     private void handleGetMyComplaints(Message m, ConnectionToClient client, Session session) {
         try {
@@ -1433,7 +1600,10 @@ public class SimpleServer extends AbstractServer {
             c.setResolvedAt(java.time.LocalDateTime.now());
             if (responseText != null) c.setResponseText(responseText);
             if (compensation != null) c.setCompensationAmount(compensation);
-            if (responder != null) c.setResponder(responder);
+            if (responder != null) {
+                c.setResponder(responder);
+                c.setResponderName(responder.toString());
+            }
 
             session.merge(c);
 

@@ -189,18 +189,42 @@ public class AdminUsersController {
             UserRow row = ev.getRowValue();
             if (row == null) return;
 
-            if (row.isLoggedIn()) {
-                statusLabel.setText("User is logged in — edits are disabled.");
-                table.refresh();
-                return;
+            final String newVal = safe(ev.getNewValue());
+            final String oldVal = safe(ev.getOldValue());
+
+            // Per-column validation
+            if (col == colIdNumber) {
+                if (!newVal.matches("\\d{9}")) {
+                    statusLabel.setText("ID number must be exactly 9 digits.");
+                    // Revert visually if invalid
+                    if (!Objects.equals(oldVal, row.getIdNumber())) {
+                        row.setIdNumber(oldVal);
+                    }
+                    table.refresh();
+                    return;
+                }
+                row.setIdNumber(newVal);
+            } else if (col == colUsername) {
+                if (newVal.isEmpty()) {
+                    statusLabel.setText("Username cannot be empty.");
+                    if (!Objects.equals(oldVal, row.getUsername())) {
+                        row.setUsername(oldVal);
+                    }
+                    table.refresh();
+                    return;
+                }
+                row.setUsername(newVal);
+            } else if (col == colFirstName) {
+                row.setFirstName(newVal);
+            } else if (col == colLastName) {
+                row.setLastName(newVal);
             }
-            if (col == colIdNumber)       row.setIdNumber(safe(ev.getNewValue()));
-            else if (col == colUsername)  row.setUsername(safe(ev.getNewValue()));
-            else if (col == colFirstName) row.setFirstName(safe(ev.getNewValue()));
-            else if (col == colLastName)  row.setLastName(safe(ev.getNewValue()));
+
             row.setDirty(true);
+            // No table.refresh() here — allow the edited value to remain visible
         });
     }
+
 
 
     private void makeEditableBudget(TableColumn<UserRow, BigDecimal> col) {
@@ -209,11 +233,6 @@ public class AdminUsersController {
             UserRow row = ev.getRowValue();
             if (row == null) return;
 
-            if (row.isLoggedIn()) {
-                statusLabel.setText("User is logged in — edits are disabled.");
-                table.refresh();
-                return;
-            }
             BigDecimal v = ev.getNewValue();
             if (v != null && v.signum() >= 0) {
                 row.setBudget(v);
@@ -551,6 +570,41 @@ public class AdminUsersController {
                         statusLabel.setText("Updated frozen state.");
                     }
                 }
+                case "admin_delete_ok" -> {
+                    // Expecting either a userId (Number) or a DTO; handle both.
+                    Long id = null;
+                    Object obj = msg.getObject();
+                    if (obj instanceof Number) {
+                        id = ((Number) obj).longValue();
+                    } else if (obj instanceof UserAdminDTO dto) {
+                        id = dto.getId();
+                    }
+                    if (id != null) {
+                        UserRow removed = null;
+                        for (Iterator<UserRow> it = data.iterator(); it.hasNext();) {
+                            UserRow r = it.next();
+                            if (Objects.equals(r.getId(), id)) {
+                                removed = r;
+                                it.remove();
+                                break;
+                            }
+                        }
+                        // Keep de-dupe set consistent so a future refresh can re-add if needed
+                        if (removed != null) {
+                            seenKeys.remove("id:" + id);
+                            String uname = removed.getUsername() == null ? "" : removed.getUsername().trim().toLowerCase();
+                            if (!uname.isEmpty()) seenKeys.remove("user:" + uname);
+                        }
+                        statusLabel.setText("User deleted.");
+                    } else {
+                        statusLabel.setText("User deleted.");
+                    }
+                }
+
+                case "admin_delete_error" -> {
+                    statusLabel.setText("Delete failed: " + String.valueOf(msg.getObject()));
+                }
+
 
                 case "admin_users_error", "admin_freeze_error" -> {
                     statusLabel.setText("Error: " + msg.getObject());
@@ -605,10 +659,10 @@ public class AdminUsersController {
         var sel = table.getSelectionModel().getSelectedItem();
         if (sel == null) { statusLabel.setText("Select a row first."); return; }
 
-        // NEW: block all edits if logged in (freeze/unfreeze uses its own button and always allowed)
+        // NOTE: We no longer hard-block saves based on the (possibly stale) client-side loggedIn flag.
+        // If the server still sees the user as logged in, it will reject the update and we handle it via admin_update_error.
         if (sel.isLoggedIn()) {
-            statusLabel.setText("User is logged in — only Freeze/Unfreeze is allowed.");
-            return;
+            statusLabel.setText("User might still be logged in — attempting save; server will verify.");
         }
 
         if (!sel.isDirty()) { statusLabel.setText("No changes to save."); return; }
@@ -616,15 +670,27 @@ public class AdminUsersController {
         // Validate employee role
         if ("EMPLOYEE".equalsIgnoreCase(sel.getUserType())) {
             String r = sel.getRole() == null ? null : sel.getRole().toLowerCase();
-            if (r == null || !ROLE_OPTIONS.contains(r)) { statusLabel.setText("Pick a valid role: " + ROLE_OPTIONS); return; }
-            if (!isNetRole(r) && sel.getBranch() == null) { statusLabel.setText("Branch role requires a branch."); return; }
+            if (r == null || !ROLE_OPTIONS.contains(r)) {
+                statusLabel.setText("Pick a valid role: " + ROLE_OPTIONS);
+                return;
+            }
+            if (!isNetRole(r) && sel.getBranch() == null) {
+                statusLabel.setText("Branch role requires a branch.");
+                return;
+            }
         }
 
-        // Validate network↔branch
-        if (sel.isNetwork() && sel.getBranch() != null) { statusLabel.setText("Network accounts cannot have a branch."); return; }
-        if (!sel.isNetwork() && sel.getBranch() == null) { statusLabel.setText("Non-network accounts must have a branch."); return; }
+        // Validate network ↔ branch
+        if (sel.isNetwork() && sel.getBranch() != null) {
+            statusLabel.setText("Network accounts cannot have a branch.");
+            return;
+        }
+        if (!sel.isNetwork() && sel.getBranch() == null) {
+            statusLabel.setText("Non-network accounts must have a branch.");
+            return;
+        }
 
-        // Build and send DTO (same as before) ...
+        // Build and send DTO
         var dto = new UserAdminDTO();
         dto.setId(sel.getId());
         dto.setUserType(sel.getUserType());
@@ -633,8 +699,11 @@ public class AdminUsersController {
         dto.setFirstName(sel.getFirstName());
         dto.setLastName(sel.getLastName());
         dto.setNetworkAccount(sel.isNetwork());
-        dto.setLoggedIn(sel.isLoggedIn());
-        if (sel.getBranch() != null) { dto.setBranchId(sel.getBranch().getId()); dto.setBranchName(sel.getBranch().getName()); }
+        dto.setLoggedIn(sel.isLoggedIn()); // informational; server should compute truth
+        if (sel.getBranch() != null) {
+            dto.setBranchId(sel.getBranch().getId());
+            dto.setBranchName(sel.getBranch().getName());
+        }
         if ("EMPLOYEE".equalsIgnoreCase(dto.getUserType())) {
             dto.setRole(sel.getRole());
         } else if ("CUSTOMER".equalsIgnoreCase(dto.getUserType())) {
@@ -647,6 +716,43 @@ public class AdminUsersController {
             statusLabel.setText("Saving...");
         } catch (IOException e) {
             statusLabel.setText("Save failed: " + e.getMessage());
+        }
+    }
+
+    @FXML
+    private void onDeleteSelected() {
+        var sel = table.getSelectionModel().getSelectedItem();
+        if (sel == null) { statusLabel.setText("Select a row first."); return; }
+
+        // Optional UX hint if locally marked as logged-in (server will still decide)
+        if (sel.isLoggedIn()) {
+            statusLabel.setText("User might still be logged in — attempting delete; server will verify.");
+        }
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Delete user");
+        confirm.setHeaderText("Permanently delete this user?");
+        confirm.setContentText(
+                "Type: " + sel.getUserType() + "\n" +
+                        "Username: " + sel.getUsername() + "\n" +
+                        "ID Number: " + sel.getIdNumber() + "\n\n" +
+                        "This cannot be undone."
+        );
+        Optional<ButtonType> ans = confirm.showAndWait();
+        if (ans.isEmpty() || ans.get() != ButtonType.OK) {
+            statusLabel.setText("Delete canceled.");
+            return;
+        }
+
+        Map<String,Object> req = new HashMap<>();
+        req.put("userId", sel.getId());
+
+        try {
+            // Server message name for hard delete:
+            client.sendToServer(new Message("admin_delete_user", req, null));
+            statusLabel.setText("Deleting...");
+        } catch (IOException e) {
+            statusLabel.setText("Delete failed: " + e.getMessage());
         }
     }
 

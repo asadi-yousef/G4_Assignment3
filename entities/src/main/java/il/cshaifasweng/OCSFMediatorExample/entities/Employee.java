@@ -25,4 +25,9 @@ public class Employee extends User implements Serializable {
 
     public String getRole() {return role;}
     public void setRole(String role) {this.role = role;}
+
+    @Override
+    public String toString() {
+        return getFirstName()+" "+getLastName()+" ";
+    }
 }
