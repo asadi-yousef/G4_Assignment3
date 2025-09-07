@@ -138,8 +138,6 @@ public class SimpleServer extends AbstractServer {
                     handleRemoveFromCart(m, client, session);
                 } else if (key != null && key.startsWith("request_cart")) {
                     handleCartRequest(m, client, session);
-                } else if (key != null && key.startsWith("request_orders")) {
-                    handleOrdersRequest(m, client, session);
                 } else if ("request_customer_data".equals(key)) {
                     handleCustomerDataRequest(m, client, session);
                 } else if ("update_profile".equals(key)) {
@@ -172,7 +170,6 @@ public class SimpleServer extends AbstractServer {
                     sendMsg(client, new Message("pong", "ok", null), "ping_echo");
                 } else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
-                } else if ("get_inbox".equals(key)) {
                 }
                 else if("update_budget".equals(key))
                 {
@@ -210,12 +207,6 @@ public class SimpleServer extends AbstractServer {
                     handleReportComplaints(m, client, session);
                 }else if("admin_delete_user".equals(key)) {
                     handleAdminDeleteUser(m, client, session);
-                }
-
-                else {
-                    System.out.println("[WARN] Unhandled key: " + key);
-
-                    // ---------- CUSTOMER ORDERS (keep working behavior) ----------
                 } else if ("request_orders".equals(key)) {
                     handleOrdersRequest(m, client, session);
 
@@ -1531,8 +1522,9 @@ public class SimpleServer extends AbstractServer {
             List<ScheduleOrderDTO> dtoList = new ArrayList<>();
             for (Order o : orders) {
                 boolean delivery = Boolean.TRUE.equals(o.getDelivery());
-                LocalDateTime when = delivery ? o.getDeliveryDateTime() : o.getPickupDateTime();
-                if (when == null) when = o.getOrderDate(); // final fallback
+                java.time.LocalDateTime when = delivery
+                        ? o.getDeliveryDateTime()
+                        : o.getPickupDateTime(); // final fallback
 
                 // whereText: branch for pickup, address for delivery
                 String whereText = "-";

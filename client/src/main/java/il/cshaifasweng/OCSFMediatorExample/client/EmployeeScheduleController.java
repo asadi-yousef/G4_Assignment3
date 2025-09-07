@@ -358,7 +358,10 @@ public class EmployeeScheduleController implements Initializable {
 
         var title = new javafx.scene.control.Label("Order #" + dto.getId() + " · " + (dto.isDelivery() ? "Delivery" : "Pickup"));
         title.setStyle("-fx-font-weight:bold; -fx-font-size:18px; -fx-text-fill:#2c3e50;");
-        var when  = new javafx.scene.control.Label("Scheduled: " + (dto.getScheduledAt()==null ? "-" : dtFmt.format(dto.getScheduledAt())));
+        String whenLabel = dto.isDelivery() ? "Delivery time: " : "Pickup time: ";
+        var when = new javafx.scene.control.Label(
+                whenLabel + (dto.getScheduledAt() == null ? "-" : dtFmt.format(dto.getScheduledAt()))
+        );
         when.setStyle("-fx-text-fill:#34495e;");
         var where = new javafx.scene.control.Label((dto.isDelivery() ? "Address: " : "Branch: ") + java.util.Objects.toString(dto.getWhereText(), "-"));
         where.setStyle("-fx-text-fill:#34495e;");
