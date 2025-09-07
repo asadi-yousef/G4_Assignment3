@@ -86,6 +86,7 @@ public class SimpleServer extends AbstractServer {
     @Override
     protected void clientConnected(ConnectionToClient client) {
         super.clientConnected(client);
+
         synchronized (subscribersLock) { subscribersList.add(new SubscribedClient(client)); }
     }
 
@@ -302,6 +303,7 @@ public class SimpleServer extends AbstractServer {
                 _snapshot = new java.util.ArrayList<>(subscribersList);
             }
             for (SubscribedClient sc : _snapshot) {
+
                 ConnectionToClient s = sc.getClient();
                 Object uid = s.getInfo("userId"); // set at login
                 if (uid instanceof Long && java.util.Objects.equals(uid, userId)) {
@@ -499,6 +501,7 @@ public class SimpleServer extends AbstractServer {
                     _snapshot = new java.util.ArrayList<>(subscribersList);
                 }
                 for (SubscribedClient sc : _snapshot) {
+
                     ConnectionToClient s = sc.getClient();
                     Object uid = s.getInfo("userId"); // set at login
                     if (uid instanceof Long && java.util.Objects.equals(uid, customerId)) {
@@ -2626,7 +2629,9 @@ public class SimpleServer extends AbstractServer {
     }
 
     private void handleClientRemoval(ConnectionToClient client) {
-        subscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
+        synchronized (subscribersLock) {
+            subscribersList.removeIf(sc -> sc.getClient().equals(client));
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -3271,6 +3276,7 @@ public class SimpleServer extends AbstractServer {
                 _snapshot = new java.util.ArrayList<>(subscribersList);
             }
             for (SubscribedClient subscribedClient : _snapshot) {
+
                 try {
                     subscribedClient.getClient().sendToClient(message);
 
