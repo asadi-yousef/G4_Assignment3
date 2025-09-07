@@ -101,7 +101,6 @@
                </children>
             </HBox>
 
-            <!-- Title + filters row on white chip -->
             <HBox alignment="CENTER" layoutY="120.0" spacing="15.0" AnchorPane.leftAnchor="0.0" AnchorPane.rightAnchor="0.0">
                <children>
                   <Label fx:id="catalogLabel" text="Catalog" style="-fx-text-fill: black; -fx-font-size: 36px; -fx-font-family: 'Bell MT'; -fx-font-style: italic;">
@@ -147,7 +146,6 @@
                   </GridPane>
                </children>
             </VBox>
-
          </children>
       </AnchorPane>
    </content>

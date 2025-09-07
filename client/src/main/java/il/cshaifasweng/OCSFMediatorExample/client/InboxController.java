@@ -77,6 +77,25 @@ public class InboxController implements Initializable {
 
             case "inbox_list_error" -> Platform.runLater(() ->
                     status("Error: " + java.util.Objects.toString(msg.getObject(), "unknown")));
+            case "inbox_personal_new" -> Platform.runLater(() -> {
+                Long targetId = null;
+                if (msg.getObjectList() != null && !msg.getObjectList().isEmpty()) {
+                    Object v = msg.getObjectList().get(0);
+                    if (v instanceof Number) targetId = ((Number) v).longValue();
+                }
+                var u = SessionManager.getInstance().getCurrentUser();
+                if (u instanceof Customer && targetId != null && java.util.Objects.equals(((Customer) u).getId(), targetId)) {
+                    InboxItemDTO dto = (InboxItemDTO) msg.getObject();
+                    personalList.getItems().add(0, dto);
+                    personalList.refresh();
+                }
+            });
+            case "inbox_broadcast_new" -> Platform.runLater(() -> {
+                InboxItemDTO dto = (InboxItemDTO) msg.getObject();
+                broadcastList.getItems().add(0, dto);
+                broadcastList.refresh();
+            });
+
         }
     }
 

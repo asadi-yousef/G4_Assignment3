@@ -344,7 +344,8 @@ public class PrimaryController implements Initializable {
 
 	@Subscribe
 	public void onMessageFromServer(Message msg) {
-		Platform.runLater(() -> {
+        if ("orders_for_day".equals(msg.getMessage())) return;
+        Platform.runLater(() -> {
 			loadingIndicator.setVisible(false);
 			switch (msg.getMessage()) {
 				case "catalog": {
@@ -661,76 +662,54 @@ public class PrimaryController implements Initializable {
 
     @Subscribe
     public void onInboxMessages(Message msg) {
-        Platform.runLater(() -> {
-            switch (msg.getMessage()) {
-                // Full inbox snapshot: recompute the unread counter from the payload
-                case "inbox_list": {
-                    int unread = 0;
-                    Object obj = msg.getObject();
-
-                    if (obj instanceof InboxListDTO dto) {
-                        // new DTO path
-                        unread = (int) dto.getPersonal().stream()
-                                .filter(it -> !it.isRead())
-                                .count();
-                    } else if (obj instanceof Map<?,?> m) {
-                        // legacy Map path (handles either DTOs or Notification)
-                        Object p = m.get("personal");
-                        if (p instanceof java.util.List<?> list && !list.isEmpty()) {
-                            Object first = list.get(0);
-                            if (first instanceof InboxItemDTO) {
-                                unread = (int) list.stream()
-                                        .map(InboxItemDTO.class::cast)
-                                        .filter(it -> !it.isRead())
-                                        .count();
-                            } else if (first instanceof Notification) {
-                                unread = (int) list.stream()
-                                        .map(Notification.class::cast)
-                                        .filter(n -> !n.isReadFlag())
-                                        .count();
-                            }
-                        }
-                    }
-
-                    unreadPersonalCount = unread;
-                    refreshInboxBadgeText();
-                    break;
-                }
-
-                // A brand-new notification was created. Increment only if it's a personal
-                // one addressed to the currently logged-in customer.
-                case "inbox_new": {
-                    Object o = msg.getObject();
-                    if (o instanceof InboxItemDTO dto && !dto.isBroadcast()) {
-                        Long target = null;
-                        if (msg.getObjectList() != null && !msg.getObjectList().isEmpty()
-                                && msg.getObjectList().get(0) instanceof Map<?,?> meta) {
-                            Object cid = ((Map<?,?>) meta).get("customerId");
-                            if (cid instanceof Number) target = ((Number) cid).longValue();
-                        }
-                        var u = SessionManager.getInstance().getCurrentUser();
-                        if (u instanceof Customer && target != null && target.equals(((Customer) u).getId())) {
-                            unreadPersonalCount++;
-                            refreshInboxBadgeText();
-                        }
-                    }
-                    break;
-                }
-
-                // A personal message was marked read/unread somewhere (Inbox view)
-                case "inbox_read_ack": {
-                    if (unreadPersonalCount > 0) unreadPersonalCount--;
-                    refreshInboxBadgeText();
-                    break;
-                }
-                case "inbox_unread_ack": {
-                    unreadPersonalCount++;
-                    refreshInboxBadgeText();
-                    break;
-                }
+        switch (msg.getMessage()) {
+            case "inbox_list": {
+                InboxListDTO payload = (InboxListDTO) msg.getObject();
+                java.util.List<InboxItemDTO> personal = (payload == null) ? java.util.List.of() : payload.getPersonal();
+                unreadPersonalCount = (int) personal.stream().filter(n -> !n.isRead()).count();
+                refreshInboxBadgeText();
+                break;
             }
-        });
+            case "inbox_personal_new": {
+                Long targetId = null;
+                if (msg.getObjectList() != null && !msg.getObjectList().isEmpty()) {
+                    Object v = msg.getObjectList().get(0);
+                    if (v instanceof Number) targetId = ((Number) v).longValue();
+                }
+                var u = SessionManager.getInstance().getCurrentUser();
+                if (u instanceof Customer && targetId != null && java.util.Objects.equals(((Customer) u).getId(), targetId)) {
+                    unreadPersonalCount = Math.max(0, unreadPersonalCount + 1);
+                    refreshInboxBadgeText();
+                }
+                break;
+            }
+            case "inbox_read_ack": {
+                unreadPersonalCount = Math.max(0, unreadPersonalCount - 1);
+                refreshInboxBadgeText();
+                break;
+            }
+            case "inbox_unread_ack": {
+                unreadPersonalCount = Math.max(0, unreadPersonalCount + 1);
+                refreshInboxBadgeText();
+                break;
+            }
+            default: break;
+        }
     }
+
+    @FXML
+    private void openEmployeeSchedule() {
+        if (!SessionManager.getInstance().isEmployee()) return;
+        try {
+            EventBus.getDefault().unregister(this);
+            App.setRoot("employeeScheduleView"); // new FXML below
+        } catch (IOException e) {
+            showAlert("Error", "Failed to open schedule.");
+        }
+    }
+
+
+
 
 
     @FXML

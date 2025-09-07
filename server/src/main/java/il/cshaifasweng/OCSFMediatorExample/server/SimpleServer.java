@@ -4,6 +4,14 @@ import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Root;
+import java.io.IOException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.*;
+import org.hibernate.query.Query;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import java.io.File;
@@ -17,9 +25,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
 import java.util.Map;
 import java.time.LocalDate;
 
+import java.util.stream.Stream;
 
 
 public class SimpleServer extends AbstractServer {
@@ -30,6 +40,10 @@ public class SimpleServer extends AbstractServer {
     // ---- In-memory catalog snapshot + lock ----
     private static volatile Catalog catalog = new Catalog(new ArrayList<>());
     private static final ReentrantReadWriteLock catalogLock = new ReentrantReadWriteLock();
+
+    // ---- Caches + per-username locks ----
+    private static final ConcurrentHashMap<String, User> userCache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Object> usernameLocks = new ConcurrentHashMap<>();
 
     public SimpleServer(int port) {
         super(port);
@@ -106,14 +120,12 @@ public class SimpleServer extends AbstractServer {
         if (msg == null) return;
 
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            // one session per incoming message; pass it to all handlers
             if (msg instanceof Message) {
                 Message m = (Message) msg;
                 String key = m.getMessage();
                 System.out.println("[RX] key=" + key +
                         " obj=" + (m.getObject()==null?"null":m.getObject().getClass().getSimpleName()) +
                         " listSize=" + (m.getObjectList()==null?0:m.getObjectList().size()));
-
 
                 if ("register".equals(key)) {
                     handleUserRegistration(m, client, session);
@@ -155,7 +167,6 @@ public class SimpleServer extends AbstractServer {
                 else if ("submit_complaint".equals(key)) {
                     handleSubmitComplaint(m, client, session);
                 } else if ("get_complaints_for_branch".equals(key) || "get_all_complaints".equals(key)) {
-                    // unified: employees see all unresolved complaints
                     handleGetAllComplaints(m, client, session);
                 } else if ("resolve_complaint".equals(key)) {
                     handleResolveComplaint(m, client, session);
@@ -169,6 +180,7 @@ public class SimpleServer extends AbstractServer {
                 }
                 else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
+                } else if ("get_inbox".equals(key)) {
                 }
                 else if("update_budget".equals(key))
                 {
@@ -203,10 +215,19 @@ public class SimpleServer extends AbstractServer {
                     handleReportComplaints(m, client, session);
                 }else if("admin_delete_user".equals(key)) {
                     handleAdminDeleteUser(m, client, session);
-                }
+                } else if ("request_orders".equals(key)) {
+                    handleOrdersRequest(m, client, session);
 
-                else {
-                    System.out.println("[WARN] Unhandled key: " + key);
+                    // ---------- EMPLOYEE SCHEDULE (accept multiple aliases) ----------
+                } else if ("request_orders_by_day".equals(key)
+                        || "request_day".equals(key)
+                        || "request_schedule".equals(key)) {
+                    handleRequestOrdersByDay(m, client, session);
+
+                    // --------------------------------------------------------------
+                } else {
+                    System.out.println("[RX] UNKNOWN key=" + key + " obj=" + m.getObject() + " listSize=" +
+                            (m.getObjectList()==null ? 0 : m.getObjectList().size()));
                 }
             }
 
@@ -1268,6 +1289,73 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private void handleMarkOrderCompleted(Message m, ConnectionToClient client, org.hibernate.Session session) {
+        org.hibernate.Transaction tx = session.beginTransaction();
+        try {
+            Long orderId = null;
+
+            // Accept either a Map {"orderId": ...} in objectList, a Number in objectList, or a Number in object
+            if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
+                Object first = m.getObjectList().get(0);
+                if (first instanceof java.util.Map<?,?> map) {
+                    Object v = map.get("orderId");
+                    if (v instanceof Number n) orderId = n.longValue();
+                } else if (first instanceof Number n) {
+                    orderId = n.longValue();
+                }
+            } else if (m.getObject() instanceof Number n) {
+                orderId = n.longValue();
+            }
+
+            if (orderId == null) {
+                tx.rollback();
+                client.sendToClient(new Message("order_completed_ack", null, null));
+                return;
+            }
+
+            Order o = session.get(Order.class, orderId);
+            if (o == null) {
+                tx.rollback();
+                client.sendToClient(new Message("order_completed_ack", null, null));
+                return;
+            }
+
+            String before = java.util.Objects.toString(o.getStatus(), "PLACED");
+            String after  = java.lang.Boolean.TRUE.equals(o.getDelivery()) ? "DELIVERED" : "PICKED_UP";
+
+            // Idempotent: only act if status actually changes
+            if (!before.equals(after)) {
+                o.setStatus(after);
+                session.merge(o);
+                session.flush();
+
+                if (o.getCustomer() != null) {
+                    String title = after.equals("DELIVERED") ? "Order delivered" : "Order picked up";
+                    String body  = after.equals("DELIVERED")
+                            ? "Your order #" + o.getId() + " was delivered. Enjoy!"
+                            : "Thanks! Your order #" + o.getId() + " was picked up.";
+                    createPersonalNotification(session, o.getCustomer().getId(), title, body);
+                }
+
+                // Push to all UIs
+                sendToAllClients(new Message(
+                        "orders_state_changed",
+                        java.util.Map.of("orderId", o.getId(), "status", o.getStatus()),
+                        null));
+            }
+
+            tx.commit();
+            client.sendToClient(new Message("order_completed_ack", o.getId(), null));
+        } catch (Exception e) {
+            if (tx != null && tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("order_completed_ack", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
+
+
     /**
      * Send cancellation error to client.
      * Only define this once in your server class.
@@ -1361,7 +1449,6 @@ public class SimpleServer extends AbstractServer {
             c.setBranch(customer.getBranch());
 
             session.persist(c);
-
             tx.commit();
 
             // Ack to submitting customer (client will navigate away)
@@ -1381,6 +1468,8 @@ public class SimpleServer extends AbstractServer {
                             "Your complaint #" + c.getId() + " was received. We'll get back to you within 24h."
                     );
                     s2.persist(n);
+                    s2.flush();
+                    pushInboxPersonalNew(fresh.getId(), n);
                 }
                 tx2.commit();
             } catch (Exception notifEx) {
@@ -1393,6 +1482,178 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
+
+
+
+    @SuppressWarnings("unchecked")
+    private void handleRequestOrdersByDay(Message m, ConnectionToClient client, Session session) {
+        try {
+            System.out.println("[SRV][orders_by_day] key=" + m.getMessage() +
+                    " obj=" + (m.getObject() == null ? "null" : m.getObject().getClass().getName()) +
+                    " listSize=" + (m.getObjectList() == null ? 0 : m.getObjectList().size()));
+
+            // Accept a String "yyyy-MM-dd" or LocalDate/LocalDateTime; fallback to today.
+            LocalDate day = null;
+            Object obj = m.getObject();
+            if (obj instanceof LocalDate) {
+                day = (LocalDate) obj;
+            } else if (obj instanceof LocalDateTime) {
+                day = ((LocalDateTime) obj).toLocalDate();
+            } else if (obj instanceof String s && s.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                day = LocalDate.parse(s);
+            }
+            if (day == null) day = LocalDate.now();
+
+            LocalDateTime start = day.atStartOfDay();
+            LocalDateTime next  = day.plusDays(1).atStartOfDay();   // use < next (no off-by-nanos)
+
+            // HQL over your entity class name "Order"
+            String hql =
+                    "select distinct o " +
+                            "from Order o " +
+                            "left join fetch o.items i " +
+                            "left join fetch i.product p " +
+                            "left join fetch o.customer c " +
+                            "where (o.pickupDateTime is not null and o.pickupDateTime >= :start and o.pickupDateTime < :next) " +
+                            "   or (o.deliveryDateTime is not null and o.deliveryDateTime >= :start and o.deliveryDateTime < :next) " +
+                            "   or ( (o.pickupDateTime is null and o.deliveryDateTime is null) " +
+                            "        and o.orderDate >= :start and o.orderDate < :next ) " +
+                            "order by coalesce(o.pickupDateTime, o.deliveryDateTime, o.orderDate)";
+
+            List<Order> orders = session.createQuery(hql, Order.class)
+                    .setParameter("start", start)
+                    .setParameter("next",  next)
+                    .getResultList();
+
+            // Map to DTOs the client expects
+            List<ScheduleOrderDTO> dtoList = new ArrayList<>();
+            for (Order o : orders) {
+                boolean delivery = Boolean.TRUE.equals(o.getDelivery());
+                LocalDateTime when = delivery ? o.getDeliveryDateTime() : o.getPickupDateTime();
+                if (when == null) when = o.getOrderDate(); // final fallback
+
+                // whereText: branch for pickup, address for delivery
+                String whereText = "-";
+                if (delivery) {
+                    String addr = String.valueOf(o.getDeliveryAddress());
+                    if (addr != null && !addr.isBlank()) whereText = addr;
+                } else {
+                    String branch = o.getStoreLocation(); // this is your branchName string
+                    if (branch != null && !branch.isBlank()) whereText = branch;
+                }
+
+                // customer name (fallbacks safe)
+                String customerName = "-";
+                Customer cust = o.getCustomer();
+                if (cust != null && cust.getUsername() != null && !cust.getUsername().isBlank()) {
+                    customerName = cust.getUsername();
+                }
+
+                // items
+                List<ScheduleItemDTO> items = new ArrayList<>();
+                if (o.getItems() != null) {
+                    for (OrderItem oi : o.getItems()) {
+                        String name = "Item";
+                        String imagePath = null;
+                        java.math.BigDecimal unitPrice = java.math.BigDecimal.ZERO;
+
+                        if (oi.getProduct() != null) {
+                            Product p = oi.getProduct();
+                            name = String.valueOf(p.getName());
+                            imagePath = p.getImagePath();
+                            java.math.BigDecimal snap = oi.getUnitPriceSnapshot();
+                            unitPrice = (snap != null) ? snap : java.math.BigDecimal.valueOf(p.getPrice());
+                        } else if (oi.getCustomBouquet() != null) {
+                            name = "Custom bouquet";
+                            java.math.BigDecimal snap = oi.getUnitPriceSnapshot();
+                            if (snap != null) unitPrice = snap;
+                        }
+
+                        int qty = Math.max(1, oi.getQuantity());
+                        items.add(new ScheduleItemDTO(name, qty, unitPrice, imagePath));
+                    }
+                }
+
+                ScheduleOrderDTO row = new ScheduleOrderDTO(
+                        o.getId(),
+                        customerName,
+                        delivery,
+                        when,
+                        whereText,
+                        String.valueOf(o.getStatus() == null ? "PLACED" : o.getStatus())
+                );
+                row.setItems(items);
+                dtoList.add(row);
+            }
+
+            // Client’s EmployeeScheduleController listens for "orders_for_day" in the message.object (not objectList)
+            client.sendToClient(new Message("orders_for_day", dtoList, null));
+            System.out.println("[SEND][orders_by_day] -> orders_for_day (obj=ArrayList, size=" + dtoList.size() + ")");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { client.sendToClient(new Message("orders_for_day", List.of(), null)); }
+            catch (java.io.IOException ignored) {}
+        }
+    }
+
+
+
+
+
+    @SuppressWarnings("unchecked")
+    private void handleMarkOrderReady(Message m, ConnectionToClient client, Session session) {
+        var tx = session.beginTransaction();
+        try {
+            Long orderId = null;
+            if (m.getObjectList()!=null && !m.getObjectList().isEmpty() && m.getObjectList().get(0) instanceof Map) {
+                Object v = ((Map<String,Object>)m.getObjectList().get(0)).get("orderId");
+                if (v instanceof Number) orderId = ((Number) v).longValue();
+            }
+            if (orderId == null) { tx.rollback(); return; }
+
+            Order o = session.get(Order.class, orderId);
+            if (o == null) { tx.rollback(); return; }
+
+            final String before = java.util.Objects.toString(o.getStatus(), "PLACED");
+            final boolean delivery = java.lang.Boolean.TRUE.equals(o.getDelivery());
+
+            // idempotency: do nothing if already in or beyond "ready"
+            if ((!delivery && (before.equals("READY_FOR_PICKUP") || before.equals("PICKED_UP")))
+                    || ( delivery && (before.equals("OUT_FOR_DELIVERY") || before.equals("DELIVERED")))) {
+                tx.rollback();                           // no changes -> no extra inbox
+                client.sendToClient(new Message("order_ready_ack", o.getId(), null));
+                return;
+            }
+
+            // transition
+            String after = delivery ? "OUT_FOR_DELIVERY" : "READY_FOR_PICKUP";
+            o.setStatus(after);
+            session.merge(o);
+            session.flush();
+
+            // single inbox only when changed
+            if (o.getCustomer()!=null) {
+                String title = delivery ? "Order out for delivery" : "Order ready for pickup";
+                String body  = delivery ? "Your order #" + o.getId() + " is on the way."
+                        : "Your order #" + o.getId() + " is ready for pickup.";
+                createPersonalNotification(session, o.getCustomer().getId(), title, body);
+            }
+
+            tx.commit();
+
+            client.sendToClient(new Message("order_ready_ack", o, null));
+            // notify all UIs (employees, customers)
+            sendToAllClients(new Message("orders_state_changed",
+                    java.util.Map.of("orderId", o.getId(), "status", o.getStatus()), null));
+
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+        }
+    }
+
+
 
     @SuppressWarnings("unchecked")
     private void handleGetMyComplaints(Message m, ConnectionToClient client, Session session) {
@@ -1467,6 +1728,19 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
+
+    // --- PUSH: send a single new personal/broadcast inbox item to clients ---
+
+    private void pushInboxPersonalNew(long customerId, Notification n) {
+        InboxItemDTO dto = toDTO(n);
+        sendToAllClients(new Message("inbox_personal_new", dto, List.of(customerId)));
+    }
+
+    private void pushInboxBroadcastNew(Notification n) {
+        InboxItemDTO dto = toDTO(n);
+        sendToAllClients(new Message("inbox_broadcast_new", dto, null));
+    }
+
 
 
 
@@ -1700,9 +1974,9 @@ public class SimpleServer extends AbstractServer {
 
 
     // --- DTO mapper ---
-    private il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO toDTO(
-            il.cshaifasweng.OCSFMediatorExample.entities.Notification n) {
-        return new il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO(
+    private InboxItemDTO toDTO(
+            Notification n) {
+        return new InboxItemDTO(
                 n.getId(),
                 n.getTitle(),
                 n.getBody(),
@@ -1717,8 +1991,8 @@ public class SimpleServer extends AbstractServer {
     private void handleGetInbox(Message m, ConnectionToClient client, Session session) {
         try {
             Long customerId = null;
-            if (m.getObjectList() != null && !m.getObjectList().isEmpty() && m.getObjectList().get(0) instanceof java.util.Map) {
-                Object v = ((java.util.Map<?, ?>) m.getObjectList().get(0)).get("customerId");
+            if (m.getObjectList() != null && !m.getObjectList().isEmpty() && m.getObjectList().get(0) instanceof Map) {
+                Object v = ((Map<?, ?>) m.getObjectList().get(0)).get("customerId");
                 if (v instanceof Number) customerId = ((Number) v).longValue();
             }
             if (customerId == null) {
@@ -1728,20 +2002,20 @@ public class SimpleServer extends AbstractServer {
 
             var personalEntities = session.createQuery(
                     "from Notification n where n.customer.id = :cid order by n.createdAt desc",
-                    il.cshaifasweng.OCSFMediatorExample.entities.Notification.class
+                    Notification.class
             ).setParameter("cid", customerId).getResultList();
 
             var broadcastEntities = session.createQuery(
                     "from Notification n where n.customer is null order by n.createdAt desc",
-                    il.cshaifasweng.OCSFMediatorExample.entities.Notification.class
+                    Notification.class
             ).getResultList();
 
-            java.util.List<il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO> personalDTO =
-                    personalEntities.stream().map(this::toDTO).collect(Collectors.toList());
-            java.util.List<il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO> broadcastDTO =
-                    broadcastEntities.stream().map(this::toDTO).collect(Collectors.toList());
+            List<InboxItemDTO> personalDTO =
+                    personalEntities.stream().map(this::toDTO).toList();
+            List<InboxItemDTO> broadcastDTO =
+                    broadcastEntities.stream().map(this::toDTO).toList();
 
-            var payload = new il.cshaifasweng.OCSFMediatorExample.entities.InboxListDTO(personalDTO, broadcastDTO);
+            var payload = new InboxListDTO(personalDTO, broadcastDTO);
             sendMsg(client, new Message("inbox_list", payload, null), "get_inbox");
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -1783,6 +2057,7 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+    // --- INBOX: mark one personal notification as UNREAD ---
     private void handleMarkNotificationUnread(Message m, ConnectionToClient client, Session session) {
         try {
             if (m.getObjectList() == null || m.getObjectList().isEmpty()) {
@@ -1819,12 +2094,10 @@ public class SimpleServer extends AbstractServer {
     }
 
     private void createBroadcastNotification(Session session, String title, String body) {
-        Notification n = new Notification(null, title, body); // broadcast
+        Notification n = new Notification(null, title, body);
         session.persist(n);
-        session.flush(); // make sure ID is available
-        InboxItemDTO dto = toDTO(n);
-        // objectList carries a simple flag for client-side filtering
-        sendToAllClients(new Message("inbox_new", dto, java.util.List.of(java.util.Map.of("broadcast", true))));
+        session.flush();                 // ensure ID exists
+        pushInboxBroadcastNew(n);        // <— NEW
     }
 
     private void createPersonalNotification(Session session, Long customerId, String title, String body) {
@@ -1832,11 +2105,10 @@ public class SimpleServer extends AbstractServer {
         if (c == null) return;
         Notification n = new Notification(c, title, body);
         session.persist(n);
-        session.flush();
-        InboxItemDTO dto = toDTO(n);
-        // include the intended recipient id (clients will ignore if it's not them)
-        sendToAllClients(new Message("inbox_new", dto, java.util.List.of(java.util.Map.of("customerId", customerId))));
+        session.flush();                 // ensure ID exists
+        pushInboxPersonalNew(customerId, n);   // <— NEW
     }
+
 
 
 
@@ -1847,8 +2119,8 @@ public class SimpleServer extends AbstractServer {
 
             if (payload instanceof User) {
                 user = (User) payload;
-            } else if (payload instanceof java.util.List) {
-                java.util.List<?> list = (java.util.List<?>) payload;
+            } else if (payload instanceof List) {
+                List<?> list = (List<?>) payload;
                 if (!list.isEmpty() && list.get(0) instanceof User) {
                     user = (User) list.get(0);
                 }
@@ -1885,8 +2157,8 @@ public class SimpleServer extends AbstractServer {
             if (payload instanceof User) {
                 user = (User) payload;
                 if (user instanceof Customer) customer = (Customer) user;
-            } else if (payload instanceof java.util.List) {
-                java.util.List<?> list = (java.util.List<?>) payload;
+            } else if (payload instanceof List) {
+                List<?> list = (List<?>) payload;
                 if (!list.isEmpty() && list.get(0) instanceof User) user = (User) list.get(0);
                 if (list.size() > 1 && list.get(1) instanceof Customer) customer = (Customer) list.get(1);
             }
@@ -1926,7 +2198,6 @@ public class SimpleServer extends AbstractServer {
             } catch (IOException ignored) {}
         }
     }
-
 
     @SuppressWarnings("unchecked")
     private void handleDeleteProduct(Message msg, ConnectionToClient client, Session session) {
@@ -2701,16 +2972,39 @@ public class SimpleServer extends AbstractServer {
                 return;
             }
             Customer customer = session.get(Customer.class, user.getId());
+            if (customer == null) {
+                client.sendToClient(new Message("orders_data", List.of(), null));
+                return;
+            }
 
-            List<Order> orders = fetchOrdersWithEverything(session, customer.getId());
-            client.sendToClient(new Message("orders_data", orders, null));
+            List<Order> orders = session.createQuery(
+                            "select distinct o from Order o " +
+                                    " left join fetch o.items oi " +
+                                    " left join fetch oi.product p " +
+                                    " left join fetch o.customer c " +
+                                    " where c.id = :cid " +
+                                    " order by o.orderDate desc", Order.class)
+                    .setParameter("cid", customer.getId())
+                    .getResultList();
 
+            for (Order o : orders) {
+                for (OrderItem oi : o.getItems()) {
+                    CustomBouquet cb = oi.getCustomBouquet();
+                    if (cb != null) {
+                        org.hibernate.Hibernate.initialize(cb.getItems());
+                    }
+                }
+            }
+
+            client.sendToClient(new Message("orders_data", orders, null));  // single send
         } catch (Exception e) {
             e.printStackTrace();
             try { client.sendToClient(new Message("error", "Failed to load orders", null)); }
             catch (IOException ignored) {}
         }
     }
+
+
 
     /** Load orders with items (+ product + bouquet ref), then hydrate bouquet lines. */
     private List<Order> fetchOrdersWithEverything(Session session, Long customerId) {
