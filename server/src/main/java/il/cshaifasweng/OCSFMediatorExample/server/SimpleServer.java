@@ -35,7 +35,8 @@ import java.util.stream.Stream;
 public class SimpleServer extends AbstractServer {
 
     // ---- Subscribers (thread-safe) ----
-    private static final CopyOnWriteArrayList<SubscribedClient> subscribersList = new CopyOnWriteArrayList<>();
+    private static final java.util.List<SubscribedClient> subscribersList = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+    private static final Object subscribersLock = new Object();
 
     // ---- In-memory catalog snapshot + lock ----
     private static volatile Catalog catalog = new Catalog(new ArrayList<>());
@@ -85,7 +86,7 @@ public class SimpleServer extends AbstractServer {
     @Override
     protected void clientConnected(ConnectionToClient client) {
         super.clientConnected(client);
-        subscribersList.add(new SubscribedClient(client));
+        synchronized (subscribersLock) { subscribersList.add(new SubscribedClient(client)); }
     }
 
     /* ----------------------- Generic DB helpers (session passed in) ----------------------- */
@@ -271,8 +272,8 @@ public class SimpleServer extends AbstractServer {
             // --- Employee-specific FK cleanup (safe no-op for customers) ---
             // If Branch has a manager FK to Employee, break it before deleting the employee.
             //session.createQuery("update Branch b set b.manager = null where b.manager.id = :uid")
-             //       .setParameter("uid", userId)
-                  //  .executeUpdate();
+            //       .setParameter("uid", userId)
+            //  .executeUpdate();
 
             // --- Type-specific child graph cleanup (bulk HQL only) ---
             if (u instanceof Customer) {
@@ -296,7 +297,11 @@ public class SimpleServer extends AbstractServer {
             session.clear();
 
             // --- Notify and force-logout the exact connected client (if online), then clear connection info ---
-            for (SubscribedClient sc : subscribersList) {
+            java.util.List<SubscribedClient> _snapshot;
+            synchronized (subscribersLock) {
+                _snapshot = new java.util.ArrayList<>(subscribersList);
+            }
+            for (SubscribedClient sc : _snapshot) {
                 ConnectionToClient s = sc.getClient();
                 Object uid = s.getInfo("userId"); // set at login
                 if (uid instanceof Long && java.util.Objects.equals(uid, userId)) {
@@ -308,6 +313,7 @@ public class SimpleServer extends AbstractServer {
                         s.setInfo("userType", null);
 
                         // Optional: s.close(); // only if your client UX supports reconnect cleanly
+
                     } catch (Exception ignored) {}
                 }
             }
@@ -488,7 +494,11 @@ public class SimpleServer extends AbstractServer {
 
             if (Boolean.TRUE.equals(frozen)) {
                 // Notify/force-logout the exact connected client for this user (if connected)
-                for (SubscribedClient sc : subscribersList) {
+                java.util.List<SubscribedClient> _snapshot;
+                synchronized (subscribersLock) {
+                    _snapshot = new java.util.ArrayList<>(subscribersList);
+                }
+                for (SubscribedClient sc : _snapshot) {
                     ConnectionToClient s = sc.getClient();
                     Object uid = s.getInfo("userId"); // set at login
                     if (uid instanceof Long && java.util.Objects.equals(uid, customerId)) {
@@ -496,6 +506,7 @@ public class SimpleServer extends AbstractServer {
                             s.sendToClient(new Message("account_banned", "Your account was banned", null));
                             // Optionally: also close the connection if your client can reconnect cleanly
                             // s.close(); // only if supported/desired by your OCSF layer
+
                         } catch (Exception ignored) {}
                     }
                 }
@@ -580,63 +591,63 @@ public class SimpleServer extends AbstractServer {
                 }
 
                 final String oldUsername = e.getUsername();
-                    // Basic fields (nulls = don't change)
-                    if (dto.getFirstName() != null) e.setFirstName(dto.getFirstName());
-                    if (dto.getLastName()  != null) e.setLastName(dto.getLastName()); // <-- fixed
-                    if (dto.getUsername()  != null) e.setUsername(targetUsername);
-                    if (dto.getPassword()  != null) e.setPassword(dto.getPassword());
-                    if (dto.getIdNumber()  != null) e.setIdNumber(dto.getIdNumber().trim());
+                // Basic fields (nulls = don't change)
+                if (dto.getFirstName() != null) e.setFirstName(dto.getFirstName());
+                if (dto.getLastName()  != null) e.setLastName(dto.getLastName()); // <-- fixed
+                if (dto.getUsername()  != null) e.setUsername(targetUsername);
+                if (dto.getPassword()  != null) e.setPassword(dto.getPassword());
+                if (dto.getIdNumber()  != null) e.setIdNumber(dto.getIdNumber().trim());
 
-                    // Role + invariants
-                    if (dto.getRole() != null) {
-                        String newRole = dto.getRole().toLowerCase();
-                        e.setRole(newRole);
+                // Role + invariants
+                if (dto.getRole() != null) {
+                    String newRole = dto.getRole().toLowerCase();
+                    e.setRole(newRole);
 
-                        boolean toNet = isNetRole(newRole);
-                        if (toNet) {
-                            e.setNetworkAccount(true);
+                    boolean toNet = isNetRole(newRole);
+                    if (toNet) {
+                        e.setNetworkAccount(true);
+                        e.setBranch(null);
+                    } else {
+                        if (newBranch == null && e.getBranch() == null) {
+                            tx.rollback();
+                            try { client.sendToClient(new Message("admin_update_error", "Branch role requires a branch.", null)); }
+                            catch (IOException ignored) {}
+                            return;
+                        }
+                        if (newBranch != null) e.setBranch(newBranch);
+                        e.setNetworkAccount(false);
+                    }
+                } else {
+                    // No role change; still allow branch or network changes with invariants
+                    if (newBranch != null) {
+                        if (e.isNetworkAccount()) {
+                            tx.rollback();
+                            try { client.sendToClient(new Message("admin_update_error", "Network employees cannot have a branch.", null)); }
+                            catch (IOException ignored) {}
+                            return;
+                        }
+                        e.setBranch(newBranch);
+                    }
+                    if (dto.getNetworkAccount() != null) {
+                        boolean na = dto.getNetworkAccount();
+                        e.setNetworkAccount(na);
+                        if (na) {
                             e.setBranch(null);
                         } else {
                             if (newBranch == null && e.getBranch() == null) {
                                 tx.rollback();
-                                try { client.sendToClient(new Message("admin_update_error", "Branch role requires a branch.", null)); }
+                                try { client.sendToClient(new Message("admin_update_error", "Non-network employees must have a branch.", null)); }
                                 catch (IOException ignored) {}
                                 return;
                             }
                             if (newBranch != null) e.setBranch(newBranch);
-                            e.setNetworkAccount(false);
-                        }
-                    } else {
-                        // No role change; still allow branch or network changes with invariants
-                        if (newBranch != null) {
-                            if (e.isNetworkAccount()) {
-                                tx.rollback();
-                                try { client.sendToClient(new Message("admin_update_error", "Network employees cannot have a branch.", null)); }
-                                catch (IOException ignored) {}
-                                return;
-                            }
-                            e.setBranch(newBranch);
-                        }
-                        if (dto.getNetworkAccount() != null) {
-                            boolean na = dto.getNetworkAccount();
-                            e.setNetworkAccount(na);
-                            if (na) {
-                                e.setBranch(null);
-                            } else {
-                                if (newBranch == null && e.getBranch() == null) {
-                                    tx.rollback();
-                                    try { client.sendToClient(new Message("admin_update_error", "Non-network employees must have a branch.", null)); }
-                                    catch (IOException ignored) {}
-                                    return;
-                                }
-                                if (newBranch != null) e.setBranch(newBranch);
-                            }
                         }
                     }
+                }
 
-                    Employee managed = (Employee) session.merge(e);
-                    tx.commit();
-                    client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
+                Employee managed = (Employee) session.merge(e);
+                tx.commit();
+                client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
 
             } else if ("CUSTOMER".equalsIgnoreCase(dto.getUserType())) {
                 Customer c = session.get(Customer.class, dto.getId());
@@ -684,47 +695,47 @@ public class SimpleServer extends AbstractServer {
                 }
 
                 final String oldUsername = c.getUsername();
-                    // Basic fields
-                    if (dto.getFirstName() != null) c.setFirstName(dto.getFirstName());
-                    if (dto.getLastName()  != null) c.setLastName(dto.getLastName()); // <-- fixed
-                    if (dto.getUsername()  != null) c.setUsername(targetUsername);
-                    if (dto.getPassword()  != null) c.setPassword(dto.getPassword());
-                    if (dto.getIdNumber()  != null) c.setIdNumber(dto.getIdNumber().trim());
+                // Basic fields
+                if (dto.getFirstName() != null) c.setFirstName(dto.getFirstName());
+                if (dto.getLastName()  != null) c.setLastName(dto.getLastName()); // <-- fixed
+                if (dto.getUsername()  != null) c.setUsername(targetUsername);
+                if (dto.getPassword()  != null) c.setPassword(dto.getPassword());
+                if (dto.getIdNumber()  != null) c.setIdNumber(dto.getIdNumber().trim());
 
-                    // Customer-only fields
-                    if (dto.getBudget() != null && dto.getBudget().signum() >= 0) c.getBudget().setBalance(dto.getBudget().doubleValue());
-                    if (dto.getFrozen() != null) c.setFrozen(dto.getFrozen());
+                // Customer-only fields
+                if (dto.getBudget() != null && dto.getBudget().signum() >= 0) c.getBudget().setBalance(dto.getBudget().doubleValue());
+                if (dto.getFrozen() != null) c.setFrozen(dto.getFrozen());
 
-                    // Network/branch invariants
-                    if (dto.getNetworkAccount() != null) {
-                        boolean na = dto.getNetworkAccount();
-                        c.setNetworkAccount(na);
-                        if (na) {
-                            c.setBranch(null);
-                        } else {
-                            if (newBranch == null && c.getBranch() == null) {
-                                tx.rollback();
-                                try { client.sendToClient(new Message("admin_update_error", "Non-network customers must have a branch.", null)); }
-                                catch (IOException ignored) {}
-                                return;
-                            }
-                            if (newBranch != null) c.setBranch(newBranch);
-                        }
-                    } else if (newBranch != null) {
-                        if (c.isNetworkAccount()) {
+                // Network/branch invariants
+                if (dto.getNetworkAccount() != null) {
+                    boolean na = dto.getNetworkAccount();
+                    c.setNetworkAccount(na);
+                    if (na) {
+                        c.setBranch(null);
+                    } else {
+                        if (newBranch == null && c.getBranch() == null) {
                             tx.rollback();
-                            try { client.sendToClient(new Message("admin_update_error", "Network customers cannot have a branch.", null)); }
+                            try { client.sendToClient(new Message("admin_update_error", "Non-network customers must have a branch.", null)); }
                             catch (IOException ignored) {}
                             return;
                         }
-                        c.setBranch(newBranch);
+                        if (newBranch != null) c.setBranch(newBranch);
                     }
+                } else if (newBranch != null) {
+                    if (c.isNetworkAccount()) {
+                        tx.rollback();
+                        try { client.sendToClient(new Message("admin_update_error", "Network customers cannot have a branch.", null)); }
+                        catch (IOException ignored) {}
+                        return;
+                    }
+                    c.setBranch(newBranch);
+                }
 
-                    Customer managed = (Customer) session.merge(c);
-                    tx.commit();
+                Customer managed = (Customer) session.merge(c);
+                tx.commit();
 
-                    try { client.sendToClient(new Message("admin_update_ok", toDTO(managed), null)); }
-                    catch (IOException ignored) {}
+                try { client.sendToClient(new Message("admin_update_ok", toDTO(managed), null)); }
+                catch (IOException ignored) {}
             } else {
                 tx.rollback();
                 try { client.sendToClient(new Message("admin_update_error", "Unknown userType: " + dto.getUserType(), null)); }
@@ -2172,9 +2183,9 @@ public class SimpleServer extends AbstractServer {
             // Lock using current (old) username; capture it in case it changes
             final String oldUsername = user.getUsername();
             User mergedUser;
-                mergedUser = (User) session.merge(user);
-                if (customer != null) session.merge(customer);
-                tx.commit();
+            mergedUser = (User) session.merge(user);
+            if (customer != null) session.merge(customer);
+            tx.commit();
             session.merge(user);
             if (customer != null) session.merge(customer);
 
@@ -2436,28 +2447,28 @@ public class SimpleServer extends AbstractServer {
     private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
         String username = ((Customer) (msg.getObject())).getUsername();
         String idNumber = ((Customer) (msg.getObject())).getIdNumber();
-            if (checkExistenceUsername(session,username)) {
-                client.sendToClient(new Message("user already exists", msg.getObject(), null));
-                return;
-            }
-            if(checkExistenceIdNumber(idNumber, session)) {
-                client.sendToClient(new Message("id already exists", msg.getObject(), null));
-                return;
-            }
-            Transaction tx = session.beginTransaction();
-            try {
-                Customer incoming = (Customer) msg.getObject();
+        if (checkExistenceUsername(session,username)) {
+            client.sendToClient(new Message("user already exists", msg.getObject(), null));
+            return;
+        }
+        if(checkExistenceIdNumber(idNumber, session)) {
+            client.sendToClient(new Message("id already exists", msg.getObject(), null));
+            return;
+        }
+        Transaction tx = session.beginTransaction();
+        try {
+            Customer incoming = (Customer) msg.getObject();
 
-                session.save(incoming);
-                tx.commit();
+            session.save(incoming);
+            tx.commit();
 
-                client.sendToClient(new Message("registered", null, null));
-            } catch (Exception e) {
-                if (tx.isActive()) tx.rollback();
-                try { client.sendToClient(new Message("registration_failed", null, null)); }
-                catch (IOException ignored) {}
-                e.printStackTrace();
-            }
+            client.sendToClient(new Message("registered", null, null));
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            try { client.sendToClient(new Message("registration_failed", null, null)); }
+            catch (IOException ignored) {}
+            e.printStackTrace();
+        }
     }
 
 
@@ -3254,9 +3265,15 @@ public class SimpleServer extends AbstractServer {
 
     public void sendToAllClients(Message message) {
         try {
-            for (SubscribedClient subscribedClient : subscribersList) {
+            java.util.List<SubscribedClient> toRemove = new java.util.ArrayList<>();
+            java.util.List<SubscribedClient> _snapshot;
+            synchronized (subscribersLock) {
+                _snapshot = new java.util.ArrayList<>(subscribersList);
+            }
+            for (SubscribedClient subscribedClient : _snapshot) {
                 try {
                     subscribedClient.getClient().sendToClient(message);
+
                 } catch (IOException e) {
                     subscribersList.remove(subscribedClient);
                     System.out.println("Removed disconnected client");
