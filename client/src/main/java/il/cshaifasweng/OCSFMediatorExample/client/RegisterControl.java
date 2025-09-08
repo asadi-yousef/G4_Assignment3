@@ -155,10 +155,8 @@ public class RegisterControl implements Initializable {
         if (validateFields()) {
             try {
                 boolean isSubscribed = "yearly subscription".equals(accountTypeComboBox.getValue());
-                System.out.println("isSubscribed: " + isSubscribed);
-                boolean isNetworkAccount = ("Net Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
-                System.out.println("isNetworkAccount: " + isNetworkAccount);
-                Budget initialBudget = new Budget(null);
+                boolean isNetworkAccount = ("Network Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
+                Budget initialBudget = new Budget();
                 // Create new Customer object with all form data
                 // IMPORTANT: ID is now the FIRST constructor parameter as requested
                 Customer newCustomer = new Customer(
@@ -184,6 +182,7 @@ public class RegisterControl implements Initializable {
                         initialBudget
                 );
                 initialBudget.setCustomer(newCustomer);
+                initialBudget.setBalance(0.0);
 
                 if (!isNetworkAccount) {
                     newCustomer.setBranch(getSelectedBranch());

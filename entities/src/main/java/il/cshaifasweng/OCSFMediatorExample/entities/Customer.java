@@ -38,7 +38,7 @@ public class Customer extends User implements Serializable {
     @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
     private Cart cart;
 
-    @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToOne(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private Budget budget;
 
     public Customer() {

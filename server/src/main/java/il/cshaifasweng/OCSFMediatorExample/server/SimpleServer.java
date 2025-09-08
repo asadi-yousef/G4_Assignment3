@@ -1,5 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.server;
 import il.cshaifasweng.OCSFMediatorExample.entities.InboxItemDTO;
+
 import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
@@ -18,6 +19,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,10 +43,6 @@ public class SimpleServer extends AbstractServer {
     // ---- In-memory catalog snapshot + lock ----
     private static volatile Catalog catalog = new Catalog(new ArrayList<>());
     private static final ReentrantReadWriteLock catalogLock = new ReentrantReadWriteLock();
-
-    // ---- Caches + per-username locks ----
-    private static final ConcurrentHashMap<String, User> userCache = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Object> usernameLocks = new ConcurrentHashMap<>();
 
     public SimpleServer(int port) {
         super(port);
@@ -86,7 +84,6 @@ public class SimpleServer extends AbstractServer {
     @Override
     protected void clientConnected(ConnectionToClient client) {
         super.clientConnected(client);
-
         synchronized (subscribersLock) { subscribersList.add(new SubscribedClient(client)); }
     }
 
@@ -114,7 +111,6 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-
     /* ----------------------- Request dispatch ----------------------- */
 
     @Override
@@ -126,8 +122,8 @@ public class SimpleServer extends AbstractServer {
                 Message m = (Message) msg;
                 String key = m.getMessage();
                 System.out.println("[RX] key=" + key +
-                        " obj=" + (m.getObject()==null?"null":m.getObject().getClass().getSimpleName()) +
-                        " listSize=" + (m.getObjectList()==null?0:m.getObjectList().size()));
+                        " obj=" + (m.getObject()==null ? "null" : m.getObject().getClass().getSimpleName()) +
+                        " listSize=" + (m.getObjectList()==null ? 0 : m.getObjectList().size()));
 
                 if ("register".equals(key)) {
                     handleUserRegistration(m, client, session);
@@ -159,30 +155,24 @@ public class SimpleServer extends AbstractServer {
                     handleUserAuthentication(m, client, session);
                 } else if (key != null && key.startsWith("add_custom_bouquet_to_cart")) {
                     handleAddCustomBouquetToCart(m, client, session);
-                }
-                else if ("get_my_complaints".equals(key) || "get_customer_complaints".equals(key)) {
+                } else if ("get_my_complaints".equals(key) || "get_customer_complaints".equals(key)) {
                     handleGetMyComplaints(m, client, session);
-                }
-                else if("cancel_order".equals(key)) {
+                } else if ("cancel_order".equals(key)) {
                     handleCancelOrder(m, client, session);
-                }
-                else if ("submit_complaint".equals(key)) {
+                } else if ("submit_complaint".equals(key)) {
                     handleSubmitComplaint(m, client, session);
                 } else if ("get_complaints_for_branch".equals(key) || "get_all_complaints".equals(key)) {
                     handleGetAllComplaints(m, client, session);
                 } else if ("resolve_complaint".equals(key)) {
                     handleResolveComplaint(m, client, session);
-                }
-                else if ("get_complaints_count".equals(key)) {
+                } else if ("get_complaints_count".equals(key)) {
                     handleGetComplaintsCount(client, session);
                 } else if ("get_complaint_ids".equals(key)) {
                     handleGetComplaintIds(client, session);
                 } else if ("ping_echo".equals(key)) {
                     sendMsg(client, new Message("pong", "ok", null), "ping_echo");
-                }
-                else if ("get_order_complaint_status".equals(key)) {
+                } else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
-                } else if ("get_inbox".equals(key)) {
                 }
                 else if("update_budget".equals(key))
                 {
@@ -202,6 +192,9 @@ public class SimpleServer extends AbstractServer {
                     handleGetInbox(m, client, session);
                 } else if ("mark_notification_read".equals(key)) {
                     handleMarkNotificationRead(m, client, session);
+                } else if ("mark_notification_unread".equals(key)) {
+                    handleMarkNotificationUnread(m, client, session);
+                } else if ("create_broadcast".equals(key)) {
                 }
                 else if ("mark_notification_unread".equals(key)) {
                     handleMarkNotificationUnread(m, client, session);
@@ -251,6 +244,7 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
+
     /* ----------------------- Handlers (all receive Session) ----------------------- */
     @SuppressWarnings("unchecked")
     private void handleAdminDeleteUser(Message m, ConnectionToClient client, Session session) {
@@ -273,8 +267,8 @@ public class SimpleServer extends AbstractServer {
             // --- Employee-specific FK cleanup (safe no-op for customers) ---
             // If Branch has a manager FK to Employee, break it before deleting the employee.
             //session.createQuery("update Branch b set b.manager = null where b.manager.id = :uid")
-            //       .setParameter("uid", userId)
-            //  .executeUpdate();
+             //       .setParameter("uid", userId)
+                  //  .executeUpdate();
 
             // --- Type-specific child graph cleanup (bulk HQL only) ---
             if (u instanceof Customer) {
@@ -298,12 +292,7 @@ public class SimpleServer extends AbstractServer {
             session.clear();
 
             // --- Notify and force-logout the exact connected client (if online), then clear connection info ---
-            java.util.List<SubscribedClient> _snapshot;
-            synchronized (subscribersLock) {
-                _snapshot = new java.util.ArrayList<>(subscribersList);
-            }
-            for (SubscribedClient sc : _snapshot) {
-
+            for (SubscribedClient sc : subscribersList) {
                 ConnectionToClient s = sc.getClient();
                 Object uid = s.getInfo("userId"); // set at login
                 if (uid instanceof Long && java.util.Objects.equals(uid, userId)) {
@@ -315,7 +304,6 @@ public class SimpleServer extends AbstractServer {
                         s.setInfo("userType", null);
 
                         // Optional: s.close(); // only if your client UX supports reconnect cleanly
-
                     } catch (Exception ignored) {}
                 }
             }
@@ -496,12 +484,7 @@ public class SimpleServer extends AbstractServer {
 
             if (Boolean.TRUE.equals(frozen)) {
                 // Notify/force-logout the exact connected client for this user (if connected)
-                java.util.List<SubscribedClient> _snapshot;
-                synchronized (subscribersLock) {
-                    _snapshot = new java.util.ArrayList<>(subscribersList);
-                }
-                for (SubscribedClient sc : _snapshot) {
-
+                for (SubscribedClient sc : subscribersList) {
                     ConnectionToClient s = sc.getClient();
                     Object uid = s.getInfo("userId"); // set at login
                     if (uid instanceof Long && java.util.Objects.equals(uid, customerId)) {
@@ -509,7 +492,6 @@ public class SimpleServer extends AbstractServer {
                             s.sendToClient(new Message("account_banned", "Your account was banned", null));
                             // Optionally: also close the connection if your client can reconnect cleanly
                             // s.close(); // only if supported/desired by your OCSF layer
-
                         } catch (Exception ignored) {}
                     }
                 }
@@ -594,63 +576,63 @@ public class SimpleServer extends AbstractServer {
                 }
 
                 final String oldUsername = e.getUsername();
-                // Basic fields (nulls = don't change)
-                if (dto.getFirstName() != null) e.setFirstName(dto.getFirstName());
-                if (dto.getLastName()  != null) e.setLastName(dto.getLastName()); // <-- fixed
-                if (dto.getUsername()  != null) e.setUsername(targetUsername);
-                if (dto.getPassword()  != null) e.setPassword(dto.getPassword());
-                if (dto.getIdNumber()  != null) e.setIdNumber(dto.getIdNumber().trim());
+                    // Basic fields (nulls = don't change)
+                    if (dto.getFirstName() != null) e.setFirstName(dto.getFirstName());
+                    if (dto.getLastName()  != null) e.setLastName(dto.getLastName()); // <-- fixed
+                    if (dto.getUsername()  != null) e.setUsername(targetUsername);
+                    if (dto.getPassword()  != null) e.setPassword(dto.getPassword());
+                    if (dto.getIdNumber()  != null) e.setIdNumber(dto.getIdNumber().trim());
 
-                // Role + invariants
-                if (dto.getRole() != null) {
-                    String newRole = dto.getRole().toLowerCase();
-                    e.setRole(newRole);
+                    // Role + invariants
+                    if (dto.getRole() != null) {
+                        String newRole = dto.getRole().toLowerCase();
+                        e.setRole(newRole);
 
-                    boolean toNet = isNetRole(newRole);
-                    if (toNet) {
-                        e.setNetworkAccount(true);
-                        e.setBranch(null);
-                    } else {
-                        if (newBranch == null && e.getBranch() == null) {
-                            tx.rollback();
-                            try { client.sendToClient(new Message("admin_update_error", "Branch role requires a branch.", null)); }
-                            catch (IOException ignored) {}
-                            return;
-                        }
-                        if (newBranch != null) e.setBranch(newBranch);
-                        e.setNetworkAccount(false);
-                    }
-                } else {
-                    // No role change; still allow branch or network changes with invariants
-                    if (newBranch != null) {
-                        if (e.isNetworkAccount()) {
-                            tx.rollback();
-                            try { client.sendToClient(new Message("admin_update_error", "Network employees cannot have a branch.", null)); }
-                            catch (IOException ignored) {}
-                            return;
-                        }
-                        e.setBranch(newBranch);
-                    }
-                    if (dto.getNetworkAccount() != null) {
-                        boolean na = dto.getNetworkAccount();
-                        e.setNetworkAccount(na);
-                        if (na) {
+                        boolean toNet = isNetRole(newRole);
+                        if (toNet) {
+                            e.setNetworkAccount(true);
                             e.setBranch(null);
                         } else {
                             if (newBranch == null && e.getBranch() == null) {
                                 tx.rollback();
-                                try { client.sendToClient(new Message("admin_update_error", "Non-network employees must have a branch.", null)); }
+                                try { client.sendToClient(new Message("admin_update_error", "Branch role requires a branch.", null)); }
                                 catch (IOException ignored) {}
                                 return;
                             }
                             if (newBranch != null) e.setBranch(newBranch);
+                            e.setNetworkAccount(false);
+                        }
+                    } else {
+                        // No role change; still allow branch or network changes with invariants
+                        if (newBranch != null) {
+                            if (e.isNetworkAccount()) {
+                                tx.rollback();
+                                try { client.sendToClient(new Message("admin_update_error", "Network employees cannot have a branch.", null)); }
+                                catch (IOException ignored) {}
+                                return;
+                            }
+                            e.setBranch(newBranch);
+                        }
+                        if (dto.getNetworkAccount() != null) {
+                            boolean na = dto.getNetworkAccount();
+                            e.setNetworkAccount(na);
+                            if (na) {
+                                e.setBranch(null);
+                            } else {
+                                if (newBranch == null && e.getBranch() == null) {
+                                    tx.rollback();
+                                    try { client.sendToClient(new Message("admin_update_error", "Non-network employees must have a branch.", null)); }
+                                    catch (IOException ignored) {}
+                                    return;
+                                }
+                                if (newBranch != null) e.setBranch(newBranch);
+                            }
                         }
                     }
-                }
 
-                Employee managed = (Employee) session.merge(e);
-                tx.commit();
-                client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
+                    Employee managed = (Employee) session.merge(e);
+                    tx.commit();
+                    client.sendToClient(new Message("admin_update_ok", toDTO(managed), null));
 
             } else if ("CUSTOMER".equalsIgnoreCase(dto.getUserType())) {
                 Customer c = session.get(Customer.class, dto.getId());
@@ -698,47 +680,47 @@ public class SimpleServer extends AbstractServer {
                 }
 
                 final String oldUsername = c.getUsername();
-                // Basic fields
-                if (dto.getFirstName() != null) c.setFirstName(dto.getFirstName());
-                if (dto.getLastName()  != null) c.setLastName(dto.getLastName()); // <-- fixed
-                if (dto.getUsername()  != null) c.setUsername(targetUsername);
-                if (dto.getPassword()  != null) c.setPassword(dto.getPassword());
-                if (dto.getIdNumber()  != null) c.setIdNumber(dto.getIdNumber().trim());
+                    // Basic fields
+                    if (dto.getFirstName() != null) c.setFirstName(dto.getFirstName());
+                    if (dto.getLastName()  != null) c.setLastName(dto.getLastName()); // <-- fixed
+                    if (dto.getUsername()  != null) c.setUsername(targetUsername);
+                    if (dto.getPassword()  != null) c.setPassword(dto.getPassword());
+                    if (dto.getIdNumber()  != null) c.setIdNumber(dto.getIdNumber().trim());
 
-                // Customer-only fields
-                if (dto.getBudget() != null && dto.getBudget().signum() >= 0) c.getBudget().setBalance(dto.getBudget().doubleValue());
-                if (dto.getFrozen() != null) c.setFrozen(dto.getFrozen());
+                    // Customer-only fields
+                    if (dto.getBudget() != null && dto.getBudget().signum() >= 0) c.getBudget().setBalance(dto.getBudget().doubleValue());
+                    if (dto.getFrozen() != null) c.setFrozen(dto.getFrozen());
 
-                // Network/branch invariants
-                if (dto.getNetworkAccount() != null) {
-                    boolean na = dto.getNetworkAccount();
-                    c.setNetworkAccount(na);
-                    if (na) {
-                        c.setBranch(null);
-                    } else {
-                        if (newBranch == null && c.getBranch() == null) {
+                    // Network/branch invariants
+                    if (dto.getNetworkAccount() != null) {
+                        boolean na = dto.getNetworkAccount();
+                        c.setNetworkAccount(na);
+                        if (na) {
+                            c.setBranch(null);
+                        } else {
+                            if (newBranch == null && c.getBranch() == null) {
+                                tx.rollback();
+                                try { client.sendToClient(new Message("admin_update_error", "Non-network customers must have a branch.", null)); }
+                                catch (IOException ignored) {}
+                                return;
+                            }
+                            if (newBranch != null) c.setBranch(newBranch);
+                        }
+                    } else if (newBranch != null) {
+                        if (c.isNetworkAccount()) {
                             tx.rollback();
-                            try { client.sendToClient(new Message("admin_update_error", "Non-network customers must have a branch.", null)); }
+                            try { client.sendToClient(new Message("admin_update_error", "Network customers cannot have a branch.", null)); }
                             catch (IOException ignored) {}
                             return;
                         }
-                        if (newBranch != null) c.setBranch(newBranch);
+                        c.setBranch(newBranch);
                     }
-                } else if (newBranch != null) {
-                    if (c.isNetworkAccount()) {
-                        tx.rollback();
-                        try { client.sendToClient(new Message("admin_update_error", "Network customers cannot have a branch.", null)); }
-                        catch (IOException ignored) {}
-                        return;
-                    }
-                    c.setBranch(newBranch);
-                }
 
-                Customer managed = (Customer) session.merge(c);
-                tx.commit();
+                    Customer managed = (Customer) session.merge(c);
+                    tx.commit();
 
-                try { client.sendToClient(new Message("admin_update_ok", toDTO(managed), null)); }
-                catch (IOException ignored) {}
+                    try { client.sendToClient(new Message("admin_update_ok", toDTO(managed), null)); }
+                    catch (IOException ignored) {}
             } else {
                 tx.rollback();
                 try { client.sendToClient(new Message("admin_update_error", "Unknown userType: " + dto.getUserType(), null)); }
@@ -1246,12 +1228,6 @@ public class SimpleServer extends AbstractServer {
             return;
         }
 
-        String reason = "";
-        if (m.getObjectList().size() > 1) {
-            Object second = m.getObjectList().get(1);
-            reason = (second != null) ? second.toString() : "";
-        }
-
         Transaction tx = null;
         try {
             tx = session.beginTransaction();
@@ -1262,7 +1238,33 @@ public class SimpleServer extends AbstractServer {
                 return;
             }
 
-            // Delete complaints linked to this order
+            Customer customer = order.getCustomer();
+
+            // Calculate refund based on delivery time
+            double refund = 0;
+            if (customer != null && order.getDeliveryDateTime() != null) {
+                LocalDateTime deliveryTime = order.getDeliveryDateTime();
+                LocalDateTime now = LocalDateTime.now();
+                Duration diff = Duration.between(now, deliveryTime);
+                long hoursUntilDelivery = diff.toHours();
+
+                if (hoursUntilDelivery >= 24) {
+                    refund = order.getTotalPrice(); // full refund
+                } else if (hoursUntilDelivery >= 3) {
+                    refund = order.getTotalPrice() * 0.5; // 50% refund
+                } else {
+                    refund = 0; // no refund
+                }
+            }
+
+            // Apply refund to customer's budget
+            Budget budget = customer.getBudget();
+            if (budget != null && refund > 0) {
+                budget.addFunds(refund);
+                session.update(budget); // persist update
+            }
+
+            // Delete complaints linked to the order
             List<Complaint> complaints = session.createQuery(
                             "FROM Complaint c WHERE c.order.id = :orderId", Complaint.class)
                     .setParameter("orderId", orderId)
@@ -1276,25 +1278,17 @@ public class SimpleServer extends AbstractServer {
             session.delete(order);
 
             session.flush();
-
-            createPersonalNotification(session,
-                    order.getCustomer().getId(),
-                    "Order canceled",
-                    "Your order #" + order.getId() + " was canceled" +
-                            (/* if you issue refunds here */ false ? " and a refund is being processed." : "."));
-
-
             tx.commit();
 
-            // Send success message to client (third argument must be a list)
+            // Send success response including updated budget
             Message response = new Message(
                     "order_cancelled_successfully",
-                    null,
+                    budget, // include updated budget
                     new ArrayList<>(List.of(orderId))
             );
             client.sendToClient(response);
 
-            System.out.println("Order " + orderId + " cancelled successfully. Complaints deleted: " + complaints.size());
+            System.out.println("Order " + orderId + " cancelled successfully. Refund: " + refund);
 
         } catch (Exception e) {
             if (tx != null) tx.rollback();
@@ -1457,7 +1451,7 @@ public class SimpleServer extends AbstractServer {
             c.setCustomer(customer);
             c.setOrder(order);
             c.setText(text.length() > 120 ? text.substring(0, 120) : text);
-            c.setSubmittedAt(java.time.LocalDateTime.now());
+            c.setSubmittedAt(LocalDateTime.now());
             c.setDeadline(c.getSubmittedAt().plusHours(24));
             c.setResolved(false);
             c.setBranch(customer.getBranch());
@@ -1543,8 +1537,9 @@ public class SimpleServer extends AbstractServer {
             List<ScheduleOrderDTO> dtoList = new ArrayList<>();
             for (Order o : orders) {
                 boolean delivery = Boolean.TRUE.equals(o.getDelivery());
-                LocalDateTime when = delivery ? o.getDeliveryDateTime() : o.getPickupDateTime();
-                if (when == null) when = o.getOrderDate(); // final fallback
+                java.time.LocalDateTime when = delivery
+                        ? o.getDeliveryDateTime()
+                        : o.getPickupDateTime(); // final fallback
 
                 // whereText: branch for pickup, address for delivery
                 String whereText = "-";
@@ -1701,7 +1696,7 @@ public class SimpleServer extends AbstractServer {
 
             if (unresolvedOnly) list.removeIf(Complaint::isResolved);
 
-            List<ComplaintDTO> dto = list.stream().map(ComplaintDTO::new).collect(java.util.stream.Collectors.toList());
+            List<ComplaintDTO> dto = list.stream().map(ComplaintDTO::new).collect(Collectors.toList());
             client.sendToClient(new Message("complaints_history", dto, null));
         } catch (Exception e) {
             try { client.sendToClient(new Message("complaints_history", List.of(), null)); } catch (IOException ignored) {}
@@ -1793,8 +1788,8 @@ public class SimpleServer extends AbstractServer {
                 return;
             }
             Map<String,Object> p = (Map<String,Object>) m.getObjectList().get(0);
-            String title = java.util.Objects.toString(p.get("title"), "").trim();
-            String body  = java.util.Objects.toString(p.get("body"),  "").trim();
+            String title = Objects.toString(p.get("title"), "").trim();
+            String body  = Objects.toString(p.get("body"),  "").trim();
             if (title.isBlank() || body.isBlank()) {
                 sendMsg(client, new Message("broadcast_error", "empty_fields", null), "create_broadcast");
                 return;
@@ -1832,25 +1827,26 @@ public class SimpleServer extends AbstractServer {
             Long complaintId = null;
             Employee responder = null;
             String responseText = null;
-            java.math.BigDecimal compensation = null;
+            BigDecimal compensation = null;
 
-            // Accept either: Map payload OR positional list
+            // --- parse payload (same as your code) ---
             if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
                 Object first = m.getObjectList().get(0);
                 if (first instanceof Map) {
                     Map<?,?> p = (Map<?,?>) first;
                     Object idObj = p.get("complaintId");
                     if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
-                    else if (idObj instanceof String && !((String) idObj).isBlank()) complaintId = Long.valueOf((String) idObj);
+                    else if (idObj instanceof String && !((String) idObj).isBlank())
+                        complaintId = Long.valueOf((String) idObj);
 
                     Object txt = p.get("responseText");
                     if (txt instanceof String) responseText = ((String) txt).trim();
 
                     Object comp = p.get("compensation");
                     if (comp instanceof java.math.BigDecimal) compensation = (java.math.BigDecimal) comp;
-                    else if (comp instanceof Number) compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
+                    else if (comp instanceof Number)
+                        compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
                 } else {
-                    // old positional style
                     if (m.getObjectList().size() > 0) {
                         Object idObj = m.getObjectList().get(0);
                         if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
@@ -1866,7 +1862,8 @@ public class SimpleServer extends AbstractServer {
                     if (m.getObjectList().size() > 3) {
                         Object comp = m.getObjectList().get(3);
                         if (comp instanceof java.math.BigDecimal) compensation = (java.math.BigDecimal) comp;
-                        else if (comp instanceof Number) compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
+                        else if (comp instanceof Number)
+                            compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
                     }
                 }
             }
@@ -1885,7 +1882,7 @@ public class SimpleServer extends AbstractServer {
             }
 
             c.setResolved(true);
-            c.setResolvedAt(java.time.LocalDateTime.now());
+            c.setResolvedAt(LocalDateTime.now());
             if (responseText != null) c.setResponseText(responseText);
             if (compensation != null) c.setCompensationAmount(compensation);
             if (responder != null) {
@@ -1893,9 +1890,37 @@ public class SimpleServer extends AbstractServer {
                 c.setResponderName(responder.toString());
             }
 
+            // save complaint
             session.merge(c);
 
-            session.flush();
+            System.out.println("[DBG] handleResolveComplaint: complaintId=" + c.getId() + ", compensation=" + compensation);
+
+            if (compensation != null && compensation.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                Long custId = (c.getCustomer() == null) ? null : c.getCustomer().getId();
+                if (custId != null) {
+                    Customer managedCustomer = session.get(Customer.class, custId); // managed
+                    Budget budget = managedCustomer.getBudget();
+
+                    if (budget == null) {
+                        budget = new Budget();
+                        budget.setCustomer(managedCustomer); // owning side
+                        managedCustomer.setBudget(budget);   // keep both sides in sync
+                        session.persist(budget);
+                        System.out.println("[DBG] Created new budget for customer " + custId);
+                    }
+
+                    double oldBal = budget.getBalance();
+                    budget.addFunds(compensation.doubleValue());
+                    System.out.println("[DBG] Budget for customer " + custId + " : " + oldBal + " -> " + budget.getBalance());
+
+                    // Persist changes — update will be issued because Budget is the owning side
+                    session.persist(budget);
+
+                    // Force flush so you can see the SQL in logs immediately
+                    session.flush();
+                }
+            }
+
 
             String comp = (c.getCompensationAmount() != null)
                     ? " Compensation: " + c.getCompensationAmount() + "."
@@ -1907,13 +1932,9 @@ public class SimpleServer extends AbstractServer {
                     "We’ve reviewed your complaint #" + c.getId() + ". " +
                             (c.getResponseText() == null ? "" : c.getResponseText()) + comp);
 
-
             tx.commit();
 
-            // Acknowledge to the resolving employee
             client.sendToClient(new Message("complaint_resolved", new ComplaintDTO(c), null));
-
-            // Nudge all open UIs (employee list hides it unless "show resolved"; customer screen will show response)
             sendToAllClients(new Message("complaints_refresh", null, null));
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
@@ -1922,6 +1943,7 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
+
 
 
 
@@ -2071,7 +2093,6 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-    // --- INBOX: mark one personal notification as UNREAD ---
     private void handleMarkNotificationUnread(Message m, ConnectionToClient client, Session session) {
         try {
             if (m.getObjectList() == null || m.getObjectList().isEmpty()) {
@@ -2186,9 +2207,9 @@ public class SimpleServer extends AbstractServer {
             // Lock using current (old) username; capture it in case it changes
             final String oldUsername = user.getUsername();
             User mergedUser;
-            mergedUser = (User) session.merge(user);
-            if (customer != null) session.merge(customer);
-            tx.commit();
+                mergedUser = (User) session.merge(user);
+                if (customer != null) session.merge(customer);
+                tx.commit();
             session.merge(user);
             if (customer != null) session.merge(customer);
 
@@ -2212,6 +2233,7 @@ public class SimpleServer extends AbstractServer {
             } catch (IOException ignored) {}
         }
     }
+
 
     @SuppressWarnings("unchecked")
     private void handleDeleteProduct(Message msg, ConnectionToClient client, Session session) {
@@ -2320,7 +2342,7 @@ public class SimpleServer extends AbstractServer {
             Map<String, Object> payload = new HashMap<>();
             payload.put("productId", productId);
             payload.put("removedCartItemIds",
-                    java.util.stream.Stream.concat(cartItemsForProduct.stream(), cartItemsForBouquets.stream())
+                    Stream.concat(cartItemsForProduct.stream(), cartItemsForBouquets.stream())
                             .collect(Collectors.toList()));
             payload.put("removedCount", cartItemsForProduct.size() + cartItemsForBouquets.size());
             payload.put("deletedBouquetIds", deletableBouquetIds);
@@ -2403,8 +2425,11 @@ public class SimpleServer extends AbstractServer {
 
             // update in-memory snapshot
             catalogLock.writeLock().lock();
-            try { catalog.getFlowers().add(product); }
-            finally { catalogLock.writeLock().unlock(); }
+            try {
+                catalog.getFlowers().add(product);
+            } finally {
+                catalogLock.writeLock().unlock();
+            }
 
             // Broadcast new product + its image bytes to all clients
             sendToAllClients(new Message(
@@ -2450,28 +2475,28 @@ public class SimpleServer extends AbstractServer {
     private void handleUserRegistration(Message msg, ConnectionToClient client, Session session) throws IOException {
         String username = ((Customer) (msg.getObject())).getUsername();
         String idNumber = ((Customer) (msg.getObject())).getIdNumber();
-        if (checkExistenceUsername(session,username)) {
-            client.sendToClient(new Message("user already exists", msg.getObject(), null));
-            return;
-        }
-        if(checkExistenceIdNumber(idNumber, session)) {
-            client.sendToClient(new Message("id already exists", msg.getObject(), null));
-            return;
-        }
-        Transaction tx = session.beginTransaction();
-        try {
-            Customer incoming = (Customer) msg.getObject();
+            if (checkExistenceUsername(session,username)) {
+                client.sendToClient(new Message("user already exists", msg.getObject(), null));
+                return;
+            }
+            if(checkExistenceIdNumber(idNumber, session)) {
+                client.sendToClient(new Message("id already exists", msg.getObject(), null));
+                return;
+            }
+            Transaction tx = session.beginTransaction();
+            try {
+                Customer incoming = (Customer) msg.getObject();
 
-            session.save(incoming);
-            tx.commit();
+                session.save(incoming);
+                tx.commit();
 
-            client.sendToClient(new Message("registered", null, null));
-        } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
-            try { client.sendToClient(new Message("registration_failed", null, null)); }
-            catch (IOException ignored) {}
-            e.printStackTrace();
-        }
+                client.sendToClient(new Message("registered", null, null));
+            } catch (Exception e) {
+                if (tx.isActive()) tx.rollback();
+                try { client.sendToClient(new Message("registration_failed", null, null)); }
+                catch (IOException ignored) {}
+                e.printStackTrace();
+            }
     }
 
 
@@ -2588,7 +2613,7 @@ public class SimpleServer extends AbstractServer {
             """, Long.class).setParameter("pid", productId).getResultList();
 
             if (!affectedCartIds.isEmpty()) {
-                java.math.BigDecimal newUnit = java.math.BigDecimal.valueOf(managed.getSalePrice());
+                BigDecimal newUnit = BigDecimal.valueOf(managed.getSalePrice());
 
                 for (Long cid : affectedCartIds) {
                     Cart cart = fetchCartWithEverything(session, cid);
@@ -2629,9 +2654,7 @@ public class SimpleServer extends AbstractServer {
     }
 
     private void handleClientRemoval(ConnectionToClient client) {
-        synchronized (subscribersLock) {
-            subscribersList.removeIf(sc -> sc.getClient().equals(client));
-        }
+        subscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
     }
 
     @SuppressWarnings("unchecked")
@@ -3162,6 +3185,7 @@ public class SimpleServer extends AbstractServer {
             order.setNote(clientOrder.getNote());
             order.setPaymentMethod(clientOrder.getPaymentMethod());
             order.setPaymentDetails(clientOrder.getPaymentDetails());
+            order.setTotalPrice(cart.getTotalWithDiscount());
 
             // 4) Convert cart items -> order items, snapshotting
             for (CartItem cartItem : new ArrayList<>(cart.getItems())) {
@@ -3257,7 +3281,7 @@ public class SimpleServer extends AbstractServer {
                 line.setBouquet(copy);
                 line.setFlower(null); // drop FK to Product; keep snapshots only
                 line.setFlowerNameSnapshot(it.getFlowerNameSnapshot());
-                line.setUnitPriceSnapshot(it.getUnitPriceSnapshot() != null ? it.getUnitPriceSnapshot() : java.math.BigDecimal.ZERO);
+                line.setUnitPriceSnapshot(it.getUnitPriceSnapshot() != null ? it.getUnitPriceSnapshot() : BigDecimal.ZERO);
                 line.setQuantity(Math.max(0, it.getQuantity()));
                 copy.getItems().add(line);
             }
@@ -3270,16 +3294,9 @@ public class SimpleServer extends AbstractServer {
 
     public void sendToAllClients(Message message) {
         try {
-            java.util.List<SubscribedClient> toRemove = new java.util.ArrayList<>();
-            java.util.List<SubscribedClient> _snapshot;
-            synchronized (subscribersLock) {
-                _snapshot = new java.util.ArrayList<>(subscribersList);
-            }
-            for (SubscribedClient subscribedClient : _snapshot) {
-
+            for (SubscribedClient subscribedClient : subscribersList) {
                 try {
                     subscribedClient.getClient().sendToClient(message);
-
                 } catch (IOException e) {
                     subscribersList.remove(subscribedClient);
                     System.out.println("Removed disconnected client");
