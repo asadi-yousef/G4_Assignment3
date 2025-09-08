@@ -135,8 +135,15 @@ public class LoginControl implements Initializable {
                         else if(employee.getRole().equals("systemadmin")) {
                             EventBus.getDefault().unregister(this);
                             App.setRoot("AdminUsersView");
+                        } else if (employee.getRole().equals("driver")) {
+                            // Driver uses the *same* schedule screen, but it will lock itself to deliveries
+                            EventBus.getDefault().unregister(this);
+                            App.setRoot("employeeScheduleView"); }
+                        else {
+                            EventBus.getDefault().unregister(this);
+                            App.setRoot("employeeSchedule");
                         }
-                    }
+                        }
                 } catch (IOException e) {
                     showError("Failed to load the main page.");
                     e.printStackTrace();

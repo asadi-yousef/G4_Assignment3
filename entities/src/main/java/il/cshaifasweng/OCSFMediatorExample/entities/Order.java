@@ -154,7 +154,9 @@ public class Order implements Serializable {
                 .mapToDouble(item -> item.getDisplayUnitPrice() * item.getQuantity())
                 .sum();
 
-        if (customer != null && customer.hasValidSubscription() && total > 50) {
+        // Network-account discount (10%) for orders >= 50
+        boolean network = (customer != null) && customer.isNetworkAccount();
+        if (network && total >= 50.0) {
             total *= 0.9;
         }
         return total;

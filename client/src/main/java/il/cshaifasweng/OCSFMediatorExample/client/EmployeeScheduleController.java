@@ -56,6 +56,8 @@ public class EmployeeScheduleController implements Initializable {
             new javafx.collections.transformation.SortedList<>(filteredData);
 
     private Employee currentEmployee;
+    private boolean driverMode = false;
+
 
     // --- initialize ---
     @Override
@@ -67,8 +69,13 @@ public class EmployeeScheduleController implements Initializable {
             if (!SimpleClient.getClient().isConnected()) SimpleClient.getClient().openConnection();
         } catch (IOException e) { status("Failed to connect to server."); return; }
 
+        // Who am I?
         User u = SessionManager.getInstance().getCurrentUser();
-        if (u instanceof Employee) currentEmployee = (Employee) u;
+        if (u instanceof Employee emp) {
+            currentEmployee = emp;
+            String r = emp.getRole() == null ? "" : emp.getRole().toLowerCase();
+            driverMode = "driver".equals(r);
+        }
 
         // --- Column factories (only if table exists in this FXML) ---
         if (colId != null) {
@@ -107,10 +114,16 @@ public class EmployeeScheduleController implements Initializable {
         }
 
         // UI defaults
-        if (dayPicker != null) dayPicker.setValue(java.time.LocalDate.now());
+        if (dayPicker != null) dayPicker.setValue(LocalDate.now());
         if (filterChoice != null) {
             filterChoice.getItems().setAll("All", "Pickup", "Delivery");
-            filterChoice.setValue("All");
+            filterChoice.setValue(driverMode ? "Delivery" : "All");
+            if (driverMode) {
+                // lock to Delivery for drivers
+                filterChoice.setDisable(true);
+                filterChoice.setVisible(false);
+                filterChoice.setManaged(false);
+            }
         }
 
         if (dayPicker != null) dayPicker.valueProperty().addListener((o, a, b) -> requestDay());
@@ -126,10 +139,7 @@ public class EmployeeScheduleController implements Initializable {
                 new javafx.animation.KeyFrame(javafx.util.Duration.seconds(10), e -> requestDay()));
         autoRefresh.setCycleCount(javafx.animation.Animation.INDEFINITE);
         autoRefresh.play();
-
-
     }
-
 
 
     private void addActionColumn() {
@@ -165,16 +175,26 @@ public class EmployeeScheduleController implements Initializable {
                 var dto = getTableView().getItems().get(getIndex());
                 if (dto == null) { setGraphic(null); return; }
 
-                String status = java.util.Objects.toString(dto.getStatus(), "PLACED");
+                String status = Objects.toString(dto.getStatus(), "PLACED");
                 boolean isPickup = !dto.isDelivery();
-                boolean isPending = pending.contains(dto.getId());   // <— NEW
+                boolean isPending = pending.contains(dto.getId());
 
-                // set labels
+                // Default labels
                 completeBtn.setText(isPickup ? "Picked up" : "Delivered");
 
-                boolean canReady             = isPickup && !"READY_FOR_PICKUP".equalsIgnoreCase(status) && !"PICKED_UP".equalsIgnoreCase(status);
-                boolean canCompletePickup    = isPickup && "READY_FOR_PICKUP".equalsIgnoreCase(status);
-                boolean canCompleteDelivery  = !isPickup && !"DELIVERED".equalsIgnoreCase(status);
+                boolean canReady            = isPickup && !"READY_FOR_PICKUP".equalsIgnoreCase(status) && !"PICKED_UP".equalsIgnoreCase(status);
+                boolean canCompletePickup   = isPickup && "READY_FOR_PICKUP".equalsIgnoreCase(status);
+                boolean canCompleteDelivery = !isPickup && !"DELIVERED".equalsIgnoreCase(status);
+
+                // Driver mode: hide "Ready" and force complete to "Delivered"
+                if (driverMode) {
+                    readyBtn.setVisible(false);
+                    readyBtn.setManaged(false);
+                    completeBtn.setText("Delivered");
+                } else {
+                    readyBtn.setVisible(true);
+                    readyBtn.setManaged(true);
+                }
 
                 // disable while pending OR when not allowed
                 readyBtn.setDisable(isPending || !canReady);
@@ -184,35 +204,38 @@ public class EmployeeScheduleController implements Initializable {
             }});
     }
 
+
     private void setStatus(String s) { System.out.println("[CLI][schedule] " + s); }
 
     private void requestDay() {
         try {
-            // open or re-open socket
             if (!SimpleClient.getClient().isConnected()) {
                 System.out.println("[CLI][schedule] opening connection…");
                 SimpleClient.getClient().openConnection();
             }
-
-            // Build the tiniest serializable payload possible: a plain String "yyyy-MM-dd"
             String dateStr = (dayPicker != null && dayPicker.getValue() != null)
                     ? dayPicker.getValue().toString()
                     : LocalDate.now().toString();
 
             System.out.println("[CLI][schedule] SENDING key=request_orders_by_day obj=\"" + dateStr + "\" list=null");
-            // IMPORTANT: objectList must be null to avoid serializing non-serializable stuff by mistake
             SimpleClient.getClient().sendToServer(new Message("request_orders_by_day", dateStr, null));
 
             setStatus("Loading schedule…");
         } catch (Exception e) {
             System.out.println("[CLI][schedule] send failed: " + e.getClass().getName() + ": " + e.getMessage());
-            e.printStackTrace(); // this prints the exact cause to your client console
+            e.printStackTrace();
             setStatus("Failed to open schedule");
         }
     }
 
 
+
     private void updateFilter() {
+        if (driverMode) {
+            // Hard lock to deliveries
+            filteredData.setPredicate(ScheduleOrderDTO::isDelivery);
+            return;
+        }
         String f = filterChoice.getValue();
         if (f == null || "All".equals(f)) {
             filteredData.setPredicate(dto -> true);
@@ -221,6 +244,7 @@ public class EmployeeScheduleController implements Initializable {
             filteredData.setPredicate(dto -> dto.isDelivery() == wantDelivery);
         }
     }
+
 
     @FXML private Button openScheduleBtn;
 
@@ -263,6 +287,7 @@ public class EmployeeScheduleController implements Initializable {
     }
 
 
+
     private void markCompleted(ScheduleOrderDTO dto) {
         if (dto == null || inFlight.contains(dto.getId())) return;
         inFlight.add(dto.getId());
@@ -278,13 +303,21 @@ public class EmployeeScheduleController implements Initializable {
     }
 
 
+
     @Subscribe
     public void onServer(Message msg) {
         switch (msg.getMessage()) {
             case "orders_for_day" -> Platform.runLater(() -> {
                 @SuppressWarnings("unchecked")
-                var list = (java.util.List<ScheduleOrderDTO>) msg.getObject();
-                masterData.setAll(list == null ? java.util.List.of() : list);
+                var list = (List<ScheduleOrderDTO>) msg.getObject();
+
+                // Load into masterData; if driver, keep only deliveries
+                masterData.setAll(list == null ? List.of() :
+                        (driverMode ? list.stream().filter(ScheduleOrderDTO::isDelivery).toList()
+                                : list));
+
+                updateFilter(); // ensure filteredData predicate is correct for current mode
+
                 if (noOrdersLabel != null) {
                     boolean empty = masterData.isEmpty();
                     noOrdersLabel.setVisible(empty);
@@ -294,15 +327,14 @@ public class EmployeeScheduleController implements Initializable {
                 renderCards();
             });
 
-
-            case "order_ready_ack" -> javafx.application.Platform.runLater(() -> {
+            case "order_ready_ack" -> Platform.runLater(() -> {
                 Long id = null;
                 String newStatus = "READY_FOR_PICKUP";
 
                 Object o = msg.getObject();
                 if (o instanceof il.cshaifasweng.OCSFMediatorExample.entities.Order ord) {
                     id = ord.getId();
-                    newStatus = java.util.Objects.toString(ord.getStatus(), newStatus);
+                    newStatus = Objects.toString(ord.getStatus(), newStatus);
                 } else if (o instanceof Number n) {
                     id = n.longValue();
                 }
@@ -310,8 +342,8 @@ public class EmployeeScheduleController implements Initializable {
                 if (id != null) {
                     final Long idF = id;
                     final String stF = newStatus;
-                    masterData.stream().filter(d -> java.util.Objects.equals(d.getId(), idF)).findFirst()
-                            .ifPresent(d -> { d.setStatus(stF); table.refresh(); });
+                    masterData.stream().filter(d -> Objects.equals(d.getId(), idF)).findFirst()
+                            .ifPresent(d -> { d.setStatus(stF); if (table != null) table.refresh(); });
                     inFlight.remove(idF);
                     pending.remove(idF);
                 }
@@ -319,15 +351,19 @@ public class EmployeeScheduleController implements Initializable {
                 renderCards();
             });
 
-            case "order_completed_ack" -> javafx.application.Platform.runLater(() -> {
+            case "order_completed_ack" -> Platform.runLater(() -> {
                 Long id = (msg.getObject() instanceof Number n) ? n.longValue() : null;
                 if (id != null) {
                     final Long idF = id;
-                    masterData.stream().filter(d -> java.util.Objects.equals(d.getId(), idF)).findFirst()
+                    masterData.stream().filter(d -> Objects.equals(d.getId(), idF)).findFirst()
                             .ifPresent(d -> {
                                 d.setStatus(d.isDelivery() ? "DELIVERED" : "PICKED_UP");
-                                table.refresh();
+                                if (table != null) table.refresh();
                             });
+                    // In driver mode we typically remove delivered items from the card list view
+                    if (driverMode) {
+                        masterData.removeIf(d -> Objects.equals(d.getId(), idF));
+                    }
                     inFlight.remove(idF);
                     pending.remove(idF);
                 }
@@ -335,21 +371,25 @@ public class EmployeeScheduleController implements Initializable {
                 renderCards();
             });
 
-            // LIVE push from server when someone else changes a status
             case "orders_state_changed" -> Platform.runLater(() -> {
-                var m = (java.util.Map<?,?>) msg.getObject();
+                var m = (Map<?,?>) msg.getObject();
                 Long id  = (m.get("orderId") instanceof Number) ? ((Number)m.get("orderId")).longValue() : null;
-                String st = java.util.Objects.toString(m.get("status"), null);
+                String st = Objects.toString(m.get("status"), null);
                 if (id != null && st != null) {
-                    final Long idF = id; final String stF = st; // effectively final for the lambda
-                    masterData.stream().filter(d -> java.util.Objects.equals(d.getId(), idF)).findFirst()
-                            .ifPresent(d -> { d.setStatus(stF); table.refresh(); });
+                    final Long idF = id; final String stF = st;
+                    masterData.stream().filter(d -> Objects.equals(d.getId(), idF)).findFirst()
+                            .ifPresent(d -> { d.setStatus(stF); if (table != null) table.refresh(); });
+                    // If someone else delivered it, drop it in driver mode
+                    if (driverMode && "DELIVERED".equalsIgnoreCase(stF)) {
+                        masterData.removeIf(d -> Objects.equals(d.getId(), idF));
+                    }
                     pending.remove(idF);
                 }
                 renderCards();
             });
         }
     }
+
 
     private javafx.scene.layout.VBox buildCard(ScheduleOrderDTO dto) {
         var box = new javafx.scene.layout.VBox(10);
@@ -363,9 +403,9 @@ public class EmployeeScheduleController implements Initializable {
                 whenLabel + (dto.getScheduledAt() == null ? "-" : dtFmt.format(dto.getScheduledAt()))
         );
         when.setStyle("-fx-text-fill:#34495e;");
-        var where = new javafx.scene.control.Label((dto.isDelivery() ? "Address: " : "Branch: ") + java.util.Objects.toString(dto.getWhereText(), "-"));
+        var where = new javafx.scene.control.Label((dto.isDelivery() ? "Address: " : "Branch: ") + Objects.toString(dto.getWhereText(), "-"));
         where.setStyle("-fx-text-fill:#34495e;");
-        var status = new javafx.scene.control.Label("Status: " + java.util.Objects.toString(dto.getStatus(),"PLACED"));
+        var status = new javafx.scene.control.Label("Status: " + Objects.toString(dto.getStatus(),"PLACED"));
         status.setStyle("-fx-text-fill:#7f8c8d;");
 
         // items
@@ -398,11 +438,18 @@ public class EmployeeScheduleController implements Initializable {
         var completeBtn = new javafx.scene.control.Button(dto.isDelivery() ? "Delivered" : "Picked up");
         completeBtn.setStyle("-fx-background-color:#2ecc71; -fx-text-fill:white; -fx-background-radius:8;");
 
-        String st = java.util.Objects.toString(dto.getStatus(), "PLACED");
+        String st = Objects.toString(dto.getStatus(), "PLACED");
         boolean isPickup = !dto.isDelivery();
         boolean canReady = isPickup && !st.equalsIgnoreCase("READY_FOR_PICKUP") && !st.equalsIgnoreCase("PICKED_UP");
         boolean canCompletePickup = isPickup && st.equalsIgnoreCase("READY_FOR_PICKUP");
         boolean canCompleteDelivery = !isPickup && !st.equalsIgnoreCase("DELIVERED");
+
+        // Driver mode: only show Delivered
+        if (driverMode) {
+            readyBtn.setVisible(false);
+            readyBtn.setManaged(false);
+            completeBtn.setText("Delivered");
+        }
 
         readyBtn.setDisable(!canReady || inFlight.contains(dto.getId()));
         completeBtn.setDisable(!(isPickup ? canCompletePickup : canCompleteDelivery) || inFlight.contains(dto.getId()));
@@ -411,10 +458,10 @@ public class EmployeeScheduleController implements Initializable {
         completeBtn.setOnAction(e -> { completeBtn.setDisable(true); markCompleted(dto); });
 
         actions.getChildren().addAll(readyBtn, completeBtn);
-
         box.getChildren().addAll(title, when, where, status, itemsWrap, actions);
         return box;
     }
+
 
 
     private void status(String s) { if (statusLabel != null) statusLabel.setText(s);  System.out.println("[CLI][schedule] " + s);}
@@ -427,23 +474,25 @@ public class EmployeeScheduleController implements Initializable {
 
     private void renderCards() {
         Platform.runLater(() -> {
+            if (cardList == null) return;
             cardList.getItems().clear();
-            for (ScheduleOrderDTO dto : masterData) {
+            for (ScheduleOrderDTO dto : (driverMode
+                    ? masterData.stream().filter(ScheduleOrderDTO::isDelivery).toList()
+                    : masterData)) {
                 cardList.getItems().add(buildCard(dto));
             }
             if (noOrdersLabel != null) {
-                boolean empty = masterData.isEmpty();
+                boolean empty = cardList.getItems().isEmpty();
                 noOrdersLabel.setVisible(empty);
                 noOrdersLabel.setManaged(empty);
             }
         });
     }
 
-
     @FXML private void handleBack() {
         try {
             if (autoRefresh != null) autoRefresh.stop();
-            org.greenrobot.eventbus.EventBus.getDefault().unregister(this);
+            EventBus.getDefault().unregister(this);
             App.setRoot("primary");
         } catch (Exception e) { status("Failed to return."); }
     }
