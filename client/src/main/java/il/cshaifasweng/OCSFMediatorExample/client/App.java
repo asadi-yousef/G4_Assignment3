@@ -41,6 +41,11 @@ public class App extends Application {
         Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
         scene = new Scene(loadFXML("connection"),screenBounds.getWidth(),screenBounds.getHeight());
         stage.setTitle("Lilac");
+        stage.getIcons().add(
+                new javafx.scene.image.Image(
+                        getClass().getResourceAsStream("/il/cshaifasweng/OCSFMediatorExample/client/images/Lilac1.png")
+                )
+        );
         stage.setScene(scene);
         stage.show();
     }

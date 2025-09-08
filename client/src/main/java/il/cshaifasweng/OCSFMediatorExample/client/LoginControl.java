@@ -147,6 +147,9 @@ public class LoginControl implements Initializable {
             else if ("already_logged".equals(message.getMessage())) {
                 showError("User already logged from another computer.");
             }
+            else if("frozen".equals(message.getMessage())) {
+                showError("This account is frozen, contact the administrator.");
+            }
         });
     }
 

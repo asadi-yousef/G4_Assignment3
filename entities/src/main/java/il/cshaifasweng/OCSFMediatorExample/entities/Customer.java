@@ -10,14 +10,10 @@ import java.time.LocalDate;
 public class Customer extends User implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    @Column
-    private boolean isNetworkAccount;
 
     @Column
     private boolean isSubscribed;
 
-    @Column
-    private String idNumber;
     @Column
     private String email;
     @Column
@@ -49,12 +45,11 @@ public class Customer extends User implements Serializable {
         super();
     }
 
-    public Customer(String idNumber, String name, String username, String password, boolean isNetworkAccount,
+    public Customer(String idNumber, String firstName,String lastName, String username, String password, boolean isNetworkAccount,
                     boolean isSubscribed, LocalDate subStartDate, LocalDate subExpDate, String email, String phone,
                     String address, String city, String country, String cardNumber,
                     int expirationMonth, int expirationYear, String cvv, Branch branch, Budget budget) {
-        super(name, username, password,branch,isNetworkAccount);
-        this.idNumber = idNumber;
+        super(idNumber,firstName,lastName, username, password,branch,isNetworkAccount);
         this.email = email;
         this.phone = phone;
         this.address = address;
@@ -62,7 +57,6 @@ public class Customer extends User implements Serializable {
         this.country = country;
         this.creditCard = new CreditCard(cardNumber, expirationMonth, expirationYear, cvv, this);
         this.subscription = new Subscription(subStartDate, subExpDate, true, this);
-        this.isNetworkAccount = isNetworkAccount;
         this.isSubscribed = isSubscribed;
         this.budget = budget;
 
@@ -97,10 +91,13 @@ public class Customer extends User implements Serializable {
     }
 
     public Subscription getSubscription() { return subscription; }
-    public void setSubscription(Subscription subscription) {
-        this.subscription = subscription;
-        subscription.setCustomer(this); // keep both sides in sync
+    public void setSubscription(Subscription s) {
+        if (this.subscription == s) return;
+        if (this.subscription != null) this.subscription.setCustomer(null);
+        this.subscription = s;
+        if (s != null && s.getCustomer() != this) s.setCustomer(this);
     }
+
     public boolean hasValidSubscription() {
         return isSubscribed && subscription != null && subscription.isCurrentlyActive();
     }
@@ -115,12 +112,6 @@ public class Customer extends User implements Serializable {
 
     public boolean isFrozen() { return frozen; }
     public void setFrozen(boolean frozen) { this.frozen = frozen; }
-    public boolean isNetworkAccount() {
-        return isNetworkAccount;
-    }
-    public void setNetworkAccount(boolean isNetworkAccount) {
-        this.isNetworkAccount = isNetworkAccount;
-    }
     public boolean isSubscribed() {
         return isSubscribed;
     }

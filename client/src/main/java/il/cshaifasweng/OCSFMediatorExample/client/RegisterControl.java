@@ -24,7 +24,8 @@ public class RegisterControl implements Initializable {
 
     // Existing FXML fields
     @FXML private TextArea idField;            // NEW: ID textarea
-    @FXML private TextField nameField;
+    @FXML private TextField firstNameField;
+    @FXML private TextField lastNameField;
     @FXML private TextField usernameField;
     @FXML private PasswordField passwordField;
     @FXML private TextField emailField;
@@ -82,7 +83,7 @@ public class RegisterControl implements Initializable {
     }
 
     private void populateAccountTypes() {
-        accountTypeComboBox.getItems().addAll("Branch Account", "Network Account", "yearly subscription");
+        accountTypeComboBox.getItems().addAll("Branch Account", "Net Account", "yearly subscription");
     }
 
     private void populateExpirationDate() {
@@ -100,8 +101,8 @@ public class RegisterControl implements Initializable {
                         branchComboBox.setVisible(true);
                         branchComboBox.setManaged(true);
                         break;
-                    case "Network Account":
-                        accountTypeDescriptionLabel.setText("A yearly subscription with a 10% discount on all purchases!");
+                    case "Net Account":
+                        accountTypeDescriptionLabel.setText("A net account for all branches.");
                         branchComboBox.setVisible(false);
                         branchComboBox.setManaged(false);
                         break;
@@ -133,7 +134,11 @@ public class RegisterControl implements Initializable {
                 }
             } else if ("user already exists".equals(msg.getMessage())) {
                 showAlert(Alert.AlertType.ERROR, "Registration Failed", "A user with this username already exists.");
-            } else if (msg.getMessage().startsWith("Branches")) {
+            }
+            else if("id already exists".equals(msg.getMessage())) {
+                showAlert(Alert.AlertType.ERROR, "Registration Failed", "A user with this id number already exists.");
+            }
+            else if (msg.getMessage().startsWith("Branches")) {
                 this.branches = (List<Branch>) msg.getObject();
                 branchComboBox.getItems().clear();
                 for (Branch branch : branches) {
@@ -156,7 +161,8 @@ public class RegisterControl implements Initializable {
                 // IMPORTANT: ID is now the FIRST constructor parameter as requested
                 Customer newCustomer = new Customer(
                         idField.getText().trim(),
-                        nameField.getText().trim(),
+                        firstNameField.getText().trim(),
+                        lastNameField.getText().trim(),
                         usernameField.getText().trim(),
                         passwordField.getText(),
                         isNetworkAccount,
@@ -222,8 +228,11 @@ public class RegisterControl implements Initializable {
             errorMessage.append("Invalid Israeli ID number.\n");
         }
 
-        if (nameField.getText() == null || nameField.getText().trim().isEmpty()) {
+        if (firstNameField.getText() == null || firstNameField.getText().trim().isEmpty()) {
             errorMessage.append("Name is required.\n");
+        }
+        if (lastNameField.getText() == null || lastNameField.getText().trim().isEmpty()) {
+            errorMessage.append("Last name is required.\n");
         }
         if (usernameField.getText() == null || usernameField.getText().trim().isEmpty()) {
             errorMessage.append("Username is required.\n");
@@ -275,26 +284,12 @@ public class RegisterControl implements Initializable {
         return true;
     }
 
-    // Israeli ID checksum validation (pads to 9 digits and verifies check digit)
     private boolean isValidIsraeliID(String idRaw) {
         if (idRaw == null) return false;
-        String id = idRaw.replaceAll("\\D", "");
-        if (id.isEmpty()) return false;
-
-        // Pad with leading zeros to 9 digits (standard Israeli ID format)
-        id = String.format("%9s", id).replace(' ', '0');
-        if (!id.matches("\\d{9}")) return false;
-
-        int sum = 0;
-        for (int i = 0; i < 9; i++) {
-            int digit = id.charAt(i) - '0';
-            int factor = (i % 2 == 0) ? 1 : 2;
-            int prod = digit * factor;
-            // sum digits (equivalent to (prod > 9 ? prod - 9 : prod))
-            sum += (prod / 10) + (prod % 10);
-        }
-        return sum % 10 == 0;
+        // Accept only if the string is exactly 9 characters long and all digits
+        return idRaw.matches("\\d{9}");
     }
+
 
     private boolean isValidPhone(String phone) {
         return phone.matches("^\\+?[0-9]{7,15}$");
@@ -311,7 +306,8 @@ public class RegisterControl implements Initializable {
 
     private void clearForm() {
         if (idField != null) idField.clear();
-        nameField.clear();
+        firstNameField.clear();
+        lastNameField.clear();
         usernameField.clear();
         passwordField.clear();
         emailField.clear();

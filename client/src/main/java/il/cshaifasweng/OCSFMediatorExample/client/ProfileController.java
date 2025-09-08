@@ -84,8 +84,8 @@ public class ProfileController implements Initializable {
         if (currentUser != null) {
             Platform.runLater(() -> {
                 // Load User data
-                welcomeLabel.setText("Welcome, " + (currentUser.getName() != null ? currentUser.getName() : "User") + "!");
-                nameField.setText(currentUser.getName() != null ? currentUser.getName() : "");
+                welcomeLabel.setText("Welcome, " + (currentUser.getFirstName() != null ? currentUser.getFirstName() : "User") + "!");
+                nameField.setText(currentUser.getFirstName() != null ? currentUser.getFirstName() : "");
                 usernameField.setText(currentUser.getUsername() != null ? currentUser.getUsername() : "");
                 passwordField.setText("••••••••"); // Always masked
 
@@ -138,7 +138,7 @@ public class ProfileController implements Initializable {
 
                 // Update User fields
                 if (!nameField.getText().trim().isEmpty()) {
-                    customerUser.setName(nameField.getText().trim());
+                    customerUser.setFirstName(nameField.getText().trim());
                 }
                 if (!usernameField.getText().trim().isEmpty()) {
                     customerUser.setUsername(usernameField.getText().trim());
@@ -166,7 +166,7 @@ public class ProfileController implements Initializable {
                 // Current user is just a User, not a Customer
                 // Update User data
                 if (!nameField.getText().trim().isEmpty()) {
-                    currentUser.setName(nameField.getText().trim());
+                    currentUser.setFirstName(nameField.getText().trim());
                 }
                 if (!usernameField.getText().trim().isEmpty()) {
                     currentUser.setUsername(usernameField.getText().trim());

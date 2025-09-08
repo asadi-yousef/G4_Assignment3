@@ -42,8 +42,11 @@ public class Complaint implements Serializable {
     private BigDecimal compensationAmount;     // optional
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "responder_id")
+    @JoinColumn(name = "responder_id",nullable = true)
     private Employee responder;                // who resolved
+
+    @Column
+    private String responderName;
 
     private LocalDateTime resolvedAt;          // timestamp of resolve
 
@@ -82,4 +85,6 @@ public class Complaint implements Serializable {
     public void setResponder(Employee responder) { this.responder = responder; }
     public LocalDateTime getResolvedAt() { return resolvedAt; }
     public void setResolvedAt(LocalDateTime resolvedAt) { this.resolvedAt = resolvedAt; }
+    public String getResponderName() { return responderName; }
+    public void setResponderName(String responderName) { this.responderName = responderName; }
 }
