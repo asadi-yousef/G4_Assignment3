@@ -28,6 +28,7 @@ public class Order implements Serializable {
     private String note; // ברכה (optional)
     private String paymentMethod; // "SavedCard", "NewCard", "CashOnDelivery"
     private String paymentDetails; // e.g. card number or "Cash on Delivery"
+    private double totalPrice;
 
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<OrderItem> items = new ArrayList<>();
@@ -37,7 +38,7 @@ public class Order implements Serializable {
     public Order(Customer customer, String branchName, boolean delivery,
                  LocalDateTime orderDate, LocalDateTime deliveryDateTime,
                  String recipientPhone, String deliveryAddress, String note,
-                 String paymentMethod, String paymentDetails) {
+                 String paymentMethod, String paymentDetails, double totalPrice) {
         this.customer = customer;
         this.branchName = branchName;
         this.delivery = delivery;
@@ -48,6 +49,7 @@ public class Order implements Serializable {
         this.note = note;
         this.paymentMethod = paymentMethod;
         this.paymentDetails = paymentDetails;
+        this.totalPrice = totalPrice;
     }
 
     public Long getId() {
@@ -122,6 +124,13 @@ public class Order implements Serializable {
     }
     public void setPaymentDetails(String paymentDetails) {
         this.paymentDetails = paymentDetails;
+    }
+
+    public double getTotalPrice() {
+        return totalPrice;
+    }
+    public void setTotalPrice(double totalPrice) {
+        this.totalPrice = totalPrice;
     }
 
     public List<OrderItem> getItems() {

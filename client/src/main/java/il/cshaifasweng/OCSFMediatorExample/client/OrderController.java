@@ -228,11 +228,16 @@ public class OrderController implements Initializable {
                 } else {
                     budgetBalanceLabel.setText("Budget Balance: ₪0.00");
                 }
+
+                // Hide the new card box until needed
+                newCardBox.setVisible(false);
+                newCardBox.setManaged(false);
             } else {
                 budgetBox.setVisible(false);
                 budgetBox.setManaged(false);
             }
         });
+
         currentOrderTotal = SessionManager.getInstance().getOrderTotal();
         orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
         useBudgetButton.setOnAction(e -> {
@@ -306,20 +311,6 @@ public class OrderController implements Initializable {
                     }
                 }
             } else {
-                // Delivery
-                LocalDate date = deliveryDatePicker.getValue();
-                Integer hour = deliveryHourSpinner.getValue();
-                if (date == null || date.isBefore(LocalDate.now())) {
-                    showAlert("Invalid Date", "Please select a valid delivery date.");
-                    return;
-                }
-                deliveryTime = date.atTime(hour != null ? hour : 12, 0);
-
-                // 🔹 Final validation: block past times
-                if (deliveryTime.isBefore(LocalDateTime.now())) {
-                    showAlert("Invalid Time", "Please select a future time.");
-                    return;
-                }
 
                 deliveryAddress = deliveryAddressField.getText();
                 if (deliveryAddress == null || deliveryAddress.trim().isEmpty()) {
@@ -335,6 +326,21 @@ public class OrderController implements Initializable {
                     return;
                 }
             }
+            // Delivery date time
+            LocalDate date = deliveryDatePicker.getValue();
+            Integer hour = deliveryHourSpinner.getValue();
+            if (date == null || date.isBefore(LocalDate.now())) {
+                showAlert("Invalid Date", "Please select a valid delivery date.");
+                return;
+            }
+            deliveryTime = date.atTime(hour != null ? hour : 12, 0);
+
+            // 🔹 Final validation: block past times
+            if (deliveryTime.isBefore(LocalDateTime.now())) {
+                showAlert("Invalid Time", "Please select a future time.");
+                return;
+            }
+
             double orderTotal = SessionManager.getInstance().getOrderTotal();
             String paymentMethod = paymentMethodChoice.getValue();
             if (paymentMethod == null) {
@@ -342,6 +348,7 @@ public class OrderController implements Initializable {
                 return;
             }
             String paymentDetails = null;
+
             boolean isPaid = false;
             while(!isPaid) {
                 if ("Saved Card".equals(paymentMethod)) {
@@ -358,42 +365,49 @@ public class OrderController implements Initializable {
                         return;
                     }
                     isPaid = true;
-                } else if ("Pay Upon Delivery".equals(paymentMethod)) {
-                    paymentDetails = "Cash on Delivery";
-                    isPaid = true;
-                } else if ("My Budget".equals(paymentMethod)) {
+                }
+                else if ("My Budget".equals(paymentMethod)) {
                     Budget budget = customer.getBudget();
-                    if (budget != null) {
-                        double fromBudget = Math.min(orderTotal, budget.getBalance());
-                        if (fromBudget == orderTotal) {
-                            orderTotal = 0;
-                            isPaid = true;
-                        }
-                        else {
-                            orderTotal -= fromBudget;
-                            double remaining = orderTotal;
-                            Platform.runLater(() -> {
-                                Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                                alert.setTitle("Additional Payment Required");
-                                alert.setHeaderText(null);
-                                alert.setContentText("Your budget covered ₪"
-                                        + String.format("%.2f", fromBudget)
-                                        + ". You still need to pay ₪"
-                                        + String.format("%.2f", remaining)
-                                        + ". Please select another payment method.");
-                                alert.showAndWait();
-                            });
-
-                            // Optionally reset payment dropdown
-                            paymentMethodChoice.getSelectionModel().clearSelection();
-                        }
-                        budget.subtractFunds(fromBudget);
-                        List<Object> payload = new ArrayList<>();
-                        payload.add(customer);
-                        Message msg = new Message(("update_budget"), null, payload);
-                        SimpleClient.getClient().sendToServer(msg);
-
+                    if (budget == null || budget.getBalance() <= 0) {
+                        showAlert("Insufficient Funds", "Your budget is empty. Please select another payment method.");
+                        paymentMethodChoice.getSelectionModel().clearSelection();
+                        return;
                     }
+
+                    if (budget.getBalance() >= orderTotal) {
+                        // Budget covers full order
+                        budget.subtractFunds(orderTotal);
+                        orderTotal = 0;
+                        isPaid = true;
+                    } else {
+                        // Budget insufficient: pay what we can and ask for another method
+                        double fromBudget = budget.getBalance();
+                        double remaining = orderTotal - fromBudget;
+                        budget.subtractFunds(fromBudget);
+
+                        Platform.runLater(() -> {
+                            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                            alert.setTitle("Additional Payment Required");
+                            alert.setHeaderText(null);
+                            alert.setContentText("Your budget covered ₪" + String.format("%.2f", fromBudget)
+                                    + ". You still need to pay ₪" + String.format("%.2f", remaining)
+                                    + ". Please select another payment method (Saved Card / New Card).");
+                            alert.showAndWait();
+                        });
+
+                        orderTotal = remaining;
+
+                        // Reset dropdown to only show other methods
+                        paymentMethodChoice.getItems().setAll("Saved Card", "New Card");
+                        paymentMethodChoice.getSelectionModel().clearSelection();
+                        return; // exit and wait for user to select another method
+                    }
+
+                    // Update budget on server after deduction
+                    List<Object> payload = new ArrayList<>();
+                    payload.add(customer);
+                    Message msg = new Message("update_budget", null, payload);
+                    SimpleClient.getClient().sendToServer(msg);
                 }
             }
 
@@ -402,7 +416,7 @@ public class OrderController implements Initializable {
             order.setDelivery("Delivery".equals(deliveryMethod));
             order.setStoreLocation(storeLocation);
             order.setOrderDate(LocalDateTime.now());
-            order.setDeliveryDateTime(deliveryTime);       // null for Pickup is fine
+            order.setDeliveryDateTime(deliveryTime);
             order.setRecipientPhone(recipientPhone);       // null for Pickup
             order.setDeliveryAddress(deliveryAddress);     // null for Pickup
             order.setNote(orderNoteField.getText());
@@ -418,8 +432,6 @@ public class OrderController implements Initializable {
             ex.printStackTrace();
         }
     }
-
-
 
 
     @Subscribe

@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -789,12 +790,6 @@ public class SimpleServer extends AbstractServer {
             return;
         }
 
-        String reason = "";
-        if (m.getObjectList().size() > 1) {
-            Object second = m.getObjectList().get(1);
-            reason = (second != null) ? second.toString() : "";
-        }
-
         Transaction tx = null;
         try {
             tx = session.beginTransaction();
@@ -805,7 +800,33 @@ public class SimpleServer extends AbstractServer {
                 return;
             }
 
-            // Delete complaints linked to this order
+            Customer customer = order.getCustomer();
+
+            // Calculate refund based on delivery time
+            double refund = 0;
+            if (customer != null && order.getDeliveryDateTime() != null) {
+                LocalDateTime deliveryTime = order.getDeliveryDateTime();
+                LocalDateTime now = LocalDateTime.now();
+                Duration diff = Duration.between(now, deliveryTime);
+                long hoursUntilDelivery = diff.toHours();
+
+                if (hoursUntilDelivery >= 24) {
+                    refund = order.getTotalPrice(); // full refund
+                } else if (hoursUntilDelivery >= 3) {
+                    refund = order.getTotalPrice() * 0.5; // 50% refund
+                } else {
+                    refund = 0; // no refund
+                }
+            }
+
+            // Apply refund to customer's budget
+            Budget budget = customer.getBudget();
+            if (budget != null && refund > 0) {
+                budget.addFunds(refund);
+                session.update(budget); // persist update
+            }
+
+            // Delete complaints linked to the order
             List<Complaint> complaints = session.createQuery(
                             "FROM Complaint c WHERE c.order.id = :orderId", Complaint.class)
                     .setParameter("orderId", orderId)
@@ -819,25 +840,17 @@ public class SimpleServer extends AbstractServer {
             session.delete(order);
 
             session.flush();
-
-            createPersonalNotification(session,
-                    order.getCustomer().getId(),
-                    "Order canceled",
-                    "Your order #" + order.getId() + " was canceled" +
-                            (/* if you issue refunds here */ false ? " and a refund is being processed." : "."));
-
-
             tx.commit();
 
-            // Send success message to client (third argument must be a list)
+            // Send success response including updated budget
             Message response = new Message(
                     "order_cancelled_successfully",
-                    null,
+                    budget, // include updated budget
                     new ArrayList<>(List.of(orderId))
             );
             client.sendToClient(response);
 
-            System.out.println("Order " + orderId + " cancelled successfully. Complaints deleted: " + complaints.size());
+            System.out.println("Order " + orderId + " cancelled successfully. Refund: " + refund);
 
         } catch (Exception e) {
             if (tx != null) tx.rollback();
@@ -1127,23 +1140,24 @@ public class SimpleServer extends AbstractServer {
             String responseText = null;
             java.math.BigDecimal compensation = null;
 
-            // Accept either: Map payload OR positional list
+            // --- parse payload (same as your code) ---
             if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
                 Object first = m.getObjectList().get(0);
                 if (first instanceof Map) {
                     Map<?,?> p = (Map<?,?>) first;
                     Object idObj = p.get("complaintId");
                     if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
-                    else if (idObj instanceof String && !((String) idObj).isBlank()) complaintId = Long.valueOf((String) idObj);
+                    else if (idObj instanceof String && !((String) idObj).isBlank())
+                        complaintId = Long.valueOf((String) idObj);
 
                     Object txt = p.get("responseText");
                     if (txt instanceof String) responseText = ((String) txt).trim();
 
                     Object comp = p.get("compensation");
                     if (comp instanceof java.math.BigDecimal) compensation = (java.math.BigDecimal) comp;
-                    else if (comp instanceof Number) compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
+                    else if (comp instanceof Number)
+                        compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
                 } else {
-                    // old positional style
                     if (m.getObjectList().size() > 0) {
                         Object idObj = m.getObjectList().get(0);
                         if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
@@ -1159,7 +1173,8 @@ public class SimpleServer extends AbstractServer {
                     if (m.getObjectList().size() > 3) {
                         Object comp = m.getObjectList().get(3);
                         if (comp instanceof java.math.BigDecimal) compensation = (java.math.BigDecimal) comp;
-                        else if (comp instanceof Number) compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
+                        else if (comp instanceof Number)
+                            compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
                     }
                 }
             }
@@ -1183,9 +1198,37 @@ public class SimpleServer extends AbstractServer {
             if (compensation != null) c.setCompensationAmount(compensation);
             if (responder != null) c.setResponder(responder);
 
+            // save complaint
             session.merge(c);
 
-            session.flush();
+            System.out.println("[DBG] handleResolveComplaint: complaintId=" + c.getId() + ", compensation=" + compensation);
+
+            if (compensation != null && compensation.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                Long custId = (c.getCustomer() == null) ? null : c.getCustomer().getId();
+                if (custId != null) {
+                    Customer managedCustomer = session.get(Customer.class, custId); // managed
+                    Budget budget = managedCustomer.getBudget();
+
+                    if (budget == null) {
+                        budget = new Budget();
+                        budget.setCustomer(managedCustomer); // owning side
+                        managedCustomer.setBudget(budget);   // keep both sides in sync
+                        session.persist(budget);
+                        System.out.println("[DBG] Created new budget for customer " + custId);
+                    }
+
+                    double oldBal = budget.getBalance();
+                    budget.addFunds(compensation.doubleValue());
+                    System.out.println("[DBG] Budget for customer " + custId + " : " + oldBal + " -> " + budget.getBalance());
+
+                    // Persist changes — update will be issued because Budget is the owning side
+                    session.persist(budget);
+
+                    // Force flush so you can see the SQL in logs immediately
+                    session.flush();
+                }
+            }
+
 
             String comp = (c.getCompensationAmount() != null)
                     ? " Compensation: " + c.getCompensationAmount() + "."
@@ -1197,13 +1240,9 @@ public class SimpleServer extends AbstractServer {
                     "We’ve reviewed your complaint #" + c.getId() + ". " +
                             (c.getResponseText() == null ? "" : c.getResponseText()) + comp);
 
-
             tx.commit();
 
-            // Acknowledge to the resolving employee
             client.sendToClient(new Message("complaint_resolved", new ComplaintDTO(c), null));
-
-            // Nudge all open UIs (employee list hides it unless "show resolved"; customer screen will show response)
             sendToAllClients(new Message("complaints_refresh", null, null));
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
@@ -1212,6 +1251,7 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
+
 
 
 
@@ -2415,6 +2455,7 @@ public class SimpleServer extends AbstractServer {
             order.setNote(clientOrder.getNote());
             order.setPaymentMethod(clientOrder.getPaymentMethod());
             order.setPaymentDetails(clientOrder.getPaymentDetails());
+            order.setTotalPrice(cart.getTotalWithDiscount());
 
             // 4) Convert cart items -> order items, snapshotting
             for (CartItem cartItem : new ArrayList<>(cart.getItems())) {

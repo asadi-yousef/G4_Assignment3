@@ -16,13 +16,13 @@ public class Budget implements Serializable {
     private Customer customer;
 
     @Column(nullable = false)
-    private double balance = 0.0;
+    private double balance;
 
     public Budget() {}
 
-    public Budget(Customer customer) {
+    public Budget(Customer customer, double balance) {
         this.customer = customer;
-        this.balance = 0.0;
+        this.balance = balance;
     }
 
     // --- Business logic methods ---
