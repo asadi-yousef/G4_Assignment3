@@ -1,83 +1,119 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.geometry.Insets?>
-<?import javafx.scene.control.Button?>
-<?import javafx.scene.control.ColorPicker?>
-<?import javafx.scene.control.Label?>
-<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.*?>
 <?import javafx.scene.image.ImageView?>
-<?import javafx.scene.layout.HBox?>
-<?import javafx.scene.layout.StackPane?>
-<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.*?>
 <?import javafx.scene.shape.Rectangle?>
 <?import javafx.scene.text.Font?>
 
-<StackPane fx:id="rootPane" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="il.cshaifasweng.OCSFMediatorExample.client.ProductCardController">
+<StackPane fx:id="rootPane"
+           xmlns="http://javafx.com/javafx/17.0.12"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="il.cshaifasweng.OCSFMediatorExample.client.ProductCardController"
+           style="-fx-padding: 0;">
+
     <children>
-        <VBox fx:id="displayVBox" alignment="CENTER_LEFT" spacing="8" style="-fx-background-color: #ffffff; -fx-border-color: #dddddd; -fx-border-radius: 8; -fx-background-radius: 8; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 10, 0, 0, 5);">
-            <padding>
-                <Insets bottom="15" left="15" right="15" top="15" />
-            </padding>
-            <children>
-                <ImageView fx:id="productImageView" fitHeight="160.0" fitWidth="220.0" pickOnBounds="true" preserveRatio="false" />
-                <Label fx:id="nameLabel" text="Product Name">
-                    <font>
-                        <Font name="Bell MT Bold" size="20.0" />
-                    </font>
+
+        <!-- PRODUCT CARD -->
+        <VBox fx:id="displayVBox" spacing="12"
+              style="-fx-background-color: white;
+                     -fx-background-radius: 16;
+                     -fx-border-radius: 16;
+                     -fx-border-color: rgba(0,0,0,0.06);
+                     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.12), 12, 0.18, 0, 4);
+                     -fx-padding: 12;">
+            <StackPane fx:id="imagePane"
+                       style="-fx-background-color: #f8f5fb; -fx-background-radius: 12;">
+                <children>
+                    <ImageView fx:id="productImageView"
+                               fitWidth="280" fitHeight="180"
+                               preserveRatio="true" smooth="true" cache="true"
+                               style="-fx-background-radius: 12;"/>
+
+                    <Label fx:id="saleBadge" text="SALE" visible="false" managed="false"
+                           StackPane.alignment="TOP_LEFT"
+                           style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-font-weight: bold;
+                                  -fx-background-radius: 10; -fx-padding: 4 10 4 10;
+                                  -fx-translate-x: 10; -fx-translate-y: 10;"/>
+                </children>
+            </StackPane>
+
+            <!-- CONTENT -->
+            <VBox spacing="6">
+                <Label fx:id="nameLabel" text="Product Name" style="-fx-text-fill: #4a2a69;">
+                    <font><Font name="Bell MT Bold" size="20"/></font>
                 </Label>
-                <Label fx:id="typeLabel" style="-fx-text-fill: #555555;" text="Type: Flower Arrangement" />
-                <HBox alignment="CENTER_LEFT" spacing="5">
-                    <children>
-                        <Label style="-fx-text-fill: #555555;" text="Color:" />
-                        <Rectangle fx:id="colorDisplayRect" arcHeight="5.0" arcWidth="5.0" height="15.0" width="15.0" stroke="BLACK" strokeType="INSIDE" />
-                    </children>
+                <Label fx:id="typeLabel" text="Type: Flower Arrangement" style="-fx-text-fill: #6e6e6e;"/>
+
+                <HBox alignment="CENTER_LEFT" spacing="8">
+                    <Label text="Color:" style="-fx-text-fill: #6e6e6e;"/>
+                    <Rectangle fx:id="colorDisplayRect" width="16" height="16"
+                               arcWidth="6" arcHeight="6"
+                               stroke="BLACK" strokeWidth="1.2"
+                               strokeType="INSIDE"/>
                 </HBox>
-                <HBox fx:id="priceBox" alignment="CENTER_LEFT" spacing="10" />
-                <VBox VBox.vgrow="ALWAYS" />
-                <HBox fx:id="buttonBox" alignment="CENTER" spacing="10" />
-            </children>
+            </VBox>
+
+            <!-- PRICE -->
+            <HBox fx:id="priceBox" spacing="8" alignment="CENTER_LEFT" style="-fx-padding: 2 0 0 0;">
+                <Label fx:id="priceLabel"
+                       style="-fx-text-fill: #2c3e50; -fx-font-weight: bold; -fx-font-size: 16px;"/>
+            </HBox>
+
+            <!-- ACTIONS -->
+            <HBox fx:id="buttonBox" alignment="CENTER" spacing="8"
+                  style="-fx-padding: 2 0 0 0;"/>
         </VBox>
 
-        <VBox fx:id="editVBox" alignment="CENTER_LEFT" spacing="10" style="-fx-background-color: #f9f9f9; -fx-border-color: #3498db; -fx-border-width: 2; -fx-border-radius: 8; -fx-background-radius: 8;" visible="false">
-            <padding>
-                <Insets bottom="15" left="15" right="15" top="15" />
-            </padding>
+        <!-- EDIT MODE -->
+        <VBox fx:id="editVBox" spacing="10" visible="false" managed="false"
+              style="-fx-background-color: white; -fx-background-radius: 16;
+                     -fx-border-radius: 16; -fx-border-color: rgba(0,0,0,0.06); -fx-padding: 12;">
             <children>
                 <Label text="Edit Product">
-                    <font><Font name="Bell MT Bold" size="22.0" /></font>
+                    <font><Font name="Bell MT Bold" size="22"/></font>
                 </Label>
-                <HBox alignment="CENTER_LEFT" spacing="10">
-                    <Label minWidth="80.0" text="Name:" />
-                    <TextField fx:id="nameTextField" HBox.hgrow="ALWAYS" />
-                </HBox>
-                <HBox alignment="CENTER_LEFT" spacing="10">
-                    <Label minWidth="80.0" text="Type:" />
-                    <TextField fx:id="typeTextField" HBox.hgrow="ALWAYS" />
-                </HBox>
-                <HBox alignment="CENTER_LEFT" spacing="10">
-                    <Label minWidth="80.0" text="Price ($):" />
-                    <TextField fx:id="priceTextField" />
-                </HBox>
-                <HBox alignment="CENTER_LEFT" spacing="10">
-                    <Label minWidth="80.0" text="Discount (%):" />
-                    <TextField fx:id="discountTextField" />
-                </HBox>
-                <HBox alignment="CENTER_LEFT" spacing="10">
-                    <Label minWidth="80.0" text="Color:" />
-                    <ColorPicker fx:id="colorPicker" />
-                </HBox>
-                <HBox alignment="CENTER" spacing="10" VBox.vgrow="ALWAYS">
-                    <VBox.margin><Insets top="10" /></VBox.margin>
-                    <Button fx:id="saveButton" mnemonicParsing="false" style="-fx-background-color: #27ae60; -fx-text-fill: white;" text="Save Changes" />
-                    <Button fx:id="cancelButton" mnemonicParsing="false" text="Cancel" />
+
+                <GridPane hgap="10" vgap="8">
+                    <columnConstraints>
+                        <ColumnConstraints minWidth="100"/>
+                        <ColumnConstraints hgrow="ALWAYS"/>
+                    </columnConstraints>
+
+                    <Label text="Name:" GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+                    <TextField fx:id="nameTextField" GridPane.rowIndex="0" GridPane.columnIndex="1"/>
+
+                    <Label text="Type:" GridPane.rowIndex="1" GridPane.columnIndex="0"/>
+                    <TextField fx:id="typeTextField" GridPane.rowIndex="1" GridPane.columnIndex="1"/>
+
+                    <Label text="Price:" GridPane.rowIndex="2" GridPane.columnIndex="0"/>
+                    <TextField fx:id="priceTextField" GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+
+                    <Label text="Discount %:" GridPane.rowIndex="3" GridPane.columnIndex="0"/>
+                    <TextField fx:id="discountTextField" GridPane.rowIndex="3" GridPane.columnIndex="1"/>
+
+                    <Label text="Color:" GridPane.rowIndex="4" GridPane.columnIndex="0"/>
+                    <ColorPicker fx:id="colorPicker" GridPane.rowIndex="4" GridPane.columnIndex="1"/>
+
+                    <Label text="Image Path:" GridPane.rowIndex="5" GridPane.columnIndex="0"/>
+                    <HBox spacing="6" GridPane.rowIndex="5" GridPane.columnIndex="1">
+                        <TextField fx:id="imagePathField" HBox.hgrow="ALWAYS"/>
+                        <Button fx:id="browseButton" text="Browse…"/>
+                    </HBox>
+                </GridPane>
+
+                <HBox spacing="10" alignment="CENTER_RIGHT">
+                    <Button fx:id="saveButton" text="Save"
+                            style="-fx-background-radius: 18; -fx-padding: 6 14;
+                                   -fx-background-color: #27ae60; -fx-text-fill: white;"/>
+                    <Button fx:id="cancelButton" text="Cancel"
+                            style="-fx-background-radius: 18; -fx-padding: 6 14;
+                                   -fx-background-color: white; -fx-text-fill: #4a2a69;
+                                   -fx-border-color: #d9c6ef; -fx-border-radius: 18;"/>
                 </HBox>
             </children>
         </VBox>
 
-        <Label fx:id="saleBadge" style="-fx-background-color: #e74c3c; -fx-text-fill: white; -fx-padding: 3 8 3 8; -fx-background-radius: 5;" text="SALE" visible="false" StackPane.alignment="TOP_RIGHT">
-            <StackPane.margin>
-                <Insets right="8" top="8" />
-            </StackPane.margin>
-        </Label>
     </children>
 </StackPane>

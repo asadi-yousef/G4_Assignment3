@@ -54,21 +54,34 @@ public class OrdersScreenController implements Initializable {
             EventBus.getDefault().register(this);
         }
 
+        // OPEN the socket before the first send (prevents the IOException -> "Failed to request orders.")
+        try {
+            if (!SimpleClient.getClient().isConnected()) {
+                SimpleClient.getClient().openConnection();
+            }
+        } catch (IOException e) {
+            showAlert("Error", "Failed to connect to server.");
+            return;
+        }
+
         User currentUser = SessionManager.getInstance().getCurrentUser();
         if (currentUser == null || !(currentUser instanceof Customer)) {
             showAlert("Login Required", "Please login to view your orders.");
             return;
         }
 
-        List<Object> payload = new ArrayList<>();
+        // Send as objectList: [ currentUser ]  (matches your server’s handleOrdersRequest)
+        java.util.ArrayList<Object> payload = new java.util.ArrayList<>();
         payload.add(currentUser);
-        Message requestOrdersMsg = new Message("request_orders", null, payload);
+
         try {
-            SimpleClient.getClient().sendToServer(requestOrdersMsg);
+            SimpleClient.getClient().sendToServer(new Message("request_orders", null, payload));
         } catch (IOException e) {
             showAlert("Error", "Failed to request orders.");
         }
     }
+
+
 
     @Subscribe
     public void onMessageFromServer(Message msg) {

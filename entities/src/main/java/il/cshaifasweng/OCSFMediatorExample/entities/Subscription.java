@@ -23,7 +23,7 @@ public class Subscription implements Serializable {
 
     // Each subscription belongs to a customer
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_id", nullable = false)
+    @JoinColumn(name = "customer_id", nullable = false,unique = true)
     private Customer customer;
 
     public Subscription() {}
@@ -46,7 +46,11 @@ public class Subscription implements Serializable {
     public void setActive(boolean active) { this.active = active; }
 
     public Customer getCustomer() { return customer; }
-    public void setCustomer(Customer customer) { this.customer = customer; }
+    public void setCustomer(Customer c) {
+        if (this.customer == c) return;
+        this.customer = c;
+        if (c != null && c.getSubscription() != this) c.setSubscription(this);
+    }
     public boolean isCurrentlyActive() {
         LocalDate today = LocalDate.now();
         return active && startDate != null && endDate != null && ( !today.isBefore(startDate) && !today.isAfter(endDate) );

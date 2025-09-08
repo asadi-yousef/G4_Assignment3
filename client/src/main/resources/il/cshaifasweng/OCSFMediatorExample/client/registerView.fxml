@@ -29,8 +29,12 @@
                     </HBox>
 
                     <HBox spacing="10" alignment="CENTER" prefWidth="350">
-                        <Label text="Name:" prefWidth="100" alignment="CENTER_RIGHT"/>
-                        <TextField fx:id="nameField" prefWidth="200"/>
+                        <Label text="First name:" prefWidth="100" alignment="CENTER_RIGHT"/>
+                        <TextField fx:id="firstNameField" prefWidth="200"/>
+                    </HBox>
+                    <HBox spacing="10" alignment="CENTER" prefWidth="350">
+                        <Label text="Last name:" prefWidth="100" alignment="CENTER_RIGHT"/>
+                        <TextField fx:id="lastNameField" prefWidth="200"/>
                     </HBox>
                     <HBox spacing="10" alignment="CENTER" prefWidth="350">
                         <Label text="Username:" prefWidth="100" alignment="CENTER_RIGHT"/>
