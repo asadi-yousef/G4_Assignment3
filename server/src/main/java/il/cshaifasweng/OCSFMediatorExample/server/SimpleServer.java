@@ -33,6 +33,9 @@ import java.time.LocalDate;
 
 import java.util.stream.Stream;
 
+import static il.cshaifasweng.OCSFMediatorExample.server.Services.EMAIL;
+import static il.cshaifasweng.OCSFMediatorExample.server.Services.emailConfigured;
+
 
 public class SimpleServer extends AbstractServer {
 
@@ -78,6 +81,17 @@ public class SimpleServer extends AbstractServer {
         } finally {
             catalogLock.writeLock().unlock();
         }
+        //mail test
+        System.out.println("[Mail] configured = " +
+                il.cshaifasweng.OCSFMediatorExample.server.Services.emailConfigured());
+
+        if (il.cshaifasweng.OCSFMediatorExample.server.Services.emailConfigured()) {
+            il.cshaifasweng.OCSFMediatorExample.server.Services.EMAIL
+                    .sendTextAsync("silinmichael01@gmail.com",
+                            "System test",
+                            "If you see this, SMTP works.");
+        }
+        //end mail test
     }
 
 
@@ -212,6 +226,8 @@ public class SimpleServer extends AbstractServer {
                     handleAdminDeleteUser(m, client, session);
                 } else if ("request_orders".equals(key)) {
                     handleOrdersRequest(m, client, session);
+                }else if("staff_mark_order_completed".equals(key)) {
+                    handleMarkOrderCompleted(m, client, session);
 
                     // ---------- EMPLOYEE SCHEDULE (accept multiple aliases) ----------
                 } else if ("request_orders_by_day".equals(key)
@@ -1354,6 +1370,26 @@ public class SimpleServer extends AbstractServer {
             }
 
             tx.commit();
+
+            // --- EMAIL: send only if final status is DELIVERED, after commit (async) ---
+            if ("DELIVERED".equals(after) && Services.emailConfigured() && o.getCustomer() != null) {
+                String to = o.getCustomer().getEmail();
+                if (to != null && !to.isBlank()) {
+                    String name = (o.getCustomer().getFirstName() != null && !o.getCustomer().getFirstName().isBlank())
+                            ? o.getCustomer().getFirstName()
+                            : (o.getCustomer().getFullName() != null ? o.getCustomer().getFullName() : "");
+                    String subject = "Your delivery has arrived";
+                    String body =
+                            "Hi " + (name == null ? "" : name) + ",\n\n" +
+                                    "Your order #" + o.getId() + " has been delivered.\n\n" +
+                                    "Branch: " + (o.getStoreLocation() == null ? "" : o.getStoreLocation()) + "\n" +
+                                    "Delivered: " + java.time.LocalDateTime.now() + "\n\n" +
+                                    "Thank you!";
+                    Services.EMAIL.sendTextAsync(to, subject, body);
+                }
+            }
+            // ---------------------------------------------------------------------------
+
             client.sendToClient(new Message("order_completed_ack", o.getId(), null));
         } catch (Exception e) {
             if (tx != null && tx.isActive()) tx.rollback();
@@ -2007,8 +2043,63 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
+    @SuppressWarnings("unchecked")
+    private void handleStaffSendDeliveryEmail(Message m, ConnectionToClient client, org.hibernate.Session session) {
+        try {
+            // Optional: restrict to staff who can complete orders
+            if (!canCompleteOrders(client)) {
+                client.sendToClient(new Message("staff_send_delivery_email_ack",
+                        java.util.Map.of("ok", false, "error", "forbidden"), null));
+                return;
+            }
 
+            // Accept: object = Number, or objectList[0] = Number / Map{orderId:...}
+            Long orderId = null;
+            Object obj = m.getObject();
+            if (obj instanceof Number n) {
+                orderId = n.longValue();
+            } else if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
+                Object p0 = m.getObjectList().get(0);
+                if (p0 instanceof Number n) {
+                    orderId = n.longValue();
+                } else if (p0 instanceof java.util.Map<?,?> map) {
+                    Object oid = map.get("orderId");
+                    if (oid instanceof Number n2) orderId = n2.longValue();
+                }
+            }
 
+            if (orderId == null) {
+                client.sendToClient(new Message("staff_send_delivery_email_ack",
+                        java.util.Map.of("ok", false, "error", "missing_order_id"), null));
+                return;
+            }
+
+            Order o = session.get(Order.class, orderId);
+            if (o == null) {
+                client.sendToClient(new Message("staff_send_delivery_email_ack",
+                        java.util.Map.of("ok", false, "error", "order_not_found"), null));
+                return;
+            }
+
+            if (!Services.emailConfigured()) {
+                client.sendToClient(new Message("staff_send_delivery_email_ack",
+                        java.util.Map.of("ok", false, "error", "email_not_configured"), null));
+                return;
+            }
+
+            // Reuse your existing email template & async sender
+            notifyCustomerOnDelivered(o);
+
+            client.sendToClient(new Message("staff_send_delivery_email_ack",
+                    java.util.Map.of("ok", true), null));
+        } catch (Exception e) {
+            e.printStackTrace();
+            try {
+                client.sendToClient(new Message("staff_send_delivery_email_ack",
+                        java.util.Map.of("ok", false, "error", e.getClass().getSimpleName() + ": " + e.getMessage()), null));
+            } catch (IOException ignored) {}
+        }
+    }
     // --- DTO mapper ---
     private InboxItemDTO toDTO(
             Notification n) {
@@ -2734,6 +2825,16 @@ public class SimpleServer extends AbstractServer {
 
             client.setInfo("userId", fresh.getId());
             client.setInfo("username", fresh.getUsername());
+            // Treat ANY non-customer subtype as staff (Employee/Manager/Driver/etc.)
+            boolean isStaff = !(fresh instanceof Customer);
+            //capture branch if staff has getBrachName()
+            String staffBranch = null;
+            try {
+                staffBranch = (String) fresh.getClass().getMethod("getBranchName").invoke(fresh);
+            } catch (Exception ignored) {}
+
+            client.setInfo("canCompleteOrders", isStaff);
+            if (staffBranch != null) client.setInfo("branch", staffBranch);
             try { client.sendToClient(new Message("correct", fresh, null)); } catch (IOException ignored) {}
 
         } catch (Exception e) {
@@ -3305,5 +3406,72 @@ public class SimpleServer extends AbstractServer {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void notifyCustomerOnDelivered(Order order) {
+        if (!emailConfigured() || order == null) return;
+
+        // If you want email only for deliveries (not pickups), keep this:
+        try {
+            var isDelivery = (Boolean) order.getClass().getMethod("isDelivery").invoke(order);
+            if (Boolean.FALSE.equals(isDelivery)) return;
+        } catch (Exception ignore) { /* no isDelivery(): skip this check */ }
+
+        var customer = order.getCustomer();
+        if (customer == null) return;
+
+        String to = customer.getEmail();
+        if (to == null || to.isBlank()) return;
+
+        String customerName = first(
+                safe(customer.getFirstName()),
+                safe(customer.getFullName()),
+                ""
+        );
+
+        String subject = "Your delivery has arrived";
+        String body =
+                "Hi " + customerName + ",\n\n" +
+                        "Your order has arrived.\n\n" +
+                        "Order #: " + order.getId() + "\n" +
+                        "Branch: " + safe(order.getStoreLocation()) + "\n" +
+                        "Delivered: " + java.time.LocalDateTime.now() + "\n\n" +
+                        "Thank you!";
+
+        EMAIL.sendTextAsync(to, subject, body);
+    }
+
+    private static String safe(String s) { return s == null ? "" : s; }
+    private static String first(String... vals) {
+        for (String v : vals) if (v != null && !v.isBlank()) return v;
+        return "";
+    }
+    // ---- capability + identity helpers (SimpleServer) ----
+    private boolean canCompleteOrders(ConnectionToClient client) {
+        Object v = client.getInfo("canCompleteOrders");
+        return v instanceof Boolean && (Boolean) v;
+    }
+
+    private Long getId(Object p) {
+        try { return (Long) p.getClass().getMethod("getId").invoke(p); }
+        catch (Exception e) { return null; }
+    }
+
+    private boolean isStaff(Object p) {
+        // Adjust the simple names to your actual staff classes:
+        return p != null && (
+                p.getClass().getSimpleName().equals("Employee") ||
+                        p.getClass().getSimpleName().equals("Driver") ||
+                        p.getClass().getSimpleName().equals("BranchManager") ||
+                        p.getClass().getSimpleName().equals("SystemManager")
+        );
+        // If you have a concrete Employee type:
+        // return p instanceof Employee;
+    }
+
+    private String getBranchIfStaff(Object p) {
+        if (!isStaff(p)) return null;
+        try { return (String) p.getClass().getMethod("getBranchName").invoke(p); }
+        catch (Exception e) { return null; }
     }
 }

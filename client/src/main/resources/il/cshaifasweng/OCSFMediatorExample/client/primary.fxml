@@ -89,12 +89,6 @@
                   AnchorPane.leftAnchor="20.0" AnchorPane.rightAnchor="20.0" AnchorPane.topAnchor="70.0"
                   style="-fx-background-color: rgba(255,255,255,0.65); -fx-background-radius:18; -fx-padding:8 12; -fx-border-color: rgba(155,89,182,0.25); -fx-border-radius:18;">
                <children>
-                  <Button onAction="#handleAddProduct" text="Add Product" />
-                  <Button fx:id="reportButton" onAction="#handleViewReports" text="Reports" />
-                  <Button onAction="#handleManageComplaints" text="Manage Complaints" />
-                   <Button fx:id="broadcastButton" text="Broadcast" onAction="#handleBroadcast"/>
-                   <Button text="Schedule" onAction="#openEmployeeSchedule"/>
-                   <Pane HBox.hgrow="ALWAYS" />
                   <Button onAction="#handleAddProduct" text="Add Product"
                           style="-fx-background-color:#b784e1; -fx-text-fill:white; -fx-background-radius:20; -fx-padding:6 14;"/>
                   <Button fx:id="reportButton" onAction="#handleViewReports" text="Reports"
