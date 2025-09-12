@@ -81,17 +81,6 @@ public class SimpleServer extends AbstractServer {
         } finally {
             catalogLock.writeLock().unlock();
         }
-        //mail test
-        System.out.println("[Mail] configured = " +
-                il.cshaifasweng.OCSFMediatorExample.server.Services.emailConfigured());
-
-        if (il.cshaifasweng.OCSFMediatorExample.server.Services.emailConfigured()) {
-            il.cshaifasweng.OCSFMediatorExample.server.Services.EMAIL
-                    .sendTextAsync("silinmichael01@gmail.com",
-                            "System test",
-                            "If you see this, SMTP works.");
-        }
-        //end mail test
     }
 
 
@@ -227,9 +216,11 @@ public class SimpleServer extends AbstractServer {
                 } else if ("request_orders".equals(key)) {
                     handleOrdersRequest(m, client, session);
                 }else if("staff_mark_order_completed".equals(key)) {
-                    handleMarkOrderCompleted(m, client, session);
+                    handleStaffMarkOrderCompleted(m, client, session);
+                } else if ("staff_send_delivery_email".equals(key)) {
+                    handleStaffSendDeliveryEmail(m, client, session);
 
-                    // ---------- EMPLOYEE SCHEDULE (accept multiple aliases) ----------
+                // ---------- EMPLOYEE SCHEDULE (accept multiple aliases) ----------
                 } else if ("request_orders_by_day".equals(key)
                         || "request_day".equals(key)
                         || "request_schedule".equals(key)) {
@@ -1312,6 +1303,14 @@ public class SimpleServer extends AbstractServer {
             sendCancelError(client, "Error cancelling order: " + e.getMessage());
         }
     }
+    private void handleStaffMarkOrderCompleted(Message m, ConnectionToClient client, org.hibernate.Session session) {
+        if (!canCompleteOrders(client)) {
+            try { client.sendToClient(new Message("order_completed_ack", null, null)); } catch (IOException ignored) {}
+            return;
+        }
+        handleMarkOrderCompleted(m, client, session);
+    }
+
 
     @SuppressWarnings("unchecked")
     private void handleMarkOrderCompleted(Message m, ConnectionToClient client, org.hibernate.Session session) {
@@ -1373,19 +1372,23 @@ public class SimpleServer extends AbstractServer {
 
             // --- EMAIL: send only if final status is DELIVERED, after commit (async) ---
             if ("DELIVERED".equals(after) && Services.emailConfigured() && o.getCustomer() != null) {
-                String to = o.getCustomer().getEmail();
-                if (to != null && !to.isBlank()) {
-                    String name = (o.getCustomer().getFirstName() != null && !o.getCustomer().getFirstName().isBlank())
-                            ? o.getCustomer().getFirstName()
-                            : (o.getCustomer().getFullName() != null ? o.getCustomer().getFullName() : "");
-                    String subject = "Your delivery has arrived";
-                    String body =
-                            "Hi " + (name == null ? "" : name) + ",\n\n" +
-                                    "Your order #" + o.getId() + " has been delivered.\n\n" +
-                                    "Branch: " + (o.getStoreLocation() == null ? "" : o.getStoreLocation()) + "\n" +
-                                    "Delivered: " + java.time.LocalDateTime.now() + "\n\n" +
-                                    "Thank you!";
-                    Services.EMAIL.sendTextAsync(to, subject, body);
+                if (!shouldEmailCustomerForGift(o)) {
+                    System.out.println("[Email] Skipped (recipient == customer or no recipient info) for order " + o.getId());
+                } else {
+                 String to = o.getCustomer().getEmail();
+                    if (to != null && !to.isBlank()) {
+                        String name = (o.getCustomer().getFirstName() != null && !o.getCustomer().getFirstName().isBlank())
+                                ? o.getCustomer().getFirstName()
+                                : (o.getCustomer().getFullName() != null ? o.getCustomer().getFullName() : "");
+                        String subject = "Your delivery has arrived";
+                        String body =
+                                "Hi " + (name == null ? "" : name) + ",\n\n" +
+                                        "Your order #" + o.getId() + " has been delivered.\n\n" +
+                                        "Branch: " + (o.getStoreLocation() == null ? "" : o.getStoreLocation()) + "\n" +
+                                        "Delivered: " + java.time.LocalDateTime.now() + "\n\n" +
+                                        "Thank you!";
+                        Services.EMAIL.sendTextAsync(to, subject, body);
+                    }
                 }
             }
             // ---------------------------------------------------------------------------
@@ -2046,25 +2049,21 @@ public class SimpleServer extends AbstractServer {
     @SuppressWarnings("unchecked")
     private void handleStaffSendDeliveryEmail(Message m, ConnectionToClient client, org.hibernate.Session session) {
         try {
-            // Optional: restrict to staff who can complete orders
             if (!canCompleteOrders(client)) {
                 client.sendToClient(new Message("staff_send_delivery_email_ack",
                         java.util.Map.of("ok", false, "error", "forbidden"), null));
                 return;
             }
 
-            // Accept: object = Number, or objectList[0] = Number / Map{orderId:...}
             Long orderId = null;
-            Object obj = m.getObject();
-            if (obj instanceof Number n) {
+            if (m.getObject() instanceof Number n) {
                 orderId = n.longValue();
             } else if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
                 Object p0 = m.getObjectList().get(0);
-                if (p0 instanceof Number n) {
-                    orderId = n.longValue();
-                } else if (p0 instanceof java.util.Map<?,?> map) {
-                    Object oid = map.get("orderId");
-                    if (oid instanceof Number n2) orderId = n2.longValue();
+                if (p0 instanceof Number n) orderId = n.longValue();
+                else if (p0 instanceof java.util.Map<?,?> map) {
+                    Object v = map.get("orderId");
+                    if (v instanceof Number n2) orderId = n2.longValue();
                 }
             }
 
@@ -2087,7 +2086,13 @@ public class SimpleServer extends AbstractServer {
                 return;
             }
 
-            // Reuse your existing email template & async sender
+            if (!shouldEmailCustomerForGift(o)) {
+                client.sendToClient(new Message("staff_send_delivery_email_ack",
+                        java.util.Map.of("ok", false, "error", "recipient_is_customer_or_missing"), null));
+                return;
+            }
+
+            // Reuse your templated notifier
             notifyCustomerOnDelivered(o);
 
             client.sendToClient(new Message("staff_send_delivery_email_ack",
@@ -3417,6 +3422,8 @@ public class SimpleServer extends AbstractServer {
             if (Boolean.FALSE.equals(isDelivery)) return;
         } catch (Exception ignore) { /* no isDelivery(): skip this check */ }
 
+        if(!shouldEmailCustomerForGift(order)) return;
+
         var customer = order.getCustomer();
         if (customer == null) return;
 
@@ -3474,4 +3481,36 @@ public class SimpleServer extends AbstractServer {
         try { return (String) p.getClass().getMethod("getBranchName").invoke(p); }
         catch (Exception e) { return null; }
     }
+
+    private static boolean isBlank(String s) { return s == null || s.trim().isEmpty(); }
+
+    private static String norm(String s) { return isBlank(s) ? "" : s.trim().toLowerCase(); }
+
+    private static String normPhone(String s) {
+        if (s == null) return "";
+        // keep digits only for rough equality; tweak to your locale if needed
+        return s.replaceAll("\\D", "");
+    }
+
+
+     //Return true ONLY when recipient is different from the ordering customer (gift case).
+     //If you have different field names, swap them in below.
+
+    private static boolean shouldEmailCustomerForGift(Order o) {
+        if (o == null || o.getCustomer() == null) return false;
+        String custPhone = o.getCustomer().getPhone();
+
+        String recPhone = o.getRecipientPhone();   // or o.getReceiverPhone()
+
+        // If there's no explicit recipient info, treat as "same person" → don't email
+        boolean hasRecipientInfo =!isBlank(recPhone);
+        if (!hasRecipientInfo) return false;
+
+        boolean samePhone = !isBlank(recPhone)  && !isBlank(custPhone) &&
+                normPhone(recPhone).equals(normPhone(custPhone));
+
+        // We email the *customer* only when it's a gift: recipient != customer
+        return !samePhone;
+    }
+
 }
