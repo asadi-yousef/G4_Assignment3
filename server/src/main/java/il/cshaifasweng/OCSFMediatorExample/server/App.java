@@ -144,9 +144,11 @@ public class App {
                 ).getSingleResult();
 
                 if (branchCount == null || branchCount == 0L) {
-                    //session.save(haifa);
-                    //session.flush();
-                    //session.save(telaviv);
+                    Branch branch1 = new Branch("Haifa");
+                    session.save(branch1);
+                    Branch branch2 = new Branch("Tel-Aviv");
+                    session.flush();
+                    session.save(branch2);
                     session.flush();
                 } else {
                     System.out.println("Branch table already contains data. Skipping insert.");
