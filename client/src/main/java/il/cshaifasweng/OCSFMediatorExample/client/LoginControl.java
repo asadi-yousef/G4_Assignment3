@@ -27,7 +27,7 @@ public class LoginControl implements Initializable {
     @FXML private ToggleButton togglePasswordButton;
     @FXML private Label errorLabel;
     @FXML private Button loginButton;
-    @FXML private Button backButton; // Add this line - missing @FXML field
+    @FXML private Button backButton;
     @FXML private ProgressIndicator loadingIndicator;
 
     private ImageView eyeOpenView;
@@ -141,7 +141,7 @@ public class LoginControl implements Initializable {
                             App.setRoot("employeeScheduleView"); }
                         else {
                             EventBus.getDefault().unregister(this);
-                            App.setRoot("employeeSchedule");
+                            App.setRoot("primary");
                         }
                         }
                 } catch (IOException e) {
