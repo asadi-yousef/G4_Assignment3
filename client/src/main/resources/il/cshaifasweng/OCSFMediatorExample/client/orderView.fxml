@@ -262,7 +262,8 @@
                                         <Font name="System Bold" size="14.0" />
                                     </font>
                                 </Label>
-                                <ChoiceBox fx:id="paymentMethodChoice" prefWidth="200.0" style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8;" />
+                                <ChoiceBox fx:id="paymentMethodChoice" prefWidth="200.0"
+                                           style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8;" />
 
                                 <!-- Display current order total -->
                                 <Label fx:id="orderTotalLabel" text="Total: ₪0.00" textFill="#2c3e50">
@@ -284,14 +285,41 @@
                                         <Font name="System Bold" size="14.0" />
                                     </font>
                                 </Label>
-                                <Button fx:id="useBudgetButton" text="Use Budget" style="-fx-background-color: #27ae60; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 5 15 5 15; -fx-cursor: hand;" />
                             </children>
                             <VBox.margin>
                                 <Insets bottom="15.0" left="30.0" right="30.0" />
                             </VBox.margin>
                         </HBox>
 
-                        <!-- New Card Input Section -->
+
+                        <!-- Insufficient Budget + Second Method -->
+                        <VBox fx:id="insufficientBudgetBox" spacing="10.0" visible="false" managed="false">
+                            <children>
+                                <Label text="⚠️ Your budget isn’t enough. Please select a second payment method:"
+                                       textFill="#e74c3c" wrapText="true">
+                                    <font>
+                                        <Font name="System Bold" size="14.0" />
+                                    </font>
+                                </Label>
+
+                                <HBox alignment="CENTER_LEFT" spacing="15.0">
+                                    <children>
+                                        <Label text="Second Payment:" textFill="#2c3e50" minWidth="140.0">
+                                            <font>
+                                                <Font name="System Bold" size="14.0" />
+                                            </font>
+                                        </Label>
+                                        <ChoiceBox fx:id="secondPaymentMethod" prefWidth="200.0"
+                                                   style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8;" />
+                                    </children>
+                                </HBox>
+                            </children>
+                            <VBox.margin>
+                                <Insets bottom="15.0" left="30.0" right="30.0" />
+                            </VBox.margin>
+                        </VBox>
+
+                        <!-- New Card Input Section (for both first/second method) -->
                         <VBox fx:id="newCardBox" spacing="10.0" visible="false" managed="false">
                             <children>
                                 <HBox alignment="CENTER_LEFT" spacing="15.0">
@@ -301,7 +329,15 @@
                                                 <Font name="System Bold" size="14.0" />
                                             </font>
                                         </Label>
-                                        <TextField fx:id="newCardField" promptText="Enter new card number" prefWidth="250.0" style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8; -fx-padding: 8;" />
+                                        <TextField fx:id="newCardField" promptText="XXXX XXXX XXXX XXXX"
+                                                   prefWidth="250.0"
+                                                   style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8; -fx-padding: 8;" />
+                                        <TextField fx:id="newCardExpiryDate" promptText="MM/YY"
+                                                   prefWidth="250.0"
+                                                   style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8; -fx-padding: 8;" />
+                                        <TextField fx:id="newCardCVV" promptText="CVV"
+                                                   prefWidth="250.0"
+                                                   style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8; -fx-padding: 8;" />
                                     </children>
                                 </HBox>
                             </children>
@@ -314,6 +350,7 @@
                         <Insets left="30.0" right="30.0" top="15.0" />
                     </VBox.margin>
                 </VBox>
+
 
 
                 <!-- Action Buttons Section -->

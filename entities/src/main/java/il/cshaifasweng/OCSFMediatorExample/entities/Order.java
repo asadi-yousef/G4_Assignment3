@@ -25,9 +25,12 @@ public class Order implements Serializable {
 
     private String recipientPhone;
     private String deliveryAddress; // new
-    private String note; // ברכה (optional)
+    private String note; // ברכה
     private String paymentMethod; // "SavedCard", "NewCard", "CashOnDelivery"
-    private String paymentDetails; // e.g. card number or "Cash on Delivery"
+    private String paymentDetails;
+    private String cardExpiryDate;
+    private String cardCVV;
+    private double totalPrice;
     private String status; // "PLACED","IN_PREP","READY_FOR_PICKUP","OUT_FOR_DELIVERY","DELIVERED","CANCELLED"
     public String getStatus(){ return status; }
     public void setStatus(String s){ this.status = s; }
@@ -40,7 +43,7 @@ public class Order implements Serializable {
     public Order(Customer customer, String branchName, boolean delivery,
                  LocalDateTime orderDate, LocalDateTime deliveryDateTime,
                  String recipientPhone, String deliveryAddress, String note,
-                 String paymentMethod, String paymentDetails) {
+                 String paymentMethod, String paymentDetails, double totalPrice) {
         this.customer = customer;
         this.branchName = branchName;
         this.delivery = delivery;
@@ -51,6 +54,9 @@ public class Order implements Serializable {
         this.note = note;
         this.paymentMethod = paymentMethod;
         this.paymentDetails = paymentDetails;
+        this.cardExpiryDate = cardExpiryDate;
+        this.cardCVV = cardCVV;
+        this.totalPrice = totalPrice;
     }
 
     public Long getId() {
@@ -125,6 +131,20 @@ public class Order implements Serializable {
     }
     public void setPaymentDetails(String paymentDetails) {
         this.paymentDetails = paymentDetails;
+    }
+
+    public String getCardExpiryDate() {
+        return cardExpiryDate;
+    }
+    public void setCardExpiryDate(String cardExpiryDate) { this.cardExpiryDate = cardExpiryDate; }
+    public String getCardCVV() { return cardCVV; }
+    public void setCardCVV(String cardCVV) { this.cardCVV = cardCVV; }
+
+    public double getTotalPrice() {
+        return totalPrice;
+    }
+    public void setTotalPrice(double totalPrice) {
+        this.totalPrice = totalPrice;
     }
 
     private java.time.LocalDateTime pickupDateTime; // nullable

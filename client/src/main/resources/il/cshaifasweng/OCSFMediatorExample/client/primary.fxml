@@ -81,6 +81,10 @@
                           text="👤 Profile">
                      <font><Font name="System Bold" size="14.0"/></font>
                   </Button>
+                  <Button fx:id="budgetButton" text="My Budget" onAction="#handleAddBudget" visible="false" managed="false"
+                          style="-fx-background-color:black; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-border-color:#d9c6ef; -fx-border-radius:20; -fx-padding:6 14;">
+                     <font><Font name="System Bold" size="14.0"/></font>
+                  </Button>
                </children>
             </HBox>
 
