@@ -43,6 +43,7 @@ public class PrimaryController implements Initializable {
 	@FXML private TextField maxPriceField;
     @FXML private Button inboxButton;
     @FXML private Button broadcastButton;
+	@FXML private Button budgetButton;
     private int unreadPersonalCount = 0;
     private Label inboxBadge;
 
@@ -618,6 +619,11 @@ public class PrimaryController implements Initializable {
             refreshInboxBadgeText(); // keeps the count on button label
         }
 
+		if(budgetButton != null) {
+			boolean showBudget = isLoggedIn && !isEmployee;
+			budgetButton.setVisible(showBudget);
+			budgetButton.setManaged(showBudget);
+		}
 
         updateCustomButtonState();
 
@@ -823,6 +829,7 @@ public class PrimaryController implements Initializable {
 			showAlert("Error", "Could not open the product page.");
 		}
 	}
+
 
 	private void handleDeleteProduct(Product product) {
 		Alert confirmationAlert = new Alert(Alert.AlertType.CONFIRMATION);
@@ -1184,6 +1191,21 @@ public class PrimaryController implements Initializable {
 			App.setRoot("ordersScreenView");
 		} catch (IOException e) {
 			showAlert("Error", "Failed to open orders page.");
+		}
+	}
+
+	@FXML
+	public void handleAddBudget(ActionEvent actionEvent) {
+		try {
+			User currentUser = SessionManager.getInstance().getCurrentUser();
+			if(currentUser == null) {
+				showAlert("Login Required", "Please login to access your budget.");
+				return;
+			}
+			App.setRoot("addBudgetView");
+		} catch (IOException e) {
+			e.printStackTrace();
+			showAlert("Error", "Failed to open budget page.");
 		}
 	}
 }

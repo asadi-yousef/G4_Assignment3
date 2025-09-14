@@ -31,7 +31,7 @@ public class OrderController implements Initializable {
     private RadioButton deliveryRadio;
 
     @FXML
-    private VBox deliveryDetailsSection;  // Contains only delivery address, different recipient, recipient phone
+    private VBox deliveryDetailsSection;
 
     @FXML
     private RadioButton pickupRadio;
@@ -59,6 +59,10 @@ public class OrderController implements Initializable {
 
     @FXML
     private TextField newCardField;
+    @FXML
+    private TextField newCardExpiryDate;
+    @FXML
+    private TextField newCardCVV;
 
     @FXML
     private VBox newCardBox;
@@ -83,9 +87,14 @@ public class OrderController implements Initializable {
     @FXML
     private HBox budgetBox;
     @FXML
+    private VBox insufficientBudgetBox;
+    @FXML
     private Label budgetBalanceLabel;
     @FXML
-    private Button useBudgetButton;
+    private CheckBox useBudget;
+    @FXML
+    private ChoiceBox<String> secondPaymentMethod;
+
 
 
     private double currentOrderTotal;
@@ -207,14 +216,17 @@ public class OrderController implements Initializable {
         });
 
         // Payment method setup
-        paymentMethodChoice.getItems().setAll("Saved Card", "New Card", "Pay Upon Delivery", "My Budget");
+        paymentMethodChoice.getItems().setAll("Saved Card", "New Card", "My Budget");
+        secondPaymentMethod.getItems().setAll("Saved Card", "New Card");
         // Initially hide budget box and new card box
         budgetBox.setVisible(false);
         budgetBox.setManaged(false);
         newCardBox.setVisible(false);
         newCardBox.setManaged(false);
 
-        // Show/hide budget or new card based on selection
+
+        currentOrderTotal = SessionManager.getInstance().getOrderTotal();
+        // Show/hidudget or new card based on selection
         paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             newCardBox.setVisible("New Card".equals(newVal));
             newCardBox.setManaged("New Card".equals(newVal));
@@ -222,53 +234,46 @@ public class OrderController implements Initializable {
             if ("My Budget".equals(newVal)) {
                 budgetBox.setVisible(true);
                 budgetBox.setManaged(true);
+
                 if (current != null && current.getBudget() != null) {
-                    budgetBalanceLabel.setText("Budget Balance: ₪" +
-                            String.format("%.2f", current.getBudget().getBalance()));
+                    double balance = current.getBudget().getBalance();
+                    budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", balance));
+
+                    // 🔹 SHOW extra dropdown *immediately* if not enough
+                    if (balance < currentOrderTotal) {
+                        insufficientBudgetBox.setVisible(true);
+                        insufficientBudgetBox.setManaged(true);
+                    } else {
+                        insufficientBudgetBox.setVisible(false);
+                        insufficientBudgetBox.setManaged(false);
+                    }
                 } else {
                     budgetBalanceLabel.setText("Budget Balance: ₪0.00");
+                    insufficientBudgetBox.setVisible(true);
+                    insufficientBudgetBox.setManaged(true);
                 }
 
-                // Hide the new card box until needed
                 newCardBox.setVisible(false);
                 newCardBox.setManaged(false);
             } else {
                 budgetBox.setVisible(false);
                 budgetBox.setManaged(false);
+                insufficientBudgetBox.setVisible(false);
+                insufficientBudgetBox.setManaged(false);
             }
         });
 
-        currentOrderTotal = SessionManager.getInstance().getOrderTotal();
+        secondPaymentMethod.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
+            if ("New Card".equals(newVal)) {
+                newCardBox.setVisible(true);
+                newCardBox.setManaged(true);
+            } else {
+                newCardBox.setVisible(false);
+                newCardBox.setManaged(false);
+            }
+        });
+
         orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
-        useBudgetButton.setOnAction(e -> {
-            if (current == null || current.getBudget() == null) return;
-
-            Budget budget = current.getBudget();
-            double fromBudget = Math.min(currentOrderTotal, budget.getBalance());
-            currentOrderTotal -= fromBudget;
-            budget.subtractFunds(fromBudget);
-
-            // Update UI
-            orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
-            budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", budget.getBalance()));
-
-            // Send server update
-            List<Object> payload = new ArrayList<>();
-            payload.add(current);
-            Message msg = new Message("update_budget", null, payload);
-            try {
-                SimpleClient.getClient().sendToServer(msg);
-            } catch (IOException ex) {
-                ex.printStackTrace();
-                showAlert("Error", "Failed to update budget on server: " + ex.getMessage());
-            }
-
-            if (currentOrderTotal == 0) {
-                Alert alert = new Alert(Alert.AlertType.INFORMATION, "Order fully paid with budget!");
-                alert.showAndWait();
-            }
-        });
-
 
         placeOrderButton.setOnAction(e -> placeOrder());
         cancelButton.setOnAction(e -> goBackToCart());
@@ -343,11 +348,14 @@ public class OrderController implements Initializable {
 
             double orderTotal = SessionManager.getInstance().getOrderTotal();
             String paymentMethod = paymentMethodChoice.getValue();
+            String secondPayment = secondPaymentMethod.getValue();
             if (paymentMethod == null) {
                 showAlert("Missing Data", "Please select a payment method.");
                 return;
             }
             String paymentDetails = null;
+            String cardExpiryDate = null;
+            String cardCVV = null;
 
             boolean isPaid = false;
             while(!isPaid) {
@@ -364,13 +372,22 @@ public class OrderController implements Initializable {
                         showAlert("Missing Data", "Please enter the new card number.");
                         return;
                     }
+                    cardExpiryDate = newCardExpiryDate.getText();
+                    if(cardExpiryDate == null || cardExpiryDate.trim().isEmpty()) {
+                        showAlert("Missing Data", "Please enter the card expiry date.");
+                        return;
+                    }
+                    cardCVV = newCardCVV.getText();
+                    if(cardCVV == null || cardCVV.trim().isEmpty()) {
+                        showAlert("Missing Data", "Please enter the card cvv.");
+                        return;
+                    }
                     isPaid = true;
                 }
                 else if ("My Budget".equals(paymentMethod)) {
                     Budget budget = customer.getBudget();
                     if (budget == null || budget.getBalance() <= 0) {
                         showAlert("Insufficient Funds", "Your budget is empty. Please select another payment method.");
-                        paymentMethodChoice.getSelectionModel().clearSelection();
                         return;
                     }
 
@@ -379,36 +396,56 @@ public class OrderController implements Initializable {
                         budget.subtractFunds(orderTotal);
                         orderTotal = 0;
                         isPaid = true;
+
+                        List<Object> payload = new ArrayList<>();
+                        payload.add(customer);
+                        SimpleClient.getClient().sendToServer(new Message("update_budget", null, payload));
+
                     } else {
-                        // Budget insufficient: pay what we can and ask for another method
                         double fromBudget = budget.getBalance();
                         double remaining = orderTotal - fromBudget;
                         budget.subtractFunds(fromBudget);
 
-                        Platform.runLater(() -> {
-                            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                            alert.setTitle("Additional Payment Required");
-                            alert.setHeaderText(null);
-                            alert.setContentText("Your budget covered ₪" + String.format("%.2f", fromBudget)
-                                    + ". You still need to pay ₪" + String.format("%.2f", remaining)
-                                    + ". Please select another payment method (Saved Card / New Card).");
-                            alert.showAndWait();
-                        });
+                        List<Object> payload = new ArrayList<>();
+                        payload.add(customer);
+                        SimpleClient.getClient().sendToServer(new Message("update_budget", null, payload));
+
+                        if (secondPayment == null) {
+                            showAlert("Missing Data", "Your budget isn’t enough. Please select a second payment method.");
+                            return;
+                        }
+
+                        // Process second payment
+                        if ("New Card".equals(secondPayment)) {
+                            paymentDetails = newCardField.getText();
+                            if (paymentDetails == null || paymentDetails.trim().isEmpty()) {
+                                showAlert("Missing Data", "Please enter the new card number.");
+                                return;
+                            }
+                            cardExpiryDate = newCardExpiryDate.getText();
+                            if(cardExpiryDate == null || cardExpiryDate.trim().isEmpty()) {
+                                showAlert("Missing Data", "Please enter the card expiry date.");
+                                return;
+                            }
+                            cardCVV = newCardCVV.getText();
+                            if(cardCVV == null || cardCVV.trim().isEmpty()) {
+                                showAlert("Missing Data", "Please enter the card cvv.");
+                                return;
+                            }
+                        } else if ("Saved Card".equals(secondPayment)) {
+                            if (customer.getCreditCard() == null || customer.getCreditCard().getCardNumber() == null) {
+                                showAlert("Missing Data", "No saved card on file.");
+                                return;
+                            }
+                            paymentDetails = customer.getCreditCard().getCardNumber();
+                        }
 
                         orderTotal = remaining;
-
-                        // Reset dropdown to only show other methods
-                        paymentMethodChoice.getItems().setAll("Saved Card", "New Card");
-                        paymentMethodChoice.getSelectionModel().clearSelection();
-                        return; // exit and wait for user to select another method
+                        isPaid = true;
                     }
-
-                    // Update budget on server after deduction
-                    List<Object> payload = new ArrayList<>();
-                    payload.add(customer);
-                    Message msg = new Message("update_budget", null, payload);
-                    SimpleClient.getClient().sendToServer(msg);
                 }
+
+
             }
 
             Order order = new Order();
@@ -422,6 +459,8 @@ public class OrderController implements Initializable {
             order.setNote(orderNoteField.getText());
             order.setPaymentMethod(paymentMethod);
             order.setPaymentDetails(paymentDetails);
+            order.setCardExpiryDate(cardExpiryDate);
+            order.setCardCVV(cardCVV);
 
             placeOrderButton.setDisable(true);
             placeOrderButton.setText("Processing...");

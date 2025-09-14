@@ -1827,41 +1827,19 @@ public class SimpleServer extends AbstractServer {
             String responseText = null;
             BigDecimal compensation = null;
 
-            // --- parse payload (same as your code) ---
+            // --- parse payload ---
             if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
                 Object first = m.getObjectList().get(0);
                 if (first instanceof Map) {
                     Map<?,?> p = (Map<?,?>) first;
-                    Object idObj = p.get("complaintId");
-                    if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
-                    else if (idObj instanceof String && !((String) idObj).isBlank())
-                        complaintId = Long.valueOf((String) idObj);
-
-                    Object txt = p.get("responseText");
-                    if (txt instanceof String) responseText = ((String) txt).trim();
-
-                    Object comp = p.get("compensation");
-                    if (comp instanceof java.math.BigDecimal) compensation = (java.math.BigDecimal) comp;
-                    else if (comp instanceof Number)
-                        compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
-                } else {
-                    if (m.getObjectList().size() > 0) {
-                        Object idObj = m.getObjectList().get(0);
-                        if (idObj instanceof Number) complaintId = ((Number) idObj).longValue();
-                        else if (idObj instanceof Complaint && ((Complaint) idObj).getId() != 0)
-                            complaintId = (long) ((Complaint) idObj).getId();
+                    if (p.get("complaintId") != null) {
+                        complaintId = Long.valueOf(p.get("complaintId").toString());
                     }
-                    if (m.getObjectList().size() > 1 && m.getObjectList().get(1) instanceof Employee) {
-                        responder = session.get(Employee.class, ((Employee) m.getObjectList().get(1)).getId());
+                    if (p.get("responseText") instanceof String) {
+                        responseText = ((String) p.get("responseText")).trim();
                     }
-                    if (m.getObjectList().size() > 2 && m.getObjectList().get(2) instanceof String) {
-                        responseText = ((String) m.getObjectList().get(2)).trim();
-                    }
-                    if (m.getObjectList().size() > 3) {
-                        Object comp = m.getObjectList().get(3);
-                        if (comp instanceof java.math.BigDecimal) compensation = (java.math.BigDecimal) comp;
-                        else if (comp instanceof Number)
-                            compensation = java.math.BigDecimal.valueOf(((Number) comp).doubleValue());
+                    if (p.get("compensation") != null) {
+                        compensation = new BigDecimal(p.get("compensation").toString());
                     }
                 }
             }
@@ -1888,47 +1866,36 @@ public class SimpleServer extends AbstractServer {
                 c.setResponderName(responder.toString());
             }
 
-            // save complaint
             session.merge(c);
 
-            System.out.println("[DBG] handleResolveComplaint: complaintId=" + c.getId() + ", compensation=" + compensation);
-
-            if (compensation != null && compensation.compareTo(java.math.BigDecimal.ZERO) > 0) {
-                Long custId = (c.getCustomer() == null) ? null : c.getCustomer().getId();
-                if (custId != null) {
-                    Customer managedCustomer = session.get(Customer.class, custId); // managed
+            // --- Compensation logic ---
+            if (compensation != null && compensation.compareTo(BigDecimal.ZERO) > 0) {
+                Customer managedCustomer = session.get(Customer.class, c.getCustomer().getId());
+                if (managedCustomer != null) {
                     Budget budget = managedCustomer.getBudget();
-
                     if (budget == null) {
-                        budget = new Budget();
-                        budget.setCustomer(managedCustomer); // owning side
-                        managedCustomer.setBudget(budget);   // keep both sides in sync
+                        budget = new Budget(managedCustomer, 0);
+                        managedCustomer.setBudget(budget);
                         session.persist(budget);
-                        System.out.println("[DBG] Created new budget for customer " + custId);
                     }
-
                     double oldBal = budget.getBalance();
                     budget.addFunds(compensation.doubleValue());
-                    System.out.println("[DBG] Budget for customer " + custId + " : " + oldBal + " -> " + budget.getBalance());
 
-                    // Persist changes — update will be issued because Budget is the owning side
-                    session.persist(budget);
+                    // No need for session.update(budget) if budget is managed
+                    session.merge(managedCustomer);  // ensure customer + budget changes are tracked
 
-                    // Force flush so you can see the SQL in logs immediately
-                    session.flush();
+                    System.out.printf("[DBG] Compensation added: customer %d balance %.2f -> %.2f%n",
+                            managedCustomer.getId(), oldBal, budget.getBalance());
                 }
             }
-
-
-            String comp = (c.getCompensationAmount() != null)
-                    ? " Compensation: " + c.getCompensationAmount() + "."
-                    : "";
 
             createPersonalNotification(session,
                     c.getCustomer().getId(),
                     "Complaint resolved",
                     "We’ve reviewed your complaint #" + c.getId() + ". " +
-                            (c.getResponseText() == null ? "" : c.getResponseText()) + comp);
+                            (c.getResponseText() == null ? "" : c.getResponseText()) +
+                            (c.getCompensationAmount() != null ? " Compensation: " + c.getCompensationAmount() + "." : "")
+            );
 
             tx.commit();
 
@@ -1937,12 +1904,11 @@ public class SimpleServer extends AbstractServer {
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
-            try { client.sendToClient(new Message("complaint_resolve_error", "Exception: " + e.getMessage(), null)); }
-            catch (IOException ignored) {}
+            try {
+                client.sendToClient(new Message("complaint_resolve_error", "Exception: " + e.getMessage(), null));
+            } catch (IOException ignored) {}
         }
     }
-
-
 
 
 
@@ -3184,6 +3150,19 @@ public class SimpleServer extends AbstractServer {
             order.setPaymentMethod(clientOrder.getPaymentMethod());
             order.setPaymentDetails(clientOrder.getPaymentDetails());
             order.setTotalPrice(cart.getTotalWithDiscount());
+
+            if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
+                Budget budget = managedCustomer.getBudget();
+                if (budget == null || budget.getBalance() < cart.getTotalWithDiscount()) {
+                    client.sendToClient(new Message("order_error", "Insufficient budget", null));
+                    tx.rollback();
+                    return;
+                }
+                budget.setBalance(budget.getBalance() - cart.getTotalWithDiscount());
+                session.update(budget);
+                order.setPaymentMethod("BUDGET");
+            }
+
 
             // 4) Convert cart items -> order items, snapshotting
             for (CartItem cartItem : new ArrayList<>(cart.getItems())) {

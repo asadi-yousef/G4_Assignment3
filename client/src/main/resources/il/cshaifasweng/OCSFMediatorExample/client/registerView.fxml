@@ -98,7 +98,7 @@
                     <Label text="Payment Information" style="-fx-font-size: 16px; -fx-font-weight: bold;" alignment="CENTER"/>
                     <HBox spacing="10" alignment="CENTER" prefWidth="350">
                         <Label text="Credit Card:" prefWidth="100" alignment="CENTER_RIGHT"/>
-                        <TextField fx:id="creditNumberField" prefWidth="200" promptText="Card Number"/>
+                        <TextField fx:id="creditNumberField" prefWidth="200" promptText="XXXX XXXX XXXX XXXX"/>
                     </HBox>
                     <HBox spacing="10" alignment="CENTER" prefWidth="350">
                         <Label text="Expiration:" prefWidth="100" alignment="CENTER_RIGHT"/>
