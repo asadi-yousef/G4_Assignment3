@@ -110,6 +110,11 @@ public class OrderController implements Initializable {
             EventBus.getDefault().register(this);
         }
 
+        ///
+        storeLocationChoice.getItems().setAll("Loading branches...");
+        storeLocationChoice.setValue("Loading branches...");
+        storeLocationChoice.setDisable(true);
+        ///
         // Request branches from server
         try {
             SimpleClient.getClient().sendToServer(new Message("request_branches", null, null));
@@ -121,8 +126,11 @@ public class OrderController implements Initializable {
         Customer current = (SessionManager.getInstance().getCurrentUser() instanceof Customer)
                 ? (Customer) SessionManager.getInstance().getCurrentUser()
                 : null;
-        boolean isNetworkCustomer = (current != null) && current.isNetworkAccount();
+        this.isNetworkCustomer = (current != null) && current.isNetworkAccount();
+///
+        System.out.println("[OrderController] initialize: isNetworkCustomer = " + this.isNetworkCustomer + ", current = " + current);
 
+        ///
         // Toggle group
         deliveryGroup = new ToggleGroup();
         deliveryRadio.setToggleGroup(deliveryGroup);
@@ -179,8 +187,13 @@ public class OrderController implements Initializable {
       //  storeLocationChoice.setDisable(!isNetworkCustomer);
       //  storeLocationChoice.setValue(isNetworkCustomer ? "Select a branch" : "Your branch");
 
-        // If not a network account, lock to assigned branch immediately (if available)
-        if (!isNetworkCustomer) {
+        // Network account: enable, wait for server to populate
+        if (isNetworkCustomer) {
+            storeLocationChoice.setDisable(false);
+
+            // Do not set value yet — will set to first branch when server responds
+        } else {
+            // Branch account: lock to assigned branch
             String assigned = getAssignedBranchName(current);
             if (assigned != null && !assigned.isBlank()) {
                 storeLocationChoice.getItems().setAll(assigned);
@@ -189,6 +202,7 @@ public class OrderController implements Initializable {
                 storeLocationChoice.getItems().clear();
                 storeLocationChoice.setValue("No branch assigned");
             }
+            storeLocationChoice.setDisable(true);
         }
 
         // React to delivery/pickup changes
@@ -533,55 +547,74 @@ public class OrderController implements Initializable {
 
         if (msg.getMessage().equals("Branches")) {
             Platform.runLater(() -> {
-                // Ensure local list exists
+                // update local branches list
                 if (branches == null) branches = new ArrayList<>();
                 branches.clear();
 
-                // Safely copy Branch objects from payload
                 if (msg.getObject() instanceof List<?>) {
                     for (Object o : (List<?>) msg.getObject()) {
-                        if (o instanceof Branch) branches.add((Branch) o);
+                        if (o instanceof Branch) {
+                            branches.add((Branch) o);
+                        } else {
+                            System.out.println("[OrderController] Branches list contains non-Branch item: " + o);
+                        }
                     }
                 }
 
-                // Determine permission again (UI may have changed user state)
-                Customer current = (SessionManager.getInstance().getCurrentUser() instanceof Customer)
-                        ? (Customer) SessionManager.getInstance().getCurrentUser()
-                        : null;
-                boolean isNetworkCustomer = (current != null) && current.isNetworkAccount();
-
-                // Populate names
+                // build names list (plain style, no streams)
                 List<String> names = new ArrayList<>();
                 for (Branch b : branches) {
                     if (b != null && b.getName() != null) names.add(b.getName());
                 }
+                System.out.println("[OrderController] Parsed branch names: " + names);
+
+                // If no branch names, show a clear placeholder and disable
+                if (names.isEmpty()) {
+                    storeLocationChoice.getItems().clear();
+                    storeLocationChoice.getItems().add("No branches available");
+                    storeLocationChoice.setValue("No branches available");
+                    storeLocationChoice.setDisable(true);
+                    System.out.println("[OrderController] No branches received -> disabled ChoiceBox");
+                    return;
+                }
+
+                // populate ChoiceBox with received names
+                storeLocationChoice.getItems().setAll(names);
+
+                // decide based on controller flag and current session user
+                Customer current = (SessionManager.getInstance().getCurrentUser() instanceof Customer)
+                        ? (Customer) SessionManager.getInstance().getCurrentUser() : null;
+
+                System.out.println("[OrderController] isNetworkCustomer=" + isNetworkCustomer + ", current=" + current);
 
                 if (isNetworkCustomer) {
-                    // Network account: user may choose any branch
-                    storeLocationChoice.getItems().setAll(names);
-
-                    // Default selection if previously selected branch is invalid
-                    String currentSelection = storeLocationChoice.getValue();
-                    if (currentSelection == null || !storeLocationChoice.getItems().contains(currentSelection)) {
-                        if (!storeLocationChoice.getItems().isEmpty()) {
-                            storeLocationChoice.setValue(storeLocationChoice.getItems().get(0)); // default to first
-                        }
+                    // network customer: enable selection and set default
+                    storeLocationChoice.setDisable(false);
+                    if (!names.isEmpty()) {
+                        storeLocationChoice.setValue(names.get(0));
                     }
-                } else {
-                    // Branch account: lock to assigned branch
+                } else if (current != null) {
+                    // branch-account: lock to assigned branch (if present) or show 'No branch assigned'
                     String assigned = getAssignedBranchName(current);
                     if (assigned != null && !assigned.isBlank()) {
                         storeLocationChoice.getItems().setAll(assigned);
                         storeLocationChoice.setValue(assigned);
                     } else {
-                        storeLocationChoice.getItems().clear();
+                        storeLocationChoice.getItems().setAll("No branch assigned");
                         storeLocationChoice.setValue("No branch assigned");
                     }
+                    storeLocationChoice.setDisable(true);
+                } else {
+                    // no current user: keep items but disabled (user will be set later)
+                    storeLocationChoice.setDisable(true);
+                    if (!names.isEmpty()) storeLocationChoice.setValue(names.get(0));
                 }
-                storeLocationChoice.setDisable(!isNetworkCustomer);
 
+                System.out.println("[OrderController] ChoiceBox items after handling: " + storeLocationChoice.getItems());
             });
         }
+
+
     }
 
     private String getAssignedBranchName(Customer current) {
