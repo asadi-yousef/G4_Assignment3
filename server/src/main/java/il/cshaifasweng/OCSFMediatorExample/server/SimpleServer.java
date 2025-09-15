@@ -171,10 +171,10 @@ public class SimpleServer extends AbstractServer {
                     sendMsg(client, new Message("pong", "ok", null), "ping_echo");
                 } else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
-                }
-                else if("update_budget".equals(key))
-                {
-                    handleBudgetUpdate(m, client, session);
+                } else if("update_budget_add".equals(key)) {
+                    handleBudgetAdd(m, client, session);
+                } else if("update_budget_subtract".equals(key)) {
+                    handleBudgetSubtract(m, client, session);
                 }
                 else if("logout".equals(key)) {
                     handleLogout(client,session,m);
@@ -3151,19 +3151,41 @@ public class SimpleServer extends AbstractServer {
             order.setNote(clientOrder.getNote());
             order.setPaymentMethod(clientOrder.getPaymentMethod());
             order.setPaymentDetails(clientOrder.getPaymentDetails());
+            order.setCardExpiryDate(clientOrder.getCardExpiryDate());
+            order.setCardCVV(clientOrder.getCardCVV());
             order.setTotalPrice(cart.getTotalWithDiscount());
 
+//            if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
+//                Budget budget = managedCustomer.getBudget();
+//                if (budget == null || budget.getBalance() < cart.getTotalWithDiscount()) {
+//                    client.sendToClient(new Message("order_error", "Insufficient budget", null));
+//                    tx.rollback();
+//                    return;
+//                }
+//                budget.subtractFunds(cart.getTotalWithDiscount());
+//                session.update(budget);
+//                order.setPaymentMethod("BUDGET");
+//            }
             if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
                 Budget budget = managedCustomer.getBudget();
-                if (budget == null || budget.getBalance() < cart.getTotalWithDiscount()) {
-                    client.sendToClient(new Message("order_error", "Insufficient budget", null));
+                double orderTotal = cart.getTotalWithDiscount();
+
+                if (budget == null || budget.getBalance() <= 0) {
+                    client.sendToClient(new Message("order_error", "No available budget", null));
                     tx.rollback();
                     return;
                 }
-                budget.setBalance(budget.getBalance() - cart.getTotalWithDiscount());
-                session.update(budget);
+
+                // Subtract budget safely: if balance < order total, use all remaining balance
+                double usedFromBudget = Math.min(budget.getBalance(), orderTotal);
+                budget.setBalance(budget.getBalance() - usedFromBudget);
+                session.update(budget); // persist the new balance
+
+                // Set the payment info on the order (optional: partial payment handling)
                 order.setPaymentMethod("BUDGET");
+                order.setTotalPrice(orderTotal);
             }
+
 
 
             // 4) Convert cart items -> order items, snapshotting
@@ -3218,24 +3240,21 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-    private void handleBudgetUpdate(Message msg, ConnectionToClient client, Session session) {
-        // Get the customer object from the message
-        Customer customer = (Customer) msg.getObject();
-
+    private void handleBudgetAdd(Message msg, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();
         try {
-            // Fetch managed entity from DB
-            Customer dbCustomer = session.get(Customer.class, customer.getId());
+            Customer payload = (Customer) msg.getObject();
+            Customer dbCustomer = session.get(Customer.class, payload.getId());
 
             if (dbCustomer != null && dbCustomer.getBudget() != null) {
-                dbCustomer.getBudget().setBalance(customer.getBudget().getBalance());
-                session.update(dbCustomer.getBudget());
+                double delta = payload.getBudget().getBalance(); // amount to add
+                dbCustomer.getBudget().addFunds(delta);
+                session.update(dbCustomer.getBudget()); // update the budget itself
             }
 
             tx.commit();
-
-            // Send confirmation back to client
             client.sendToClient(new Message("budget_updated", dbCustomer, null));
+
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
@@ -3244,6 +3263,27 @@ public class SimpleServer extends AbstractServer {
             } catch (IOException ignored) {}
         }
     }
+
+
+
+    private void handleBudgetSubtract(Message msg, ConnectionToClient client, Session session) {
+        Customer customer = (Customer) msg.getObject();
+        Transaction tx = session.beginTransaction();
+        try {
+            Customer dbCustomer = session.get(Customer.class, customer.getId());
+            if (dbCustomer != null && dbCustomer.getBudget() != null) {
+                dbCustomer.getBudget().subtractFunds(customer.getBudget().getBalance());
+                session.update(dbCustomer.getBudget());
+            }
+            tx.commit();
+            client.sendToClient(new Message("budget_updated", dbCustomer, null));
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("budget_update_failed", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
 
 
     private CustomBouquet cloneBouquetForOrder(CustomBouquet src, Customer creator) {

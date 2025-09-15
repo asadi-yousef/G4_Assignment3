@@ -100,8 +100,9 @@ public class OrderController implements Initializable {
     @FXML
     private ChoiceBox<String> secondPaymentMethod;
 
-
-
+    private Order pendingOrder = null;
+    private double budgetAmountToUse = 0.0;
+    private boolean usingBudget = false;
     private double currentOrderTotal;
 
     @Override
@@ -127,10 +128,7 @@ public class OrderController implements Initializable {
                 ? (Customer) SessionManager.getInstance().getCurrentUser()
                 : null;
         this.isNetworkCustomer = (current != null) && current.isNetworkAccount();
-///
-        System.out.println("[OrderController] initialize: isNetworkCustomer = " + this.isNetworkCustomer + ", current = " + current);
 
-        ///
         // Toggle group
         deliveryGroup = new ToggleGroup();
         deliveryRadio.setToggleGroup(deliveryGroup);
@@ -420,6 +418,8 @@ public class OrderController implements Initializable {
                     }
                     isPaid = true;
                     paymentDetails = customer.getCreditCard().getCardNumber();
+                    cardExpiryDate = customer.getCreditCard().getExpirationMonth() + "/" + customer.getCreditCard().getExpirationYear();
+                    cardCVV = customer.getCreditCard().getCvv();
                 } else if ("New Card".equals(paymentMethod)) {
                     paymentDetails = newCardField.getText();
                     if (paymentDetails == null || paymentDetails.trim().isEmpty()) {
@@ -439,37 +439,35 @@ public class OrderController implements Initializable {
                     isPaid = true;
                 }
                 else if ("My Budget".equals(paymentMethod)) {
+                    // switch to second payment method for the remainder
+                    paymentMethod = secondPayment;
                     Budget budget = customer.getBudget();
                     if (budget == null || budget.getBalance() <= 0) {
                         showAlert("Insufficient Funds", "Your budget is empty. Please select another payment method.");
                         return;
                     }
 
+                    // determine how much we will take from the budget (delta)
                     if (budget.getBalance() >= orderTotal) {
-                        // Budget covers full order
-                        budget.subtractFunds(orderTotal);
+                        // budget will cover whole order
+                        budgetAmountToUse = orderTotal;
                         orderTotal = 0;
                         isPaid = true;
-
-                        List<Object> payload = new ArrayList<>();
-                        payload.add(customer);
-                        SimpleClient.getClient().sendToServer(new Message("update_budget", null, payload));
+                        usingBudget = true;
 
                     } else {
+                        // budget only covers part -> use it, remainder must be paid by second payment
                         double fromBudget = budget.getBalance();
                         double remaining = orderTotal - fromBudget;
-                        budget.subtractFunds(fromBudget);
-
-                        List<Object> payload = new ArrayList<>();
-                        payload.add(customer);
-                        SimpleClient.getClient().sendToServer(new Message("update_budget", null, payload));
+                        budgetAmountToUse = fromBudget;
+                        orderTotal = remaining;
 
                         if (secondPayment == null) {
                             showAlert("Missing Data", "Your budget isn’t enough. Please select a second payment method.");
                             return;
                         }
 
-                        // Process second payment
+                        // Validate/process second payment details (same as before)
                         if ("New Card".equals(secondPayment)) {
                             paymentDetails = newCardField.getText();
                             if (paymentDetails == null || paymentDetails.trim().isEmpty()) {
@@ -477,12 +475,12 @@ public class OrderController implements Initializable {
                                 return;
                             }
                             cardExpiryDate = newCardExpiryDate.getText();
-                            if(cardExpiryDate == null || cardExpiryDate.trim().isEmpty()) {
+                            if (cardExpiryDate == null || cardExpiryDate.trim().isEmpty()) {
                                 showAlert("Missing Data", "Please enter the card expiry date.");
                                 return;
                             }
                             cardCVV = newCardCVV.getText();
-                            if(cardCVV == null || cardCVV.trim().isEmpty()) {
+                            if (cardCVV == null || cardCVV.trim().isEmpty()) {
                                 showAlert("Missing Data", "Please enter the card cvv.");
                                 return;
                             }
@@ -492,14 +490,13 @@ public class OrderController implements Initializable {
                                 return;
                             }
                             paymentDetails = customer.getCreditCard().getCardNumber();
+                            cardExpiryDate = customer.getCreditCard().getExpirationMonth() + "/" + customer.getCreditCard().getExpirationYear();
+                            cardCVV = customer.getCreditCard().getCvv();
                         }
-
-                        orderTotal = remaining;
                         isPaid = true;
+                        usingBudget = true;
                     }
                 }
-
-
             }
 
             Order order = new Order();
@@ -517,9 +514,55 @@ public class OrderController implements Initializable {
             order.setCardExpiryDate(cardExpiryDate);
             order.setCardCVV(cardCVV);
 
-            placeOrderButton.setDisable(true);
-            placeOrderButton.setText("Processing...");
-            SimpleClient.getClient().sendToServer(new Message("place_order", order, null));
+
+//            if (usingBudget) {
+//                // prepare minimal payload: Customer id + Budget.delta
+//                Customer payload = new Customer();
+//                payload.setId(customer.getId());
+//                Budget b = new Budget();
+//                b.setBalance(Math.min(customer.getBudget().getBalance(), order.getTotalPrice())); // delta
+//                payload.setBudget(b);
+//
+//                // store order to send later, disable UI while waiting
+//                pendingOrder = order;
+//                placeOrderButton.setDisable(true);
+//                placeOrderButton.setText("Processing...");
+//
+//                try {
+//                    SimpleClient.getClient().sendToServer(new Message("update_budget_subtract", payload, null));
+//                } catch (IOException e) {
+//                    pendingOrder = null;
+//                    placeOrderButton.setDisable(false);
+//                    placeOrderButton.setText("Place order");
+//                    showAlert("Error", "Failed to send budget update: " + e.getMessage());
+//                }
+//                return; // wait for server response to continue
+//            }
+//
+//            placeOrderButton.setDisable(true);
+//            placeOrderButton.setText("Processing...");
+//            SimpleClient.getClient().sendToServer(new Message("place_order", order, null));
+
+            try {
+                if (usingBudget) {
+                    // mark order to use budget; no need to send separate budget message
+                    order.setPaymentMethod("BUDGET");
+                }
+
+                // disable UI while waiting for server response
+                placeOrderButton.setDisable(true);
+                placeOrderButton.setText("Processing...");
+
+                // send the order to the server; server will handle budget subtraction
+                SimpleClient.getClient().sendToServer(new Message("place_order", order, null));
+
+            } catch (IOException ex) {
+                placeOrderButton.setDisable(false);
+                placeOrderButton.setText("Place order");
+                showAlert("Error", "Failed to place order: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+
 
         } catch (Exception ex) {
             showAlert("Error", "Failed to place order: " + ex.getMessage());
@@ -544,6 +587,57 @@ public class OrderController implements Initializable {
             Platform.runLater(() -> showAlert("Error", details));
             return;
         }
+
+
+        if (msg.getMessage().equals("budget_updated")) {
+            Platform.runLater(() -> {
+                Object obj = msg.getObject();
+                if (obj instanceof Customer dbCustomer) {
+                    // Replace session copy with canonical DB copy
+                    try { SessionManager.getInstance().setCurrentUser(dbCustomer);
+                        budgetBalanceLabel.setText("Current Budget: ₪" + String.format("%.2f", dbCustomer.getBudget().getBalance()));
+
+                    } catch (Exception ignored) {}
+
+                    // If there is a pending order waiting for the budget subtraction, send it now
+                    if (pendingOrder != null) {
+                        try {
+                            SimpleClient.getClient().sendToServer(new Message("place_order", pendingOrder, null));
+                            pendingOrder = null;
+                        } catch (IOException e) {
+                            showAlert("Error", "Failed to send order after budget update.");
+                            placeOrderButton.setDisable(false);
+                            placeOrderButton.setText("Place order");
+                        }
+                    } else {
+                        // no pending order: just update UI if needed
+                    }
+                }
+            });
+            return;
+        }
+
+        if (msg.getMessage().equals("budget_insufficient")) {
+            Platform.runLater(() -> {
+                showAlert("Insufficient Budget", "Not enough budget to cover the requested amount.");
+                // re-enable UI
+                placeOrderButton.setDisable(false);
+                placeOrderButton.setText("Place order");
+                pendingOrder = null;
+            });
+            return;
+        }
+
+        if (msg.getMessage().equals("budget_update_failed")) {
+            Platform.runLater(() -> {
+                showAlert("Error", "Failed to update budget on server.");
+                placeOrderButton.setDisable(false);
+                placeOrderButton.setText("Place order");
+                pendingOrder = null;
+            });
+            return;
+        }
+
 
         if (msg.getMessage().equals("Branches")) {
             Platform.runLater(() -> {
