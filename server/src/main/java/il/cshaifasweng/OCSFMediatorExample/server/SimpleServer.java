@@ -2252,48 +2252,50 @@ public class SimpleServer extends AbstractServer {
             User user = null;
             Customer customer = null;
 
-            if (payload instanceof User) {
+            if (payload instanceof Customer) {
+                customer = (Customer) payload;
+                user = customer;
+            } else if (payload instanceof User) {
                 user = (User) payload;
-                if (user instanceof Customer) customer = (Customer) user;
-            } else if (payload instanceof List) {
-                List<?> list = (List<?>) payload;
-                if (!list.isEmpty() && list.get(0) instanceof User) user = (User) list.get(0);
-                if (list.size() > 1 && list.get(1) instanceof Customer) customer = (Customer) list.get(1);
+            } else if (payload instanceof java.util.List) {
+                for (Object o : (java.util.List<?>) payload) {
+                    if (o instanceof Customer) customer = (Customer) o;
+                    if (o instanceof User)     user = (User) o;
+                }
+                if (user == null && customer != null) user = customer;
             }
 
-            if (user == null) {
-                client.sendToClient(new Message("profile_update_failed", "Invalid user data", null));
+            if (user == null && customer == null) {
+                client.sendToClient(new Message("profile_update_failed", "No payload", null));
                 tx.rollback();
                 return;
             }
 
-            // Lock using current (old) username; capture it in case it changes
-            final String oldUsername = user.getUsername();
-            User mergedUser;
-                mergedUser = (User) session.merge(user);
-                if (customer != null) session.merge(customer);
-                tx.commit();
-            session.merge(user);
-            if (customer != null) session.merge(customer);
+            // Merge/persist in ONE TX
+            User managedUser = (User) session.merge(user);
+            Customer managedCustomer =
+                    (customer != null) ? (Customer) session.merge(customer)
+                            : ((managedUser instanceof Customer) ? (Customer) managedUser : null);
 
+            // If you create notifications, do it here before commit (using managedCustomer)
             session.flush();
-
-            createPersonalNotification(session,
-                    customer.getId(),
-                    "Profile updated",
-                    "Your profile details were updated successfully.");
-
-
             tx.commit();
 
-            client.sendToClient(new Message("profile_updated_success", null, null));
+            // IMPORTANT: clear and fetch a fresh snapshot (avoid stale L1 cache)
+            session.clear();
+            Long id = (managedCustomer != null) ? managedCustomer.getId() : managedUser.getId();
+            Customer fresh = session.get(Customer.class, id);
+
+            // Send success WITH the fresh object
+            client.sendToClient(new Message("profile_updated_success", fresh, null));
+
         } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
+            if (tx != null && tx.isActive()) tx.rollback();
             e.printStackTrace();
             try {
                 client.sendToClient(new Message("profile_update_failed",
                         "Database update failed: " + e.getMessage(), null));
-            } catch (IOException ignored) {}
+            } catch (java.io.IOException ignored) {}
         }
     }
 

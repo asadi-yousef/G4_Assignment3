@@ -1,5 +1,6 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
+import il.cshaifasweng.OCSFMediatorExample.entities.CreditCard;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
@@ -118,37 +119,77 @@ public class ProfileController implements Initializable {
     }
 
     private void loadUserProfile() {
-        if (currentUser == null) { D("loadUserProfile: currentUser=null"); return; }
-        D("loadUserProfile: currentUser="+currentUser.getUsername()+" ; hasCustomer="+(currentCustomer!=null));
+        // If we truly have no model yet, skip.
+        if (currentUser == null && currentCustomer == null) {
+            D("loadUserProfile: no user/customer model yet");
+            return;
+        }
+
+        final Customer c = currentCustomer;        // may be null
+        final User u = (currentUser != null) ? currentUser : currentCustomer; // fallback
+
+        D("loadUserProfile: username=" + (u != null ? u.getUsername() : "null")
+                + " ; hasCustomer=" + (c != null));
 
         Platform.runLater(() -> {
-            welcomeLabel.setText("Welcome, " + (currentUser.getFirstName() != null ? currentUser.getFirstName() : "User") + "!");
-            nameField.setText(nvl(currentUser.getFirstName()));
-            usernameField.setText(nvl(currentUser.getUsername()));
-            passwordField.setText("••••••••");
+            // Prefer Customer fields if present (covers server-refreshed snapshot after save)
+            String firstName =
+                    (c != null && c.getFirstName() != null && !c.getFirstName().isBlank())
+                            ? c.getFirstName()
+                            : (u != null ? u.getFirstName() : null);
 
-            if (currentCustomer != null) {
-                emailField.setText(nvl(currentCustomer.getEmail()));
-                phoneField.setText(nvl(currentCustomer.getPhone()));
-                addressField.setText(nvl(currentCustomer.getAddress()));
-                cityField.setText(nvl(currentCustomer.getCity()));
-                countryField.setText(nvl(currentCustomer.getCountry()));
+            String username =
+                    (c != null && c.getUsername() != null && !c.getUsername().isBlank())
+                            ? c.getUsername()
+                            : (u != null ? u.getUsername() : null);
+
+            // Header + core identity
+            welcomeLabel.setText("Welcome, " + (firstName != null && !firstName.isBlank() ? firstName : "User") + "!");
+            nameField.setText(nvl(firstName));
+            usernameField.setText(nvl(username));
+            passwordField.setText("••••••••"); // we never echo real password
+
+            // Customer-specific fields
+            if (c != null) {
+                emailField.setText(nvl(c.getEmail()));
+                phoneField.setText(nvl(c.getPhone()));
+                addressField.setText(nvl(c.getAddress()));
+                cityField.setText(nvl(c.getCity()));
+                countryField.setText(nvl(c.getCountry()));
 
                 String masked = "";
-                if (currentCustomer.getCreditCard() != null &&
-                        currentCustomer.getCreditCard().getCardNumber() != null &&
-                        !currentCustomer.getCreditCard().getCardNumber().isBlank()) {
-                    masked = maskCreditCard(currentCustomer.getCreditCard().getCardNumber());
+                if (c.getCreditCard() != null
+                        && c.getCreditCard().getCardNumber() != null
+                        && !c.getCreditCard().getCardNumber().isBlank()) {
+                    masked = maskCreditCard(c.getCreditCard().getCardNumber());
                 }
                 creditCardField.setText(masked);
-                D("loadUserProfile: filled customer fields; maskedCC.len="+masked.length());
+                D("loadUserProfile: filled customer fields; maskedCC.len=" + masked.length());
             } else {
-                emailField.setText(""); phoneField.setText(""); addressField.setText("");
-                cityField.setText("");  countryField.setText(""); creditCardField.setText("");
-                D("loadUserProfile: no customer data -> cleared fields");
+                // If we don't have a Customer yet, clear customer-only fields
+                emailField.setText("");
+                phoneField.setText("");
+                addressField.setText("");
+                cityField.setText("");
+                countryField.setText("");
+                creditCardField.setText("");
+                D("loadUserProfile: no customer data -> cleared customer fields");
+            }
+
+            // Keep current editability/visibility aligned with state
+            setFieldsEditable(isEditing);
+            editButton.setVisible(!isEditing);
+            saveButton.setVisible(isEditing);
+            cancelButton.setVisible(isEditing);
+
+            // Ensure Save/Cancel are clickable when we're in edit mode
+            if (isEditing) {
+                saveButton.setDisable(false);
+                cancelButton.setDisable(false);
             }
         });
     }
+
     private static String nvl(String s) { return s==null?"":s; }
 
     private String maskCreditCard(String creditCard) {
@@ -165,84 +206,111 @@ public class ProfileController implements Initializable {
         editButton.setVisible(false);
         saveButton.setVisible(true);
         cancelButton.setVisible(true);
+        saveButton.setDisable(false);
+        cancelButton.setDisable(false);
     }
 
     @FXML
     public void handleSave(ActionEvent event) {
         try {
-            // Since Customer extends User, if currentUser is a Customer,
-            // we can directly update it. Otherwise, we work with separate entities.
+            // Lock UI during save
+            setFieldsEditable(false);
+            saveButton.setDisable(true);
+            cancelButton.setDisable(true);
 
+            // Read + normalize inputs
+            String name     = trimOrNull(nameField.getText());
+            String username = trimOrNull(usernameField.getText());
+            String pwd      = passwordField.getText();
+            // If someone still sets "••••••••" into the field, ignore it:
+            if ("••••••••".equals(pwd)) pwd = "";
+            pwd = trimOrNull(pwd);
+
+            String email   = trimOrNull(emailField.getText());
+            String phone   = trimOrNull(phoneField.getText());
+            String address = trimOrNull(addressField.getText());
+            String city    = trimOrNull(cityField.getText());
+            String country = trimOrNull(countryField.getText());
+            String ccInput = trimOrNull(creditCardField.getText());
+
+            // Light validation
+            if (email != null && !email.matches("^[^@\\n]+@[^@\\n]+\\.[^@\\n]+$")) {
+                showAlert("Invalid email", "Please enter a valid email address.");
+                restoreUiAfterSaveAttempt();
+                return;
+            }
+            if (phone != null && !phone.matches("[+]?\\d{7,15}")) {
+                showAlert("Invalid phone", "Use digits only (7–15), with optional leading +.");
+                restoreUiAfterSaveAttempt();
+                return;
+            }
+
+            // Decide whether to update CC: ignore masked, accept only digits length 12–19
+            String newCardDigits = null;
+            if (ccInput != null && !ccInput.startsWith("****")) {
+                String digits = ccInput.replaceAll("\\D", "");
+                if (digits.length() >= 12 && digits.length() <= 19) {
+                    newCardDigits = digits;
+                } else {
+                    showAlert("Invalid card", "Card number length looks wrong.");
+                    restoreUiAfterSaveAttempt();
+                    return;
+                }
+            }
+
+            // Build and send the payload
             if (currentUser instanceof Customer) {
-                // Current user is already a Customer, update it directly
-                Customer customerUser = (Customer) currentUser;
+                Customer c = (Customer) currentUser;
 
-                // Update User fields
-                if (!nameField.getText().trim().isEmpty()) {
-                    customerUser.setFirstName(nameField.getText().trim());
-                }
-                if (!usernameField.getText().trim().isEmpty()) {
-                    customerUser.setUsername(usernameField.getText().trim());
-                }
-                if (!passwordField.getText().equals("••••••••") && !passwordField.getText().trim().isEmpty()) {
-                    customerUser.setPassword(passwordField.getText().trim());
-                }
+                if (name != null)     c.setFirstName(name);
+                if (username != null) c.setUsername(username);
+                if (pwd != null)      c.setPassword(pwd);
 
-                // Update Customer fields
-                customerUser.setEmail(emailField.getText().trim());
-                customerUser.setPhone(phoneField.getText().trim());
-                customerUser.setAddress(addressField.getText().trim());
-                customerUser.setCity(cityField.getText().trim());
-                customerUser.setCountry(countryField.getText().trim());
+                // Keep your behavior: blanks allowed (clear value)
+                c.setEmail(emptyToNull(email));
+                c.setPhone(emptyToNull(phone));
+                c.setAddress(emptyToNull(address));
+                c.setCity(emptyToNull(city));
+                c.setCountry(emptyToNull(country));
 
-                if (!creditCardField.getText().startsWith("****") && !creditCardField.getText().trim().isEmpty()) {
-                    customerUser.getCreditCard().setCardNumber(creditCardField.getText().trim());
+                if (newCardDigits != null) {
+                    if (c.getCreditCard() == null) c.setCreditCard(new CreditCard());
+                    c.getCreditCard().setCardNumber(newCardDigits);
                 }
 
-                // Send the updated customer (which is also a user)
-                Message message = new Message("update_profile", customerUser, null);
-                SimpleClient.getClient().sendToServer(message);
+                SimpleClient.getClient().sendToServer(new Message("update_profile", c, null));
 
             } else {
-                // Current user is just a User, not a Customer
-                // Update User data
-                if (!nameField.getText().trim().isEmpty()) {
-                    currentUser.setFirstName(nameField.getText().trim());
-                }
-                if (!usernameField.getText().trim().isEmpty()) {
-                    currentUser.setUsername(usernameField.getText().trim());
-                }
-                if (!passwordField.getText().equals("••••••••") && !passwordField.getText().trim().isEmpty()) {
-                    currentUser.setPassword(passwordField.getText().trim());
-                }
+                // Update the User part
+                if (name != null)     currentUser.setFirstName(name);
+                if (username != null) currentUser.setUsername(username);
+                if (pwd != null)      currentUser.setPassword(pwd);
 
-                // Update Customer data if customer exists
+                // If you also have a Customer instance, send it (so customer details persist)
                 if (currentCustomer != null) {
-                    currentCustomer.setEmail(emailField.getText().trim());
-                    currentCustomer.setPhone(phoneField.getText().trim());
-                    currentCustomer.setAddress(addressField.getText().trim());
-                    currentCustomer.setCity(cityField.getText().trim());
-                    currentCustomer.setCountry(countryField.getText().trim());
+                    currentCustomer.setEmail(emptyToNull(email));
+                    currentCustomer.setPhone(emptyToNull(phone));
+                    currentCustomer.setAddress(emptyToNull(address));
+                    currentCustomer.setCity(emptyToNull(city));
+                    currentCustomer.setCountry(emptyToNull(country));
 
-                    if (!creditCardField.getText().startsWith("****") && !creditCardField.getText().trim().isEmpty()) {
-                        currentCustomer.getCreditCard().setCardNumber(creditCardField.getText().trim());
+                    if (newCardDigits != null) {
+                        if (currentCustomer.getCreditCard() == null) currentCustomer.setCreditCard(new CreditCard());
+                        currentCustomer.getCreditCard().setCardNumber(newCardDigits);
                     }
-
-                    // Send customer as main object since it has all the data
-                    Message message = new Message("update_profile", currentCustomer, null);
-                    SimpleClient.getClient().sendToServer(message);
+                    SimpleClient.getClient().sendToServer(new Message("update_profile", currentCustomer, null));
                 } else {
-                    // Just send user data
-                    Message message = new Message("update_profile", currentUser, null);
-                    SimpleClient.getClient().sendToServer(message);
+                    // No customer object — send just the User
+                    SimpleClient.getClient().sendToServer(new Message("update_profile", currentUser, null));
                 }
             }
 
         } catch (Exception e) {
+            E("handleSave failed", e);
             showAlert("Error", "Failed to save changes: " + e.getMessage());
+            restoreUiAfterSaveAttempt();
         }
     }
-
     @FXML
     public void handleCancel(ActionEvent event) {
         isEditing = false;
@@ -302,33 +370,85 @@ public class ProfileController implements Initializable {
         switch (msg.getMessage()) {
             case "customer_data_response":
                 try {
-                    this.currentCustomer = (Customer) msg.getObject();
-                    D("customer_data_response: currentCustomer="+(currentCustomer==null?"null":"ok"));
-                    loadUserProfile();
-                    setFieldsEditable(false);
+                    Customer payload = (Customer) msg.getObject();
+                    Platform.runLater(() -> {
+                        this.currentCustomer = payload;       // assign model
+                        loadUserProfile();                    // fills the fields
+                        isEditing = false;                    // your state flag
+                        setFieldsEditable(false);             // <-- now on FX thread
+                        editButton.setVisible(true);
+                        saveButton.setVisible(false);
+                        cancelButton.setVisible(false);
+                    });
                 } catch (Throwable t) { E("customer_data_response handling failed", t); }
                 break;
 
             case "profile_updated_success":
                 Platform.runLater(() -> {
-                    D("profile_updated_success: updating UI");
+                    D("profile_updated_success: updating UI (has payload? " + (msg.getObject()!=null) + ")");
+                    Customer updated = null;
+                    try { updated = (Customer) msg.getObject(); } catch (ClassCastException ignored) {}
+
+                    if (updated != null) {
+                        // Replace local models with the server snapshot
+                        this.currentCustomer = updated;
+                        if (this.currentUser != null) {
+                            this.currentUser.setFirstName(updated.getFirstName());
+                            this.currentUser.setUsername(updated.getUsername());
+                        }
+                    } else {
+                        try {
+                            SimpleClient.getClient().sendToServer(new Message("request_customer_data", currentUser, null));
+                        } catch (java.io.IOException ex) {
+                            D("IOException while requesting fresh customer data: " + ex);
+                            showAlert("Connection error", "Couldn't refresh your profile:\n" + ex.getMessage());
+                            // if this ran inside a save flow, make sure the UI isn't stuck:
+                            saveButton.setDisable(false);
+                            cancelButton.setDisable(false);
+                        }
+
+                    }
+
                     showAlert("Success", "Profile updated successfully!");
                     isEditing = false;
                     setFieldsEditable(false);
                     editButton.setVisible(true);
                     saveButton.setVisible(false);
                     cancelButton.setVisible(false);
+
+                    // Make sure next edit starts enabled
+                    saveButton.setDisable(false);
+                    cancelButton.setDisable(false);
+
                     loadUserProfile();
                 });
                 break;
 
-            default:
-                if (msg.getMessage().startsWith("error") || "profile_update_failed".equals(msg.getMessage())) {
-                    D("profile update error: "+msg.getMessage());
-                    Platform.runLater(() -> showAlert("Error", "Failed to update profile: " + msg.getMessage()));
-                } else {
-                    D("UNHANDLED msg: "+msg.getMessage());
-                }
+            case "profile_update_failed":
+                Platform.runLater(() -> {
+                    String reason = (msg.getObject() instanceof String)
+                            ? (String) msg.getObject()
+                            : "Unknown error";
+                    showAlert("Update failed", "Failed to update profile: " + reason);
+
+                    // Stay in edit mode so the user can fix and retry
+                    isEditing = true;
+                    setFieldsEditable(true);
+
+                    editButton.setVisible(false);
+                    saveButton.setVisible(true);
+                    cancelButton.setVisible(true);
+
+                    // IMPORTANT: re-enable them (you disabled in handleSave)
+                    saveButton.setDisable(false);
+                    cancelButton.setDisable(false);
+
+                    saveButton.setDisable(false);
+                    cancelButton.setDisable(false);
+                    loadUserProfile();
+                });
+                break;
+
         }
     }
 
@@ -351,5 +471,18 @@ public class ProfileController implements Initializable {
             alert.setContentText(content);
             alert.showAndWait();
         });
+    }
+    private String trimOrNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+    private String emptyToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s.trim();
+    }
+    private void restoreUiAfterSaveAttempt() {
+        setFieldsEditable(true);
+        saveButton.setDisable(false);
+        cancelButton.setDisable(false);
     }
 }
