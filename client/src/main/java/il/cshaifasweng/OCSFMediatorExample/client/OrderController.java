@@ -560,27 +560,25 @@ public class OrderController implements Initializable {
                     // Network account: user may choose any branch
                     storeLocationChoice.getItems().setAll(names);
 
-                    // Set default selection
+                    // Default selection if previously selected branch is invalid
                     String currentSelection = storeLocationChoice.getValue();
                     if (currentSelection == null || !storeLocationChoice.getItems().contains(currentSelection)) {
-                        String assigned = getAssignedBranchName(current);
-                        if (assigned != null && storeLocationChoice.getItems().contains(assigned)) {
-                            storeLocationChoice.setValue(assigned);
-                        } else if (!storeLocationChoice.getItems().isEmpty()) {
-                            storeLocationChoice.setValue(storeLocationChoice.getItems().get(0));
+                        if (!storeLocationChoice.getItems().isEmpty()) {
+                            storeLocationChoice.setValue(storeLocationChoice.getItems().get(0)); // default to first
                         }
                     }
                 } else {
-                    // Non-network account: show all branches too, allow choice
-                    storeLocationChoice.getItems().setAll(names);
-                    if (!names.isEmpty()) {
-                        storeLocationChoice.setValue(names.get(0)); // default to first branch
+                    // Branch account: lock to assigned branch
+                    String assigned = getAssignedBranchName(current);
+                    if (assigned != null && !assigned.isBlank()) {
+                        storeLocationChoice.getItems().setAll(assigned);
+                        storeLocationChoice.setValue(assigned);
                     } else {
-                        storeLocationChoice.setValue("No branches available");
+                        storeLocationChoice.getItems().clear();
+                        storeLocationChoice.setValue("No branch assigned");
                     }
                 }
-                storeLocationChoice.setDisable(false); // ensure it's always enabled
-
+                storeLocationChoice.setDisable(!isNetworkCustomer);
 
             });
         }
