@@ -112,7 +112,7 @@
                 <!-- Delivery Date and Time Section (Always visible when delivery is selected) -->
                 <VBox style="-fx-background-color: #ffffff; -fx-background-radius: 10; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 5, 0, 0, 2);">
                     <children>
-                        <Label text="Delivery Schedule" textFill="#34495e">
+                        <Label text="Delivery/Pickup Schedule" textFill="#34495e">
                             <font>
                                 <Font name="System Bold" size="18.0" />
                             </font>
@@ -124,7 +124,7 @@
                         <!-- Delivery Date and Time -->
                         <HBox alignment="CENTER_LEFT" spacing="15.0">
                             <children>
-                                <Label text="📅 Delivery Date:" textFill="#2c3e50" minWidth="140.0">
+                                <Label text="📅 Delivery/Pickup Date:" textFill="#2c3e50" minWidth="140.0">
                                     <font>
                                         <Font name="System Bold" size="14.0" />
                                     </font>
@@ -262,20 +262,51 @@
                                         <Font name="System Bold" size="14.0" />
                                     </font>
                                 </Label>
+
                                 <ChoiceBox fx:id="paymentMethodChoice" prefWidth="200.0"
                                            style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8;" />
 
-                                <!-- Display current order total -->
-                                <Label fx:id="orderTotalLabel" text="Total: ₪0.00" textFill="#2c3e50">
-                                    <font>
-                                        <Font name="System Bold" size="14.0" />
-                                    </font>
-                                </Label>
+                                <!-- spacer pushes totals to the right so they don't sit on the same line as payment -->
+                                <Region HBox.hgrow="ALWAYS" />
+
+                                <!-- Totals column: original total on top, delivery info (hidden by default) below -->
+                                <VBox alignment="CENTER_RIGHT" spacing="4.0">
+                                    <children>
+                                        <Label fx:id="orderTotalLabel" text="Total: ₪0.00" textFill="#2c3e50">
+                                            <font>
+                                                <Font name="System Bold" size="14.0" />
+                                            </font>
+                                        </Label>
+
+                                        <HBox alignment="CENTER_RIGHT" spacing="8.0">
+                                            <children>
+                                                <!-- hidden by default -->
+                                                <Label fx:id="deliveryPriceLabel" text="" textFill="#2c3e50" visible="false" managed="false">
+                                                    <font>
+                                                        <Font name="System Bold" size="13.0" />
+                                                    </font>
+                                                </Label>
+
+                                                <Label fx:id="orderTotalWithDelivery" text="" textFill="#2c3e50" visible="false" managed="false">
+                                                    <font>
+                                                        <Font name="System Bold" size="13.0" />
+                                                    </font>
+                                                </Label>
+                                            </children>
+                                        </HBox>
+                                    </children>
+                                    <VBox.margin>
+                                        <!-- moves totals slightly to the left/right as you asked -->
+                                        <Insets right="20.0" />
+                                    </VBox.margin>
+                                </VBox>
                             </children>
+
                             <VBox.margin>
                                 <Insets bottom="15.0" left="30.0" right="30.0" />
                             </VBox.margin>
                         </HBox>
+
 
                         <!-- Budget Info -->
                         <HBox alignment="CENTER_LEFT" spacing="15.0" visible="false" managed="false" fx:id="budgetBox">

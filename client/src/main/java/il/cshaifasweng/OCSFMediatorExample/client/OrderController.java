@@ -86,6 +86,10 @@ public class OrderController implements Initializable {
     @FXML
     private Label orderTotalLabel;
     @FXML
+    private Label deliveryPriceLabel;
+    @FXML
+    private Label orderTotalWithDelivery;
+    @FXML
     private HBox budgetBox;
     @FXML
     private VBox insufficientBudgetBox;
@@ -172,8 +176,8 @@ public class OrderController implements Initializable {
 
         // Store branch choice setup (no hard-coded items)
         storeLocationChoice.getItems().clear();
-        storeLocationChoice.setDisable(!isNetworkCustomer);
-        storeLocationChoice.setValue(isNetworkCustomer ? "Select a branch" : "Your branch");
+      //  storeLocationChoice.setDisable(!isNetworkCustomer);
+      //  storeLocationChoice.setValue(isNetworkCustomer ? "Select a branch" : "Your branch");
 
         // If not a network account, lock to assigned branch immediately (if available)
         if (!isNetworkCustomer) {
@@ -195,6 +199,15 @@ public class OrderController implements Initializable {
                 deliveryDetailsSection.setManaged(true);
                 storeLocationSection.setVisible(false);
                 storeLocationSection.setManaged(false);
+                deliveryPriceLabel.setVisible(true);
+                deliveryPriceLabel.setManaged(true);
+                orderTotalWithDelivery.setVisible(true);
+                orderTotalWithDelivery.setManaged(true);
+                double orderTotal = currentOrderTotal;
+                double deliveryPrice = 20;
+                orderTotal += deliveryPrice;
+                deliveryPriceLabel.setText("Delivery: 20₪");
+                orderTotalWithDelivery.setText("Total with delivery: ₪" + String.format("%.2f", orderTotal));
 
             } else if (newToggle == pickupRadio) {
                 // Pickup selected
@@ -203,16 +216,26 @@ public class OrderController implements Initializable {
                 storeLocationSection.setVisible(true);
                 storeLocationSection.setManaged(true);
 
-                // Only network customers may pick a branch
-                storeLocationChoice.setDisable((SessionManager.getInstance().getCurrentUser() instanceof Customer)
-                        ? !((Customer) SessionManager.getInstance().getCurrentUser()).isNetworkAccount()
-                        : true);
+                // If the current customer has an assigned branch -> keep it locked; otherwise allow selection
+                if (SessionManager.getInstance().getCurrentUser() instanceof Customer) {
+                    Customer c = (Customer) SessionManager.getInstance().getCurrentUser();
+                    storeLocationChoice.setDisable(getAssignedBranchName(c) != null && !getAssignedBranchName(c).isBlank());
+                } else {
+                    storeLocationChoice.setDisable(false);
+                }
+               // storeLocationChoice.setDisable((SessionManager.getInstance().getCurrentUser() instanceof Customer)
+               //         ? !((Customer) SessionManager.getInstance().getCurrentUser()).isNetworkAccount()
+                //        : true);
 
                 // Clear delivery-specific fields
                 deliveryDatePicker.setValue(null);
                 differentRecipientCheck.setSelected(false);
                 recipientPhoneField.clear();
                 deliveryAddressField.clear();
+                deliveryPriceLabel.setVisible(false);
+                deliveryPriceLabel.setManaged(false);
+                orderTotalWithDelivery.setVisible(false);
+                orderTotalWithDelivery.setManaged(false);
             }
         });
 
@@ -278,6 +301,10 @@ public class OrderController implements Initializable {
 
         placeOrderButton.setOnAction(e -> placeOrder());
         cancelButton.setOnAction(e -> goBackToCart());
+        deliveryPriceLabel.setVisible(false);
+        deliveryPriceLabel.setManaged(false);
+        orderTotalWithDelivery.setVisible(false);
+        orderTotalWithDelivery.setManaged(false);
     }
 
 
@@ -301,7 +328,13 @@ public class OrderController implements Initializable {
             LocalDateTime deliveryTime = null;
             String recipientPhone = null;
             String deliveryAddress = null;
+            double deliveryPrice = 20;
+            double orderTotal = SessionManager.getInstance().getOrderTotal();
 
+            deliveryPriceLabel.setVisible(false);
+            deliveryPriceLabel.setManaged(false);
+            orderTotalWithDelivery.setVisible(false);
+            orderTotalWithDelivery.setManaged(false);
             if ("Pickup".equals(deliveryMethod)) {
                 if (isNetworkCustomer) {
                     storeLocation = storeLocationChoice.getValue();
@@ -317,7 +350,13 @@ public class OrderController implements Initializable {
                     }
                 }
             } else {
-
+                deliveryPriceLabel.setVisible(true);
+                deliveryPriceLabel.setManaged(true);
+                orderTotalWithDelivery.setVisible(true);
+                orderTotalWithDelivery.setManaged(true);
+                orderTotal += deliveryPrice;
+                deliveryPriceLabel.setText("Delivery: 20₪");
+                orderTotalWithDelivery.setText("Total with delivery: ₪" + String.format("%.2f", orderTotal));
                 deliveryAddress = deliveryAddressField.getText();
                 if (deliveryAddress == null || deliveryAddress.trim().isEmpty()) {
                     showAlert("Missing Data", "Please enter the delivery address.");
@@ -347,7 +386,7 @@ public class OrderController implements Initializable {
                 return;
             }
 
-            double orderTotal = SessionManager.getInstance().getOrderTotal();
+
             String paymentMethod = paymentMethodChoice.getValue();
             String secondPayment = secondPaymentMethod.getValue();
             if (paymentMethod == null) {
@@ -521,6 +560,7 @@ public class OrderController implements Initializable {
                     // Network account: user may choose any branch
                     storeLocationChoice.getItems().setAll(names);
 
+                    // Set default selection
                     String currentSelection = storeLocationChoice.getValue();
                     if (currentSelection == null || !storeLocationChoice.getItems().contains(currentSelection)) {
                         String assigned = getAssignedBranchName(current);
@@ -530,20 +570,18 @@ public class OrderController implements Initializable {
                             storeLocationChoice.setValue(storeLocationChoice.getItems().get(0));
                         }
                     }
-                    storeLocationChoice.setDisable(false);
-                    storeLocationChoice.setValue("Select a branch");
                 } else {
-                    // Non-network account: lock to assigned branch
-                    String assigned = getAssignedBranchName(current);
-                    if (assigned != null && !assigned.isBlank()) {
-                        storeLocationChoice.getItems().setAll(assigned);
-                        storeLocationChoice.setValue(assigned);
+                    // Non-network account: show all branches too, allow choice
+                    storeLocationChoice.getItems().setAll(names);
+                    if (!names.isEmpty()) {
+                        storeLocationChoice.setValue(names.get(0)); // default to first branch
                     } else {
-                        storeLocationChoice.getItems().clear();
-                        storeLocationChoice.setValue("No branch assigned");
+                        storeLocationChoice.setValue("No branches available");
                     }
-                    storeLocationChoice.setDisable(true);
                 }
+                storeLocationChoice.setDisable(false); // ensure it's always enabled
+
+
             });
         }
     }
