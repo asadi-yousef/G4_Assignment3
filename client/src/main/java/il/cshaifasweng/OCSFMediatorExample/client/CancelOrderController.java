@@ -53,13 +53,13 @@ public class CancelOrderController implements Initializable {
 
             // Format delivery date
             if (selectedOrder.getDeliveryDateTime() != null) {
-                deliveryDateLabel.setText("Delivery Date: " +
+                deliveryDateLabel.setText("Delivery/Pickup Date: " +
                         selectedOrder.getDeliveryDateTime().format(
                                 java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
                         )
                 );
             } else {
-                deliveryDateLabel.setText("Delivery Date: -");
+                deliveryDateLabel.setText("Delivery/Pickup Date: -");
             }
 
             // Placeholder for future compensation info
