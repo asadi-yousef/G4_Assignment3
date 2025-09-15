@@ -336,7 +336,7 @@ public class OrderController implements Initializable {
             LocalDate date = deliveryDatePicker.getValue();
             Integer hour = deliveryHourSpinner.getValue();
             if (date == null || date.isBefore(LocalDate.now())) {
-                showAlert("Invalid Date", "Please select a valid delivery date.");
+                showAlert("Invalid Date", "Please select a valid Delivery/Pickup date.");
                 return;
             }
             deliveryTime = date.atTime(hour != null ? hour : 12, 0);
@@ -455,6 +455,7 @@ public class OrderController implements Initializable {
             order.setStoreLocation(storeLocation);
             order.setOrderDate(LocalDateTime.now());
             order.setDeliveryDateTime(deliveryTime);
+            order.setPickupDateTime(deliveryTime);
             order.setRecipientPhone(recipientPhone);       // null for Pickup
             order.setDeliveryAddress(deliveryAddress);     // null for Pickup
             order.setNote(orderNoteField.getText());

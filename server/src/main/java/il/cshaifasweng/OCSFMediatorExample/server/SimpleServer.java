@@ -1576,9 +1576,10 @@ public class SimpleServer extends AbstractServer {
             List<ScheduleOrderDTO> dtoList = new ArrayList<>();
             for (Order o : orders) {
                 boolean delivery = Boolean.TRUE.equals(o.getDelivery());
-                java.time.LocalDateTime when = delivery
-                        ? o.getDeliveryDateTime()
-                        : o.getPickupDateTime(); // final fallback
+                java.time.LocalDateTime when = o.getDeliveryDateTime();
+               // java.time.LocalDateTime when = delivery
+               //         ? o.getDeliveryDateTime()
+               //         : o.getPickupDateTime(); // final fallback
 
                 // whereText: branch for pickup, address for delivery
                 String whereText = "-";
@@ -3252,6 +3253,7 @@ public class SimpleServer extends AbstractServer {
             order.setDelivery(clientOrder.getDelivery());
             order.setOrderDate(LocalDateTime.now());
             order.setDeliveryDateTime(clientOrder.getDeliveryDateTime());
+            order.setPickupDateTime(clientOrder.getPickupDateTime());
             order.setRecipientPhone(clientOrder.getRecipientPhone());
             order.setDeliveryAddress(clientOrder.getDeliveryAddress());
             order.setNote(clientOrder.getNote());

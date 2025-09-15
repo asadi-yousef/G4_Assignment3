@@ -392,6 +392,9 @@ public class EmployeeScheduleController implements Initializable {
 
 
     private javafx.scene.layout.VBox buildCard(ScheduleOrderDTO dto) {
+        //
+        System.out.println(dto.getScheduledAt());
+        //
         var box = new javafx.scene.layout.VBox(10);
         box.setPadding(new javafx.geometry.Insets(15));
         box.setStyle("-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #e1e8ed; -fx-border-width: 1; -fx-border-radius: 12; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.08), 5, 0, 0, 2);");

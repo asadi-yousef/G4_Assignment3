@@ -21,7 +21,8 @@ public class Order implements Serializable {
     private boolean delivery;
 
     private LocalDateTime orderDate;
-    private LocalDateTime deliveryDateTime; // combines date & hour
+    private LocalDateTime deliveryDateTime;
+    private LocalDateTime pickupDateTime;
 
     private String recipientPhone;
     private String deliveryAddress; // new
@@ -41,7 +42,7 @@ public class Order implements Serializable {
     public Order() {}
 
     public Order(Customer customer, String branchName, boolean delivery,
-                 LocalDateTime orderDate, LocalDateTime deliveryDateTime,
+                 LocalDateTime orderDate, LocalDateTime deliveryDateTime, LocalDateTime pickupDateTime,
                  String recipientPhone, String deliveryAddress, String note,
                  String paymentMethod, String paymentDetails, double totalPrice) {
         this.customer = customer;
@@ -49,6 +50,7 @@ public class Order implements Serializable {
         this.delivery = delivery;
         this.orderDate = orderDate;
         this.deliveryDateTime = deliveryDateTime;
+        this.pickupDateTime = pickupDateTime;
         this.recipientPhone = recipientPhone;
         this.deliveryAddress = deliveryAddress;
         this.note = note;
@@ -147,10 +149,9 @@ public class Order implements Serializable {
         this.totalPrice = totalPrice;
     }
 
-    private java.time.LocalDateTime pickupDateTime; // nullable
 
     public LocalDateTime getPickupDateTime() { return pickupDateTime; }
-    public void setPickupDateTime(LocalDateTime t) { this.pickupDateTime = t; }
+    public void setPickupDateTime(LocalDateTime pickupDateTime) { this.pickupDateTime = pickupDateTime; }
 
     public List<OrderItem> getItems() {
         return items;
@@ -165,8 +166,7 @@ public class Order implements Serializable {
         if (Boolean.TRUE.equals(getDelivery())) {
             return getDeliveryDateTime();
         }
-        return (getPickupDateTime() != null) ? getPickupDateTime()
-                : getOrderDate(); // fallback
+        return getPickupDateTime();
     }
     @Transient
     public double calculateFinalTotal() {
