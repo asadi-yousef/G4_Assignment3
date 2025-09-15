@@ -126,13 +126,13 @@ public class App {
                     Employee employee = new Employee("214734501","yosef","asadi", "yosef", "yosef2005", "netmanager", null, true);
                     session.save(employee);
                     session.flush();
-                    //Employee employee1 = new Employee("214732341","naaman","kopty", "_Naaman", "naaman1702", "branchmanager", null, false);
-                    //session.save(employee1);
-                    //session.flush();
+                    Employee employee1 = new Employee("214732341","naaman","kopty", "_Naaman", "naaman1702", "systemadmin", null, true);
+                    session.save(employee1);
+                    session.flush();
                     Employee employee2 = new Employee("214396675","silin","michael", "silin", "silin", "customerservice", null, true);
                     session.save(employee2);
                     session.flush();
-                    Employee e = new Employee("212735468","renata","haiek","renata","123","systemadmin",null,true);
+                    Employee e = new Employee("212735468","renata","haiek","renata","123","driver",null,true);
                     session.save(e);
                     session.flush();
                 } else {
@@ -144,9 +144,11 @@ public class App {
                 ).getSingleResult();
 
                 if (branchCount == null || branchCount == 0L) {
-                    //session.save(haifa);
-                    //session.flush();
-                    //session.save(telaviv);
+                    Branch branch1 = new Branch("Haifa");
+                    session.save(branch1);
+                    Branch branch2 = new Branch("Tel-Aviv");
+                    session.flush();
+                    session.save(branch2);
                     session.flush();
                 } else {
                     System.out.println("Branch table already contains data. Skipping insert.");

@@ -43,6 +43,7 @@ public class PrimaryController implements Initializable {
 	@FXML private TextField maxPriceField;
     @FXML private Button inboxButton;
     @FXML private Button broadcastButton;
+	@FXML private Button budgetButton;
     private int unreadPersonalCount = 0;
     private Label inboxBadge;
 
@@ -75,26 +76,12 @@ public class PrimaryController implements Initializable {
 	public static byte[] getImageBytes(long productId) { return IMAGE_CACHE.get(productId); }
 	public static boolean hasImageBytes(long productId) { return IMAGE_CACHE.containsKey(productId); }
 
-	// ===== DEBUG helpers =====
-	private final String TAG = "PrimaryController@" + Integer.toHexString(System.identityHashCode(this));
-	private static String ts() { return java.time.LocalTime.now().toString(); }
-	private static String th() { return Thread.currentThread().getName(); }
-	private void D(String msg)  { System.out.println(ts()+" [D]["+th()+"] "+TAG+" :: "+msg); }
-	private void W(String msg)  { System.err.println(ts()+" [W]["+th()+"] "+TAG+" :: "+msg); }
-	private void E(String msg, Throwable t) {
-		System.err.println(ts()+" [E]["+th()+"] "+TAG+" :: "+msg+" -> "+t);
-		if (t != null) t.printStackTrace();
-	}
-
 
 	@Override
 	public void initialize(URL location, ResourceBundle resources) {
-		D("initialize: registered? "+EventBus.getDefault().isRegistered(this));
 		if (!EventBus.getDefault().isRegistered(this)) {
 			EventBus.getDefault().register(this);
-			D("EventBus.register() OK");
 		}
-		D("initialize: setting listeners + loading catalog");
 
         setupInboxBadge();
 
@@ -358,16 +345,11 @@ public class PrimaryController implements Initializable {
 
 	@Subscribe
 	public void onMessageFromServer(Message msg) {
-		D("onMessageFromServer: "+msg.getMessage());
-		if ("orders_for_day".equals(msg.getMessage())) return;
+        if ("orders_for_day".equals(msg.getMessage())) return;
         Platform.runLater(() -> {
 			loadingIndicator.setVisible(false);
 			switch (msg.getMessage()) {
 				case "catalog": {
-					D("catalog: full="+(this.fullCatalog==null?"null":""+this.fullCatalog.getFlowers().size())
-							+ " ; flowersOnly="+(this.flowersOnlyCatalog==null?"null":""+this.flowersOnlyCatalog.getFlowers().size())
-							+ " ; nonFlower="+(this.nonFlowerCatalog==null?"null":""+this.nonFlowerCatalog.getFlowers().size()));
-
 					this.fullCatalog = (Catalog) msg.getObject();
 
 					List<?> list = msg.getObjectList();
@@ -543,7 +525,6 @@ public class PrimaryController implements Initializable {
 				}
 
 				default:
-					D("UNHANDLED server msg: "+msg.getMessage());
 					System.out.println("Received unhandled message from server: " + msg.getMessage());
 					break;
 			}
@@ -557,7 +538,6 @@ public class PrimaryController implements Initializable {
 	}
 
 	private void loadCatalogData() {
-		D("loadCatalogData: sending request_catalog");
 		loadingIndicator.setVisible(true);
 		catalogGrid.getChildren().clear();
 
@@ -573,7 +553,6 @@ public class PrimaryController implements Initializable {
 		};
 
 		loadTask.setOnFailed(e -> {
-			E("loadCatalogData FAILED", loadTask.getException());
 			loadingIndicator.setVisible(false);
 			showAlert("Connection Error", "Failed to connect to the server.");
 		});
@@ -640,6 +619,11 @@ public class PrimaryController implements Initializable {
             refreshInboxBadgeText(); // keeps the count on button label
         }
 
+		if(budgetButton != null) {
+			boolean showBudget = isLoggedIn && !isEmployee;
+			budgetButton.setVisible(showBudget);
+			budgetButton.setManaged(showBudget);
+		}
 
         updateCustomButtonState();
 
@@ -845,6 +829,7 @@ public class PrimaryController implements Initializable {
 			showAlert("Error", "Could not open the product page.");
 		}
 	}
+
 
 	private void handleDeleteProduct(Product product) {
 		Alert confirmationAlert = new Alert(Alert.AlertType.CONFIRMATION);
@@ -1108,21 +1093,16 @@ public class PrimaryController implements Initializable {
     }
 
 
-	@FXML
+    @FXML
 	public void handleProfile(ActionEvent event) {
-		D("handleProfile: start (unregister -> navigate Profile)");
 		try {
+			FXMLLoader loader = new FXMLLoader(getClass().getResource("Profile.fxml"));
+			Parent root = loader.load();
+			Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
+			stage.setScene(new Scene(root));
+			stage.show();
 			EventBus.getDefault().unregister(this);
-			D("EventBus.unregister() OK");
-		} catch (Throwable t) {
-			E("EventBus.unregister FAILED", t);
-		}
-		try {
-			// Prefer App.setRoot to keep it uniform (and easier to log there too)
-			App.setRoot("Profile");
-			D("handleProfile: App.setRoot(Profile) OK");
 		} catch (IOException e) {
-			E("handleProfile: load Profile FAILED", e);
 			showAlert("Error", "Failed to load profile page.");
 		}
 	}
@@ -1239,4 +1219,19 @@ public class PrimaryController implements Initializable {
 		// SimpleClient.getClient().sendToServer(new Message("staff_mark_order_completed", orderId, null));
 	}
 
+
+	@FXML
+	public void handleAddBudget(ActionEvent actionEvent) {
+		try {
+			User currentUser = SessionManager.getInstance().getCurrentUser();
+			if(currentUser == null) {
+				showAlert("Login Required", "Please login to access your budget.");
+				return;
+			}
+			App.setRoot("addBudgetView");
+		} catch (IOException e) {
+			e.printStackTrace();
+			showAlert("Error", "Failed to open budget page.");
+		}
+	}
 }

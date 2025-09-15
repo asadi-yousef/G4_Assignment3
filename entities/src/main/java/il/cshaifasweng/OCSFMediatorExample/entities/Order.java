@@ -25,9 +25,11 @@ public class Order implements Serializable {
 
     private String recipientPhone;
     private String deliveryAddress; // new
-    private String note; // ברכה (optional)
+    private String note; // ברכה
     private String paymentMethod; // "SavedCard", "NewCard", "CashOnDelivery"
-    private String paymentDetails; // e.g. card number or "Cash on Delivery"
+    private String paymentDetails;
+    private String cardExpiryDate;
+    private String cardCVV;
     private double totalPrice;
     private String status; // "PLACED","IN_PREP","READY_FOR_PICKUP","OUT_FOR_DELIVERY","DELIVERED","CANCELLED"
     public String getStatus(){ return status; }
@@ -52,6 +54,8 @@ public class Order implements Serializable {
         this.note = note;
         this.paymentMethod = paymentMethod;
         this.paymentDetails = paymentDetails;
+        this.cardExpiryDate = cardExpiryDate;
+        this.cardCVV = cardCVV;
         this.totalPrice = totalPrice;
     }
 
@@ -129,6 +133,13 @@ public class Order implements Serializable {
         this.paymentDetails = paymentDetails;
     }
 
+    public String getCardExpiryDate() {
+        return cardExpiryDate;
+    }
+    public void setCardExpiryDate(String cardExpiryDate) { this.cardExpiryDate = cardExpiryDate; }
+    public String getCardCVV() { return cardCVV; }
+    public void setCardCVV(String cardCVV) { this.cardCVV = cardCVV; }
+
     public double getTotalPrice() {
         return totalPrice;
     }
@@ -163,7 +174,9 @@ public class Order implements Serializable {
                 .mapToDouble(item -> item.getDisplayUnitPrice() * item.getQuantity())
                 .sum();
 
-        if (customer != null && customer.hasValidSubscription() && total > 50) {
+        // Network-account discount (10%) for orders >= 50
+        boolean network = (customer != null) && customer.isNetworkAccount();
+        if (network && total >= 50.0) {
             total *= 0.9;
         }
         return total;

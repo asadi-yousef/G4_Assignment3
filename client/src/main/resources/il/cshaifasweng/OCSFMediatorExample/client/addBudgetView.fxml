@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+<VBox xmlns:fx="http://javafx.com/fxml"
+      fx:controller="il.cshaifasweng.OCSFMediatorExample.client.AddBudgetController"
+      spacing="20"
+      alignment="TOP_CENTER"
+      style="-fx-background-color: #fafafa; -fx-padding: 30;">
+
+    <Label fx:id="budgetBalanceLabel" text="Current Budget: ₪0.00"/>
+    <HBox spacing="8">
+        <Label text="Amount:"/>
+        <TextField fx:id="amountField" promptText="e.g. 50.00"/>
+    </HBox>
+    <HBox spacing="8">
+        <Label text="Payment:"/>
+        <ChoiceBox fx:id="paymentMethodChoice"/>
+    </HBox>
+    <VBox fx:id="newCardBox" spacing="6" visible="false" managed="false">
+        <TextField fx:id="cardNumberField" promptText="Card number"/>
+        <TextField fx:id="expiryField" promptText="MM/YY"/>
+        <TextField fx:id="cvvField" promptText="CVV"/>
+    </VBox>
+    <HBox spacing="8">
+        <Button fx:id="addButton" text="Add to Budget" onAction="#handleAddToBudget"/>
+    </HBox>
+    <Button fx:id="backToCatalogButton" onAction="#handleBackToCatalog" text="← Back to Catalog"
+            style="-fx-background-color: #3498db; -fx-text-fill: white; -fx-background-radius: 8; -fx-padding: 10 20 10 20; -fx-cursor: hand; -fx-font-weight: bold; -fx-font-size: 14px;" />
+</VBox>
