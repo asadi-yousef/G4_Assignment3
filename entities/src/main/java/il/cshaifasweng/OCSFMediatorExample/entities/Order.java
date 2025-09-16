@@ -160,14 +160,6 @@ public class Order implements Serializable {
         this.items = items;
     }
 
-    @jakarta.persistence.Transient
-    public LocalDateTime getScheduledAt() {
-        // delivery: deliveryDateTime; pickup: pickupDateTime if set; else fallback to orderDate
-        if (Boolean.TRUE.equals(getDelivery())) {
-            return getDeliveryDateTime();
-        }
-        return getPickupDateTime();
-    }
     @Transient
     public double calculateFinalTotal() {
         double total = items.stream()
@@ -180,6 +172,13 @@ public class Order implements Serializable {
             total *= 0.9;
         }
         return total;
+    }
+    @Transient
+    public LocalDateTime getScheduledAt() {
+        LocalDateTime when = getPickupDateTime();
+        if (getDelivery()) when = getDeliveryDateTime();
+        if (when == null) when = getOrderDate();
+        return when;
     }
 
 }

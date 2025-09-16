@@ -129,18 +129,14 @@ public class LoginControl implements Initializable {
                     if(user instanceof Employee) {
                         Employee employee = (Employee) user;
                         if(employee.getRole().equals("customerservice")) {
-                            EventBus.getDefault().unregister(this);
                             App.setRoot("complaintsList");
                         }
                         else if(employee.getRole().equals("systemadmin")) {
-                            EventBus.getDefault().unregister(this);
                             App.setRoot("AdminUsersView");
                         } else if (employee.getRole().equals("driver")) {
                             // Driver uses the *same* schedule screen, but it will lock itself to deliveries
-                            EventBus.getDefault().unregister(this);
                             App.setRoot("employeeScheduleView"); }
                         else {
-                            EventBus.getDefault().unregister(this);
                             App.setRoot("primary");
                         }
                         }
