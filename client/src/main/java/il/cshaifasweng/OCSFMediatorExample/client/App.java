@@ -83,6 +83,7 @@ public class App extends Application {
     public void stop() throws Exception {
         if(SessionManager.getInstance().getCurrentUser() != null) {
             String username = (String) (SessionManager.getInstance().getCurrentUser().getUsername());
+            SessionManager.getInstance().logout();
             SimpleClient.getClient().sendToServer(new Message("logout",username,null));
         }
         EventBus.getDefault().unregister(this);
