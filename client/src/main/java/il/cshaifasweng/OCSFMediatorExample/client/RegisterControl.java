@@ -156,6 +156,9 @@ public class RegisterControl implements Initializable {
             try {
                 boolean isSubscribed = "yearly subscription".equals(accountTypeComboBox.getValue());
                 boolean isNetworkAccount = ("Network Account".equals(accountTypeComboBox.getValue()) || "yearly subscription".equals(accountTypeComboBox.getValue()));
+                LocalDate subStartDate = isSubscribed ? LocalDate.now() : null;
+                LocalDate subEndDate   = isSubscribed ? subStartDate.plusYears(1) : null; // end exclusive
+
                 Budget initialBudget = new Budget();
                 // Create new Customer object with all form data
                 // IMPORTANT: ID is now the FIRST constructor parameter as requested

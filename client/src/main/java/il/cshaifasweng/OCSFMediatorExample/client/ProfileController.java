@@ -23,6 +23,9 @@ import org.greenrobot.eventbus.Subscribe;
 import java.io.IOException;
 import java.net.URL;
 import java.util.ResourceBundle;
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+
 
 public class ProfileController implements Initializable {
 
@@ -54,6 +57,9 @@ public class ProfileController implements Initializable {
     private Button cancelButton;
     @FXML
     private Button backButton;
+    @FXML private javafx.scene.control.Label subscriptionStatusLabel;
+    @FXML private javafx.scene.control.Button renewBuySubscriptionButton;
+
 
     private User currentUser;
     private Customer currentCustomer;
@@ -187,6 +193,8 @@ public class ProfileController implements Initializable {
                 saveButton.setDisable(false);
                 cancelButton.setDisable(false);
             }
+
+            updateSubscriptionUi(c);
         });
     }
 
@@ -448,8 +456,38 @@ public class ProfileController implements Initializable {
                     loadUserProfile();
                 });
                 break;
-
+            case "subscription_renewal_success": {
+                Platform.runLater(() -> {
+                    Object payload = msg.getObject();
+                    if (payload instanceof Customer) {
+                        this.currentCustomer = (Customer) payload;
+                        // keep username/first name in sync with header if you use them there
+                        if (this.currentUser != null) {
+                            this.currentUser.setFirstName(this.currentCustomer.getFirstName());
+                            this.currentUser.setUsername(this.currentCustomer.getUsername());
+                        }
+                    } else {
+                        // fallback: fetch fresh snapshot if server returned something else
+                        try {
+                            SimpleClient.getClient().sendToServer(new Message("request_customer_data", currentUser, null));
+                        } catch (Exception ignored) { }
+                    }
+                    showAlert("Success", "Subscription updated!");
+                    updateSubscriptionUi(this.currentCustomer);
+                    renewBuySubscriptionButton.setDisable(false);
+                });
+                break;
+            }
+            case "subscription_renewal_failed": {
+                Platform.runLater(() -> {
+                    String reason = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Unknown error";
+                    showAlert("Renewal failed", reason);
+                    renewBuySubscriptionButton.setDisable(false);
+                });
+                break;
+            }
         }
+
     }
 
     private void setFieldsEditable(boolean editable) {
@@ -485,4 +523,82 @@ public class ProfileController implements Initializable {
         saveButton.setDisable(false);
         cancelButton.setDisable(false);
     }
+
+    //subscription renewal methods
+    // --- Subscription UI helpers ---
+    private static String fmt(LocalDate d) { return d == null ? "—" : d.toString(); }
+
+    private void updateSubscriptionUi(Customer c) {
+        if (subscriptionStatusLabel == null || renewBuySubscriptionButton == null) return;
+
+        String status = "No subscription";
+        boolean showBtn = true;  // show for buy/renew
+        String btnText = "Buy subscription (₪100)";
+
+        if (c != null && c.getSubscription() != null) {
+            var sub = c.getSubscription();
+            boolean active = sub.isCurrentlyActive();
+            LocalDate end = sub.getEndDate();
+
+            if (active) {
+                // endDate is EXCLUSIVE; last active day is endDate - 1
+                LocalDate thru = (end != null) ? end.minusDays(1) : null;
+                status = "Active through " + fmt(thru);
+
+                long daysLeft = (end != null)
+                        ? java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), end)
+                        : Long.MAX_VALUE;
+                btnText = (daysLeft <= 14) ? "Renew (₪100)" : "Extend (₪100)";
+            } else {
+                if (end != null && end.isBefore(LocalDate.now())) {
+                    status = "Expired on " + fmt(end);
+                    btnText = "Renew (₪100)";
+                } else {
+                    status = "Inactive";
+                    btnText = "Buy subscription (₪100)";
+                }
+            }
+        } else {
+            status = "No subscription";
+            btnText = "Buy subscription (₪100)";
+        }
+
+        subscriptionStatusLabel.setText(status);
+        renewBuySubscriptionButton.setText(btnText);
+        renewBuySubscriptionButton.setVisible(showBtn);
+        renewBuySubscriptionButton.setManaged(showBtn);
+        renewBuySubscriptionButton.setDisable(false);
+    }
+
+    @FXML
+    public void handleRenewOrBuySubscription(ActionEvent e) {
+        if (currentCustomer == null) {
+            showAlert("Error", "No customer loaded.");
+            return;
+        }
+
+        // Label text determines the dialog copy
+        String actionCopy = renewBuySubscriptionButton.getText().contains("Renew") || renewBuySubscriptionButton.getText().contains("Extend")
+                ? "Renew yearly subscription for ₪100?"
+                : "Buy yearly subscription for ₪100?";
+
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Yearly Subscription");
+        alert.setHeaderText(actionCopy);
+        alert.setContentText("Benefit: 10% off every purchase over ₪50 across the network for one year.");
+        var result = alert.showAndWait();
+        if (result.isEmpty() || result.get() != javafx.scene.control.ButtonType.OK) return;
+
+        try {
+            renewBuySubscriptionButton.setDisable(true);
+            // Send a single message that server handles as “buy if none, renew if exists”
+            SimpleClient.getClient().sendToServer(
+                    new Message("renew_subscription", currentCustomer.getId(), null)
+            );
+        } catch (Exception ex) {
+            renewBuySubscriptionButton.setDisable(false);
+            showAlert("Error", "Failed to send request: " + ex.getMessage());
+        }
+    }
+
 }

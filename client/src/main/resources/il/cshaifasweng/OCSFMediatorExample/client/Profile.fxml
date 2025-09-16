@@ -143,6 +143,24 @@
                             </font>
                         </Label>
                         <TextField fx:id="passwordField" prefWidth="250.0" style="-fx-background-color: #f8f9fa; -fx-border-color: #dee2e6; -fx-border-radius: 5; -fx-padding: 10;" GridPane.columnIndex="3" GridPane.rowIndex="3" />
+
+                        <!-- NEW ROW: Subscription (under Password) -->
+                        <Label text="Subscription:" textFill="#2c3e50" GridPane.columnIndex="2" GridPane.rowIndex="4">
+                            <font>
+                                <Font name="System Bold" size="14.0" />
+                            </font>
+                        </Label>
+                        <HBox spacing="8" alignment="CENTER_LEFT" GridPane.columnIndex="3" GridPane.rowIndex="4">
+                            <children>
+                                <Label fx:id="subscriptionStatusLabel" text="—" />
+                                <Button fx:id="renewBuySubscriptionButton"
+                                        text="Buy subscription (₪100)"
+                                        onAction="#handleRenewOrBuySubscription"
+                                        visible="false" managed="false"
+                                        style="-fx-background-color: #6c757d; -fx-text-fill: white; -fx-background-radius: 6; -fx-padding: 6 10 6 10; -fx-cursor: hand;" />
+                            </children>
+                        </HBox>
+                        <!-- /NEW ROW -->
                     </children>
                     <VBox.margin>
                         <Insets bottom="30.0" left="30.0" right="30.0" />

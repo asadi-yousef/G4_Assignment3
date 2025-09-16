@@ -30,6 +30,9 @@ import java.util.stream.Collectors;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.time.LocalDate;
+import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
+import il.cshaifasweng.OCSFMediatorExample.entities.Subscription;
+import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 
 import java.util.stream.Stream;
 
@@ -219,7 +222,8 @@ public class SimpleServer extends AbstractServer {
                     handleStaffMarkOrderCompleted(m, client, session);
                 } else if ("staff_send_delivery_email".equals(key)) {
                     handleStaffSendDeliveryEmail(m, client, session);
-
+                }else if("renew_subscription".equals(key)) {
+                    handleRenewSubscription(m,client);
                 // ---------- EMPLOYEE SCHEDULE (accept multiple aliases) ----------
                 } else if ("request_orders_by_day".equals(key)
                         || "request_day".equals(key)
@@ -324,6 +328,52 @@ public class SimpleServer extends AbstractServer {
             e.printStackTrace();
             try { client.sendToClient(new Message("admin_delete_error", e.getMessage(), null)); }
             catch (IOException ignored) {}
+        }
+    }
+
+    private void handleRenewSubscription(Message msg, ConnectionToClient client) {
+        Transaction tx = null;
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+
+            Object payload = msg.getObject();
+            Long customerId = (payload instanceof Long) ? (Long) payload
+                    : ((Customer) payload).getId();
+
+            Customer c = session.get(Customer.class, customerId);
+            if (c == null) throw new IllegalArgumentException("Customer not found");
+
+            Subscription sub = c.getSubscription();
+
+            if (sub == null) {
+                // BUY: new 1-year end-exclusive window
+                LocalDate start = LocalDate.now();
+                LocalDate end   = start.plusYears(1);
+                sub = new Subscription(start, end, true, c);
+                c.setSubscription(sub);
+                session.save(sub); // if no cascade
+            } else {
+                // RENEW/EXTEND: exactly one year, keeping end-exclusive semantics
+                if (sub.isCurrentlyActive() && sub.getEndDate() != null) {
+                    sub.setEndDate(sub.getEndDate().plusYears(1));
+                } else {
+                    LocalDate start = LocalDate.now();
+                    sub.setStartDate(start);
+                    sub.setEndDate(start.plusYears(1));
+                }
+                sub.setActive(true);
+                session.update(sub);
+            }
+
+            c.setSubscribed(true);
+            c.setNetworkAccount(true);
+            session.update(c);
+
+            tx.commit();
+            client.sendToClient(new Message("subscription_renewal_success", c, null));
+        } catch (Exception ex) {
+            if (tx != null && tx.isActive()) try { tx.rollback(); } catch (Exception ignore) {}
+            try { client.sendToClient(new Message("subscription_renewal_failed", ex.getMessage(), null)); } catch (Exception ignore) {}
         }
     }
 
