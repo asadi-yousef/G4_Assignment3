@@ -563,7 +563,6 @@ public class OrderController implements Initializable {
                 ex.printStackTrace();
             }
 
-
         } catch (Exception ex) {
             showAlert("Error", "Failed to place order: " + ex.getMessage());
             ex.printStackTrace();
@@ -593,29 +592,29 @@ public class OrderController implements Initializable {
             Platform.runLater(() -> {
                 Object obj = msg.getObject();
                 if (obj instanceof Customer dbCustomer) {
-                    // Replace session copy with canonical DB copy
-                    try { SessionManager.getInstance().setCurrentUser(dbCustomer);
-                        budgetBalanceLabel.setText("Current Budget: ₪" + String.format("%.2f", dbCustomer.getBudget().getBalance()));
+                    // update global session user
+                    try {
+                        SessionManager.getInstance().setCurrentUser(dbCustomer);
+                    } catch (Exception ignored) { }
 
-                    } catch (Exception ignored) {}
-
-                    // If there is a pending order waiting for the budget subtraction, send it now
-                    if (pendingOrder != null) {
-                        try {
-                            SimpleClient.getClient().sendToServer(new Message("place_order", pendingOrder, null));
-                            pendingOrder = null;
-                        } catch (IOException e) {
-                            showAlert("Error", "Failed to send order after budget update.");
-                            placeOrderButton.setDisable(false);
-                            placeOrderButton.setText("Place order");
+                    // update local UI components that show budget (if present)
+                    try {
+                        double newBal = (dbCustomer.getBudget() != null) ? dbCustomer.getBudget().getBalance() : 0.0;
+                        // OrderController has budgetBalanceLabel
+                        if (budgetBalanceLabel != null) {
+                            budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", newBal));
                         }
-                    } else {
-                        // no pending order: just update UI if needed
+                        // AddBudgetController has budgetBalanceLabel (it will also receive this message)
+                        // It will update itself in its handler (you already have identical code there)
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
                 }
             });
             return;
         }
+
 
         if (msg.getMessage().equals("budget_insufficient")) {
             Platform.runLater(() -> {

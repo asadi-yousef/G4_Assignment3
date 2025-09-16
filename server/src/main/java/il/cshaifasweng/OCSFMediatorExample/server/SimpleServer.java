@@ -3229,6 +3229,12 @@ public class SimpleServer extends AbstractServer {
 
 
             tx.commit();
+            try {
+                // send budget update first so client UIs see new balance before order success UI transitions
+                client.sendToClient(new Message("budget_updated", managedCustomer, null));
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
             client.sendToClient(new Message("order_placed_successfully", order, null));
 
         } catch (Exception e) {
