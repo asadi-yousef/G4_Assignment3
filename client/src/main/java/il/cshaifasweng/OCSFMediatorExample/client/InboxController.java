@@ -60,13 +60,13 @@ public class InboxController implements Initializable {
         switch (msg.getMessage()) {
             case "inbox_list" -> Platform.runLater(() -> {
                 InboxListDTO payload = (InboxListDTO) msg.getObject();
-                var personal = payload.getPersonal();
-                var broadcast = payload.getBroadcast();
+                java.util.List<InboxItemDTO> personal  = payload == null ? java.util.List.of() : payload.getPersonal();
+                java.util.List<InboxItemDTO> broadcast = payload == null ? java.util.List.of() : payload.getBroadcast();
 
                 personalList.getItems().setAll(personal);
                 broadcastList.getItems().setAll(broadcast);
 
-                status(String.format("Personal: %d (%d unread) • Announcements: %d",
+                status(String.format("Inbox: %d personal (%d unread), %d announcements",
                         personal.size(),
                         (int) personal.stream().filter(n -> !n.isRead()).count(),
                         broadcast.size()));
@@ -78,18 +78,24 @@ public class InboxController implements Initializable {
             case "inbox_list_error" -> Platform.runLater(() ->
                     status("Error: " + java.util.Objects.toString(msg.getObject(), "unknown")));
             case "inbox_personal_new" -> Platform.runLater(() -> {
+                InboxItemDTO dto = (InboxItemDTO) msg.getObject();
+
                 Long targetId = null;
                 if (msg.getObjectList() != null && !msg.getObjectList().isEmpty()) {
                     Object v = msg.getObjectList().get(0);
                     if (v instanceof Number) targetId = ((Number) v).longValue();
                 }
+
                 var u = SessionManager.getInstance().getCurrentUser();
-                if (u instanceof Customer && targetId != null && java.util.Objects.equals(((Customer) u).getId(), targetId)) {
-                    InboxItemDTO dto = (InboxItemDTO) msg.getObject();
-                    personalList.getItems().add(0, dto);
-                    personalList.refresh();
+                if (u instanceof Customer c) {
+                    // Accept when recipient matches OR when the push didn’t include filtering info
+                    if (targetId == null || java.util.Objects.equals(c.getId(), targetId)) {
+                        personalList.getItems().add(0, dto);
+                        personalList.refresh();
+                    }
                 }
             });
+
             case "inbox_broadcast_new" -> Platform.runLater(() -> {
                 InboxItemDTO dto = (InboxItemDTO) msg.getObject();
                 broadcastList.getItems().add(0, dto);
