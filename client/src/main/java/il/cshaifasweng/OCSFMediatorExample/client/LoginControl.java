@@ -33,23 +33,19 @@ public class LoginControl implements Initializable {
     private ImageView eyeOpenView;
     private ImageView eyeClosedView;
 
-    private volatile boolean loginInFlight = false;
-    private boolean registered = false;
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this);
-            registered = true;
         }
         loadToggleImages();
         setupPasswordToggle();
     }
 
     private void safeUnregister() {
-        if (registered && EventBus.getDefault().isRegistered(this)) {
+        if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this);
-            registered = false;
         }
     }
 
@@ -95,7 +91,6 @@ public class LoginControl implements Initializable {
 
     @FXML
     void handleLogin(ActionEvent event) {
-        if (loginInFlight) return; // debounce
         String username = usernameField.getText();
         String password = passwordField.getText();
 
@@ -104,7 +99,6 @@ public class LoginControl implements Initializable {
             return;
         }
 
-        loginInFlight = true;
         setLoading(true);
 
         Task<Void> loginTask = new Task<>() {
@@ -120,7 +114,6 @@ public class LoginControl implements Initializable {
             }
         };
         loginTask.setOnFailed(e -> {
-            loginInFlight = false;
             setLoading(false);
             showError("Connection to server failed. Please try again later.");
         });
@@ -138,7 +131,6 @@ public class LoginControl implements Initializable {
         }
 
         Platform.runLater(() -> {
-            loginInFlight = false;
             setLoading(false);
 
             switch (key) {

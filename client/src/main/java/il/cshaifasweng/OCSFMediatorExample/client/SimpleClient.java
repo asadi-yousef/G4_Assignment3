@@ -20,8 +20,6 @@ public class SimpleClient extends AbstractClient {
 
 	private static String delete_msg = "account_deleted";
 	public static String ban_msg = "account_banned";
-	// Put this field in SimpleClient (or wherever this method lives)
-	private final java.util.concurrent.atomic.AtomicBoolean forcedOutOnce = new java.util.concurrent.atomic.AtomicBoolean(false);
 
 	@Override
 	protected void handleMessageFromServer(Object msg) {
@@ -35,7 +33,7 @@ public class SimpleClient extends AbstractClient {
 			if (key != null && (key.equals(ban_msg) || key.equals(delete_msg))) {
 
 				// If you really want to inform the server once, guard it:
-				if (key.equals(ban_msg) && forcedOutOnce.compareAndSet(false, true)) {
+				if (key.equals(ban_msg)) {
 					try {
 						var current = SessionManager.getInstance().getCurrentUser();
 						if (current != null) {
