@@ -110,6 +110,37 @@ public class SimpleServer extends AbstractServer {
             cache.put(keyExtractor.apply(entity), entity);
         }
     }
+    @Override
+    protected void clientDisconnected(ConnectionToClient client) {
+        super.clientDisconnected(client);
+        safeAutoLogout(client);
+        subscribersList.removeIf(sc -> sc.getClient().equals(client));
+    }
+
+    @Override
+    protected void clientException(ConnectionToClient client, Throwable exception) {
+        safeAutoLogout(client);
+        subscribersList.removeIf(sc -> sc.getClient().equals(client));
+    }
+
+    private void safeAutoLogout(ConnectionToClient client) {
+        Object uid = client.getInfo("userId");
+        if (!(uid instanceof Number)) return;
+
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            Transaction tx = s.beginTransaction();
+            s.createQuery("update User u set u.isLoggedIn = false " +
+                            "where u.id = :id and u.isLoggedIn = true")
+                    .setParameter("id", ((Number) uid).longValue())
+                    .executeUpdate();
+            tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            client.setInfo("userId", null);
+            client.setInfo("username", null);
+        }
+    }
 
 
     /* ----------------------- Request dispatch ----------------------- */

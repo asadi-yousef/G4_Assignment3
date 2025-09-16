@@ -33,11 +33,24 @@ public class LoginControl implements Initializable {
     private ImageView eyeOpenView;
     private ImageView eyeClosedView;
 
+    private volatile boolean loginInFlight = false;
+    private boolean registered = false;
+
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-        EventBus.getDefault().register(this);
-        loadToggleImages(); // Load images first
-        setupPasswordToggle(); // Then set up the button
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this);
+            registered = true;
+        }
+        loadToggleImages();
+        setupPasswordToggle();
+    }
+
+    private void safeUnregister() {
+        if (registered && EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().unregister(this);
+            registered = false;
+        }
     }
 
     private void loadToggleImages() {
@@ -82,85 +95,99 @@ public class LoginControl implements Initializable {
 
     @FXML
     void handleLogin(ActionEvent event) {
+        if (loginInFlight) return; // debounce
         String username = usernameField.getText();
         String password = passwordField.getText();
 
-        if (username.isEmpty() || password.isEmpty()) {
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
             showError("Username and password cannot be empty.");
             return;
         }
 
+        loginInFlight = true;
         setLoading(true);
 
         Task<Void> loginTask = new Task<>() {
-            @Override
-            protected Void call() throws Exception {
+            @Override protected Void call() throws Exception {
                 if (!SimpleClient.getClient().isConnected()) {
-                    SimpleClient.getClient().openConnection();
+                    SimpleClient.getClient().openConnection(); // ideally done once app-wide
                 }
-                List<String> info = new ArrayList<String>();
+                List<String> info = new ArrayList<>(2);
                 info.add(username);
                 info.add(password);
-                SimpleClient.getClient().sendToServer( new Message("check existence", info , null));
+                SimpleClient.getClient().sendToServer(new Message("check existence", info, null));
                 return null;
             }
         };
-
         loginTask.setOnFailed(e -> {
+            loginInFlight = false;
             setLoading(false);
             showError("Connection to server failed. Please try again later.");
         });
-
-        new Thread(loginTask).start();
+        new Thread(loginTask).start(); // short-lived background send
     }
+
 
     @Subscribe
     public void onMessage(Message message) {
-        Platform.runLater(() -> { // Wrap UI updates in Platform.runLater()
-            System.out.println(message.getMessage());
+        // Only react to the login flow messages
+        String key = message.getMessage();
+        if (!"correct".equals(key) && !"incorrect".equals(key)
+                && !"already_logged".equals(key) && !"frozen".equals(key)) {
+            return; // ignore unrelated traffic
+        }
+
+        Platform.runLater(() -> {
+            loginInFlight = false;
             setLoading(false);
-            if ("correct".equals(message.getMessage())) {
-                System.out.println("correct");
-                try {
-                    User user = (User) message.getObject();
-                    SessionManager.getInstance().setCurrentUser(user);
-                    EventBus.getDefault().unregister(this);
-                    App.setRoot("primary");
-                    if(user instanceof Employee) {
-                        Employee employee = (Employee) user;
-                        if(employee.getRole().equals("customerservice")) {
-                            App.setRoot("complaintsList");
+
+            switch (key) {
+                case "correct" -> {
+                    try {
+                        User user = (User) message.getObject();
+                        SessionManager.getInstance().setCurrentUser(user);
+
+                        // Decide target view ONCE
+                        String target = "primary";
+                        if (user instanceof Employee emp) {
+                            String role = emp.getRole();
+                            if (role != null) {
+                                String r = role.trim().toLowerCase(Locale.ROOT);
+                                if (r.equals("customerservice"))      target = "complaintsList";
+                                else if (r.equals("systemadmin"))     target = "AdminUsersView";
+                                else if (r.equals("driver"))          target = "employeeScheduleView";
+                            }
                         }
-                        else if(employee.getRole().equals("systemadmin")) {
-                            App.setRoot("AdminUsersView");
-                        } else if (employee.getRole().equals("driver")) {
-                            // Driver uses the *same* schedule screen, but it will lock itself to deliveries
-                            App.setRoot("employeeScheduleView"); }
-                        else {
-                            App.setRoot("primary");
-                        }
-                        }
-                } catch (IOException e) {
-                    showError("Failed to load the main page.");
-                    e.printStackTrace();
+
+                        // Unregister before navigation to avoid duplicate listeners
+                        safeUnregister();
+                        App.setRoot(target);
+                    } catch (IOException e) {
+                        showError("Failed to load the main page.");
+                        e.printStackTrace();
+                    }
                 }
-            } else if ("incorrect".equals(message.getMessage())) {
-                showError("Invalid username or password.");
-            }
-            else if ("already_logged".equals(message.getMessage())) {
-                showError("User already logged from another computer.");
-            }
-            else if("frozen".equals(message.getMessage())) {
-                showError("This account is frozen, contact the administrator.");
+                case "incorrect" -> showError("Invalid username or password.");
+                case "already_logged" -> showError("User already logged from another computer.");
+                case "frozen" -> showError("This account is frozen, contact the administrator.");
             }
         });
     }
 
+
     @FXML
     void handleRegister(ActionEvent event) throws IOException {
-        EventBus.getDefault().unregister(this);
+        safeUnregister();
         App.setRoot("registerView");
     }
+
+    @FXML
+    public void handleBack(ActionEvent actionEvent) {
+        safeUnregister();
+        try { App.setRoot("primary"); }
+        catch (Exception e) { throw new RuntimeException(e); }
+    }
+
 
     private void showError(String message) {
         errorLabel.setText(message);
@@ -174,16 +201,6 @@ public class LoginControl implements Initializable {
         if (isLoading) {
             errorLabel.setVisible(false);
             errorLabel.setManaged(false);
-        }
-    }
-
-    @FXML
-    public void handleBack(ActionEvent actionEvent) {
-        EventBus.getDefault().unregister(this);
-        try {
-            App.setRoot("primary");
-        } catch (Exception e) {
-            throw new RuntimeException(e);
         }
     }
 }

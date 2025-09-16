@@ -1,6 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.client;
 
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
+import javafx.application.Platform;
 import org.greenrobot.eventbus.EventBus;
 
 import il.cshaifasweng.OCSFMediatorExample.client.ocsf.AbstractClient;
@@ -19,32 +20,54 @@ public class SimpleClient extends AbstractClient {
 
 	private static String delete_msg = "account_deleted";
 	public static String ban_msg = "account_banned";
-    @Override
-    protected void handleMessageFromServer(Object msg) {
-        if (msg instanceof Message) {
-			Message message = (Message) msg;
-			if(message.getMessage().equals(ban_msg)) {
-				try{
-					client.sendToServer(new Message("force_logout",SessionManager.getInstance().getCurrentUser().getUsername(),null));
-					SessionManager.getInstance().logout();
-					App.setRoot("primary");
-				}catch(Exception ignored){}
-			}
-			else if(message.getMessage().equals(delete_msg)) {
-				try {
-					SessionManager.getInstance().logout();
-					App.setRoot("primary");
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}
-			else{
-				EventBus.getDefault().post(msg);
-			}
-        }
-    }
+	// Put this field in SimpleClient (or wherever this method lives)
+	private final java.util.concurrent.atomic.AtomicBoolean forcedOutOnce = new java.util.concurrent.atomic.AtomicBoolean(false);
 
-    public static SimpleClient getClient() {
+	@Override
+	protected void handleMessageFromServer(Object msg) {
+		if (!(msg instanceof Message)) return;
+
+		Message message = (Message) msg;
+		String key = message.getMessage();
+
+		try {
+			// Handle account-ban or account-deleted
+			if (key != null && (key.equals(ban_msg) || key.equals(delete_msg))) {
+
+				// If you really want to inform the server once, guard it:
+				if (key.equals(ban_msg) && forcedOutOnce.compareAndSet(false, true)) {
+					try {
+						var current = SessionManager.getInstance().getCurrentUser();
+						if (current != null) {
+							client.sendToServer(new Message("force_logout",
+									current.getUsername(), null));
+						}
+					} catch (Exception ignored) {}
+				}
+
+				// Always do UI work on the FX thread
+				Platform.runLater(() -> {
+					try {
+						SessionManager.getInstance().logout();
+						App.setRoot("primary"); // single navigation
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+				});
+
+				return; // IMPORTANT: don't fall through to EventBus
+			}
+
+			// Route all other messages to the EventBus
+			EventBus.getDefault().post(message);
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+
+	public static SimpleClient getClient() {
 		if (client == null) {
 			client = new SimpleClient("localhost", 3000);
 		}
