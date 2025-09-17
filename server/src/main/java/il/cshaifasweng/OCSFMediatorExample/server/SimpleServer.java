@@ -3138,6 +3138,10 @@ public class SimpleServer extends AbstractServer {
                         .getResultList();
             }
 
+            double baseTotal = cart.getTotalWithDiscount();
+            if(clientOrder.getDelivery()) {
+                baseTotal += 20;
+            }
             // 3) Build managed Order and copy fields
             Order order = new Order();
             order.setCustomer(managedCustomer);
@@ -3153,7 +3157,7 @@ public class SimpleServer extends AbstractServer {
             order.setPaymentDetails(clientOrder.getPaymentDetails());
             order.setCardExpiryDate(clientOrder.getCardExpiryDate());
             order.setCardCVV(clientOrder.getCardCVV());
-            order.setTotalPrice(cart.getTotalWithDiscount());
+            order.setTotalPrice(baseTotal);
 
 //            if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
 //                Budget budget = managedCustomer.getBudget();
@@ -3168,7 +3172,7 @@ public class SimpleServer extends AbstractServer {
 //            }
             if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
                 Budget budget = managedCustomer.getBudget();
-                double orderTotal = cart.getTotalWithDiscount();
+                double orderTotal = baseTotal;
 
                 if (budget == null || budget.getBalance() <= 0) {
                     client.sendToClient(new Message("order_error", "No available budget", null));
@@ -3183,7 +3187,6 @@ public class SimpleServer extends AbstractServer {
 
                 // Set the payment info on the order (optional: partial payment handling)
                 order.setPaymentMethod("BUDGET");
-                order.setTotalPrice(orderTotal);
             }
 
 

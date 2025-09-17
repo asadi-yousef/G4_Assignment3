@@ -187,6 +187,9 @@ public class RegisterControl implements Initializable {
                 if (!isNetworkAccount) {
                     newCustomer.setBranch(getSelectedBranch());
                 }
+                System.out.println("[RegisterControl] Selected: " + accountTypeComboBox.getValue()
+                        + ", isNetwork=" + isNetworkAccount + ", isSubscribed=" + isSubscribed
+                        + ", Branch=" + (branchComboBox.isVisible() ? getSelectedBranch() : "none"));
 
                 Message msg = new Message("register", newCustomer, null);
                 SimpleClient.getClient().sendToServer(msg);
