@@ -1589,66 +1589,60 @@ public class SimpleServer extends AbstractServer {
                     " obj=" + (m.getObject() == null ? "null" : m.getObject().getClass().getName()) +
                     " listSize=" + (m.getObjectList() == null ? 0 : m.getObjectList().size()));
 
-            // Accept a String "yyyy-MM-dd" or LocalDate/LocalDateTime; fallback to today.
+            // Accept "yyyy-MM-dd" or LocalDate/LocalDateTime; default to today
             LocalDate day = null;
             Object obj = m.getObject();
-            if (obj instanceof LocalDate) {
-                day = (LocalDate) obj;
-            } else if (obj instanceof LocalDateTime) {
-                day = ((LocalDateTime) obj).toLocalDate();
+            if (obj instanceof LocalDate d) {
+                day = d;
+            } else if (obj instanceof LocalDateTime dt) {
+                day = dt.toLocalDate();
             } else if (obj instanceof String s && s.matches("\\d{4}-\\d{2}-\\d{2}")) {
                 day = LocalDate.parse(s);
             }
             if (day == null) day = LocalDate.now();
 
             LocalDateTime start = day.atStartOfDay();
-            LocalDateTime next  = day.plusDays(1).atStartOfDay();   // use < next (no off-by-nanos)
+            LocalDateTime next  = day.plusDays(1).atStartOfDay();
 
-            // HQL over your entity class name "Order"
+            // Use a single coalesced timestamp for filtering & ordering
             String hql =
                     "select distinct o " +
                             "from Order o " +
                             "left join fetch o.items i " +
                             "left join fetch i.product p " +
                             "left join fetch o.customer c " +
-                            "where (o.pickupDateTime is not null and o.pickupDateTime >= :start and o.pickupDateTime < :next) " +
-                            "   or (o.deliveryDateTime is not null and o.deliveryDateTime >= :start and o.deliveryDateTime < :next) " +
-                            "   or ( (o.pickupDateTime is null and o.deliveryDateTime is null) " +
-                            "        and o.orderDate >= :start and o.orderDate < :next ) " +
+                            "where coalesce(o.pickupDateTime, o.deliveryDateTime, o.orderDate) >= :start " +
+                            "  and coalesce(o.pickupDateTime, o.deliveryDateTime, o.orderDate) <  :next " +
                             "order by coalesce(o.pickupDateTime, o.deliveryDateTime, o.orderDate)";
+
 
             List<Order> orders = session.createQuery(hql, Order.class)
                     .setParameter("start", start)
                     .setParameter("next",  next)
                     .getResultList();
 
-            // Map to DTOs the client expects
+            // Map to DTOs
             List<ScheduleOrderDTO> dtoList = new ArrayList<>();
             for (Order o : orders) {
-                boolean delivery = Boolean.TRUE.equals(o.getDelivery());
-                java.time.LocalDateTime when = o.getDeliveryDateTime();
-               // java.time.LocalDateTime when = delivery
-               //         ? o.getDeliveryDateTime()
-               //         : o.getPickupDateTime(); // final fallback
+                boolean delivery = o.getDelivery();
+                LocalDateTime when = (delivery ? o.getDeliveryDateTime() : o.getPickupDateTime());
+                if (when == null) when = o.getOrderDate(); // final fallback
 
-                // whereText: branch for pickup, address for delivery
-                String whereText = "-";
+                String whereText;
                 if (delivery) {
-                    String addr = String.valueOf(o.getDeliveryAddress());
-                    if (addr != null && !addr.isBlank()) whereText = addr;
+                    String addr = o.getDeliveryAddress();
+                    whereText = (addr != null && !addr.isBlank()) ? addr : "-";
                 } else {
-                    String branch = o.getStoreLocation(); // this is your branchName string
-                    if (branch != null && !branch.isBlank()) whereText = branch;
+                    String branch = o.getStoreLocation();
+                    whereText = (branch != null && !branch.isBlank()) ? branch : "-";
                 }
 
-                // customer name (fallbacks safe)
                 String customerName = "-";
                 Customer cust = o.getCustomer();
                 if (cust != null && cust.getUsername() != null && !cust.getUsername().isBlank()) {
                     customerName = cust.getUsername();
                 }
 
-                // items
                 List<ScheduleItemDTO> items = new ArrayList<>();
                 if (o.getItems() != null) {
                     for (OrderItem oi : o.getItems()) {
@@ -1660,11 +1654,11 @@ public class SimpleServer extends AbstractServer {
                             Product p = oi.getProduct();
                             name = String.valueOf(p.getName());
                             imagePath = p.getImagePath();
-                            java.math.BigDecimal snap = oi.getUnitPriceSnapshot();
+                            var snap = oi.getUnitPriceSnapshot();
                             unitPrice = (snap != null) ? snap : java.math.BigDecimal.valueOf(p.getPrice());
                         } else if (oi.getCustomBouquet() != null) {
                             name = "Custom bouquet";
-                            java.math.BigDecimal snap = oi.getUnitPriceSnapshot();
+                            var snap = oi.getUnitPriceSnapshot();
                             if (snap != null) unitPrice = snap;
                         }
 
@@ -1679,20 +1673,19 @@ public class SimpleServer extends AbstractServer {
                         delivery,
                         when,
                         whereText,
-                        String.valueOf(o.getStatus() == null ? "PLACED" : o.getStatus())
+                        (o.getStatus() == null ? "PLACED" : o.getStatus())
                 );
                 row.setItems(items);
                 dtoList.add(row);
             }
 
-            // Client’s EmployeeScheduleController listens for "orders_for_day" in the message.object (not objectList)
             client.sendToClient(new Message("orders_for_day", dtoList, null));
-            System.out.println("[SEND][orders_by_day] -> orders_for_day (obj=ArrayList, size=" + dtoList.size() + ")");
+            System.out.println("[SEND][orders_by_day] -> orders_for_day (size=" + dtoList.size() + ")");
 
         } catch (Exception e) {
             e.printStackTrace();
             try { client.sendToClient(new Message("orders_for_day", List.of(), null)); }
-            catch (java.io.IOException ignored) {}
+            catch (IOException ignored) {}
         }
     }
 
