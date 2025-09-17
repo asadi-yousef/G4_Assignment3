@@ -523,6 +523,16 @@ public class PrimaryController implements Initializable {
 					showAlert("Alert!", "You have been banned/frozen contact administrator.");
 					break;
 				}
+				case "staff_send_delivery_email_ack": {
+					// optional: show result if server sends it
+					Object o = msg.getObject();
+					if (o instanceof Boolean b && b) {
+						showAlert("Email", "Delivery email sent.");
+					} else if (o instanceof String s && !s.isBlank()) {
+						showAlert("Email", "Email failed: " + s);
+					}
+					break;
+				}
 
 				default:
 					System.out.println("Received unhandled message from server: " + msg.getMessage());
