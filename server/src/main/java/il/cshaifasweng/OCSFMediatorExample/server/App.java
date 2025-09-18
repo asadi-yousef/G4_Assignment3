@@ -135,6 +135,13 @@ public class App {
                     Employee e = new Employee("212735468","renata","haiek","renata","123","driver",null,true);
                     session.save(e);
                     session.flush();
+                    Session session1 = sessionFactory.openSession();
+                    Transaction tx1 = session1.beginTransaction();
+                    Branch haifaBranch = session1.get(Branch.class, 1L);
+                    Employee employee3 = new Employee("212744916", "Renata_", "Haiek", "Renata_", "renata2002", "branchmanager", haifaBranch, true);
+                    employee3.setBranch(haifaBranch);
+                    session1.save(employee3);
+                    tx1.commit();
                 } else {
                     System.out.println("User table already contains data. Skipping insert.");
                 }

@@ -971,6 +971,17 @@ public class SimpleServer extends AbstractServer {
     private void handleReportComplaints(Message m, ConnectionToClient client, Session session) {
         try {
             Map<String,Object> crit = (Map<String,Object>) m.getObject();
+            ///
+            User currentUser = (User) client.getInfo("user");   // fetch authenticated user from connection
+            if (currentUser instanceof Employee emp) {
+                if ("branchmanager".equalsIgnoreCase(emp.getRole())) {
+                    Branch myBranch = emp.getBranch();
+                    if (myBranch != null) {
+                        crit.put("branch", myBranch.getName());  // override whatever client sent
+                    }
+                }
+            }
+
             LocalDateTime from  = (LocalDateTime) crit.get("from");
             LocalDateTime to    = (LocalDateTime) crit.get("to");
             String branch       = crit.get("branch") == null ? null : crit.get("branch").toString();
@@ -2695,17 +2706,59 @@ public class SimpleServer extends AbstractServer {
 
             // Bulk JPQL bypasses the first-level cache → clear & reload before sending the entity out
             session.clear();
-            User fresh = session.find(User.class, user.getId());
-
-            client.setInfo("userId", fresh.getId());
-            client.setInfo("username", fresh.getUsername());
-            try { client.sendToClient(new Message("correct", fresh, null)); } catch (IOException ignored) {}
+            User u = session.find(User.class, user.getId());
+            client.setInfo("userId", u.getId());
+            client.setInfo("username", u.getUsername());
+            Customer customer;
+            Employee employee;
+            if(u instanceof Customer) {
+                customer = prepareCustomerForClient((Customer) u);
+                try {
+                    client.sendToClient(new Message("correct", customer, null));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            else{
+                employee = (Employee) u;
+                try {
+                    client.sendToClient(new Message("correct", employee, null));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
             try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
         }
     }
+    // In your server-side service/controller where you send the customer:
+    public Customer prepareCustomerForClient(Customer customer) {
+        if (customer.getCart() != null) {
+            // Initialize lazy collections to avoid LazyInitializationException
+            customer.getCart().getItems().size();
+
+            // Break circular references to prevent infinite loops during serialization
+            for (CartItem item : customer.getCart().getItems()) {
+                // Initialize product if exists
+                if (item.getProduct() != null) {
+                    item.getProduct().getName(); // Touch to initialize
+                }
+
+                // Initialize custom bouquet if exists
+                if (item.getCustomBouquet() != null) {
+                    item.getCustomBouquet().getTotalPrice(); // Touch to initialize
+                }
+
+                // CRITICAL: Break circular reference
+                item.setCart(null);
+            }
+        }
+
+        return customer;
+    }
+
 
 
     public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,

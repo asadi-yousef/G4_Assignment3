@@ -502,7 +502,7 @@ public class PrimaryController implements Initializable {
 						EventBus.getDefault().unregister(this);
 						App.setRoot("ordersScreenView");
 					} catch (IOException e) {
-						showAlert("Error", "Failed to open orders page.");
+						e.printStackTrace();
 					}
 					break;
 				}
@@ -1064,7 +1064,7 @@ public class PrimaryController implements Initializable {
 			App.setRoot("ordersView");
 			EventBus.getDefault().unregister(this);
 		} catch (IOException e) {
-			showAlert("Error", "Failed to open orders page.");
+			showAlert("Error", "///////Failed to open orders page.");
 		}
 	}
 
@@ -1190,7 +1190,13 @@ public class PrimaryController implements Initializable {
 			}
 			App.setRoot("ordersScreenView");
 		} catch (IOException e) {
-			showAlert("Error", "Failed to open orders page.");
+			e.printStackTrace();
+			System.out.println("Retrying load of ordersScreemView..");
+			try {
+				App.setRoot("ordersScreenView");
+			} catch(IOException e1) {
+				showAlert("Error", "Failed to open orders page.");
+			}
 		}
 	}
 
