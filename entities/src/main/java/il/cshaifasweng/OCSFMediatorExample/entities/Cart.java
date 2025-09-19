@@ -27,9 +27,6 @@ public class Cart implements Serializable {
 
     public void setCustomer(Customer customer) {
         this.customer = customer;
-        if (customer != null && customer.getCart() != this) {
-            customer.setCart(this);
-        }
     }
     public Long getId() {
         return id;

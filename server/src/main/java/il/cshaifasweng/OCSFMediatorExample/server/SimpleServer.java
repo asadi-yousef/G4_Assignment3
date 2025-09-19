@@ -5,6 +5,7 @@ import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
+import jakarta.persistence.Transient;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Root;
@@ -113,6 +114,38 @@ public class SimpleServer extends AbstractServer {
             cache.put(keyExtractor.apply(entity), entity);
         }
     }
+    @Override
+    protected void clientDisconnected(ConnectionToClient client) {
+        super.clientDisconnected(client);
+        safeAutoLogout(client);
+        subscribersList.removeIf(sc -> sc.getClient().equals(client));
+    }
+
+    @Override
+    protected void clientException(ConnectionToClient client, Throwable exception) {
+        safeAutoLogout(client);
+        subscribersList.removeIf(sc -> sc.getClient().equals(client));
+    }
+
+    private void safeAutoLogout(ConnectionToClient client) {
+        Object uid = client.getInfo("userId");
+        if (!(uid instanceof Number)) return;
+
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            Transaction tx = s.beginTransaction();
+            s.createQuery("update User u set u.isLoggedIn = false " +
+                            "where u.id = :id and u.isLoggedIn = true")
+                    .setParameter("id", ((Number) uid).longValue())
+                    .executeUpdate();
+            tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            client.setInfo("userId", null);
+            client.setInfo("username", null);
+        }
+    }
+
 
     /* ----------------------- Request dispatch ----------------------- */
 
@@ -2275,6 +2308,13 @@ public class SimpleServer extends AbstractServer {
 
             // If you create notifications, do it here before commit (using managedCustomer)
             session.flush();
+
+            createPersonalNotification(session,
+                    customer.getId(),
+                    "Profile updated",
+                    "Your profile details were updated successfully.");
+
+
             tx.commit();
 
             // IMPORTANT: clear and fetch a fresh snapshot (avoid stale L1 cache)
@@ -2791,27 +2831,62 @@ public class SimpleServer extends AbstractServer {
 
             // Bulk JPQL bypasses the first-level cache → clear & reload before sending the entity out
             session.clear();
-            User fresh = session.find(User.class, user.getId());
-
-            client.setInfo("userId", fresh.getId());
-            client.setInfo("username", fresh.getUsername());
-            // Treat ANY non-customer subtype as staff (Employee/Manager/Driver/etc.)
-            boolean isStaff = !(fresh instanceof Customer);
-            //capture branch if staff has getBrachName()
-            String staffBranch = null;
-            try {
-                staffBranch = (String) fresh.getClass().getMethod("getBranchName").invoke(fresh);
-            } catch (Exception ignored) {}
-
-            client.setInfo("canCompleteOrders", isStaff);
-            if (staffBranch != null) client.setInfo("branch", staffBranch);
-            try { client.sendToClient(new Message("correct", fresh, null)); } catch (IOException ignored) {}
+            User u = session.find(User.class, user.getId());
+            client.setInfo("userId", u.getId());
+            client.setInfo("username", u.getUsername());
+            Customer customer;
+            Employee employee;
+            if(u instanceof Customer) {
+                customer = prepareCustomerForClient((Customer) u);
+                try {
+                    client.sendToClient(new Message("correct", customer, null));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            else{
+                employee = (Employee) u;
+                try {
+                    client.sendToClient(new Message("correct", employee, null));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
             try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
         }
     }
+    // In your server-side service/controller where you send the customer:
+    public Customer prepareCustomerForClient(Customer customer) {
+        if (customer.getCart() != null) {
+            // Initialize lazy collections to avoid LazyInitializationException
+            customer.getCart().getItems().size();
+
+            // Break circular references to prevent infinite loops during serialization
+            for (CartItem item : customer.getCart().getItems()) {
+                // Initialize product if exists
+                if (item.getProduct() != null) {
+                    item.getProduct().getName(); // Touch to initialize
+                }
+
+                // Initialize custom bouquet if exists
+                if (item.getCustomBouquet() != null) {
+                    item.getCustomBouquet().getTotalPrice(); // Touch to initialize
+                }
+
+                // CRITICAL: Break circular reference
+                item.setCart(null);
+            }
+        }
+
+        return customer;
+    }
+
+// Call this before sending customer to client:
+// Customer customerToSend = prepareCustomerForClient(customer);
+// sendToClient(customerToSend);
 
 
     public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,
