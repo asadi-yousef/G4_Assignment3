@@ -142,8 +142,6 @@ public class SimpleServer extends AbstractServer {
                     handleRemoveFromCart(m, client, session);
                 } else if (key != null && key.startsWith("request_cart")) {
                     handleCartRequest(m, client, session);
-                } else if (key != null && key.startsWith("request_orders")) {
-                    handleOrdersRequest(m, client, session);
                 } else if ("request_customer_data".equals(key)) {
                     handleCustomerDataRequest(m, client, session);
                 } else if ("update_profile".equals(key)) {
@@ -197,10 +195,6 @@ public class SimpleServer extends AbstractServer {
                     handleMarkNotificationRead(m, client, session);
                 } else if ("mark_notification_unread".equals(key)) {
                     handleMarkNotificationUnread(m, client, session);
-                } else if ("create_broadcast".equals(key)) {
-                }
-                else if ("mark_notification_unread".equals(key)) {
-                    handleMarkNotificationUnread(m, client, session);
                 }
                 else if ("create_broadcast".equals(key)) {
                     handleCreateBroadcast(m, client, session);
@@ -215,11 +209,15 @@ public class SimpleServer extends AbstractServer {
                     handleAdminDeleteUser(m, client, session);
                 } else if ("request_orders".equals(key)) {
                     handleOrdersRequest(m, client, session);
-                }else if("staff_mark_order_completed".equals(key)) {
+                } // ---------- EMPLOYEE SCHEDULE: state transitions ----------
+                else if ("mark_order_ready".equals(key) || "staff_mark_order_ready".equals(key)) {
+                    handleMarkOrderReady(m, client, session);
+                } else if ("mark_order_completed".equals(key) || "staff_mark_order_completed".equals(key)) {
+                    // Keep permission checks via the existing staff wrapper:
                     handleStaffMarkOrderCompleted(m, client, session);
-                } else if ("staff_send_delivery_email".equals(key)) {
+                }
+                else if ("staff_send_delivery_email".equals(key)) {
                     handleStaffSendDeliveryEmail(m, client, session);
-
                 // ---------- EMPLOYEE SCHEDULE (accept multiple aliases) ----------
                 } else if ("request_orders_by_day".equals(key)
                         || "request_day".equals(key)
@@ -1575,7 +1573,7 @@ public class SimpleServer extends AbstractServer {
             // Map to DTOs the client expects
             List<ScheduleOrderDTO> dtoList = new ArrayList<>();
             for (Order o : orders) {
-                boolean delivery = Boolean.TRUE.equals(o.getDelivery());
+                boolean delivery = o.getDelivery();
                 java.time.LocalDateTime when = o.getDeliveryDateTime();
                // java.time.LocalDateTime when = delivery
                //         ? o.getDeliveryDateTime()
@@ -1645,8 +1643,6 @@ public class SimpleServer extends AbstractServer {
             catch (java.io.IOException ignored) {}
         }
     }
-
-
 
 
 

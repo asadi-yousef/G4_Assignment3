@@ -504,8 +504,13 @@ public class OrderController implements Initializable {
             order.setDelivery("Delivery".equals(deliveryMethod));
             order.setStoreLocation(storeLocation);
             order.setOrderDate(LocalDateTime.now());
-            order.setDeliveryDateTime(deliveryTime);
-            order.setPickupDateTime(deliveryTime);
+            if("Delivery".equals(deliveryMethod)) {
+                order.setDeliveryDateTime(deliveryTime);
+                order.setPickupDateTime(null);
+            } else {
+                order.setPickupDateTime(deliveryTime);
+                order.setDeliveryDateTime(null);
+            }
             order.setRecipientPhone(recipientPhone);       // null for Pickup
             order.setDeliveryAddress(deliveryAddress);     // null for Pickup
             order.setNote(orderNoteField.getText());

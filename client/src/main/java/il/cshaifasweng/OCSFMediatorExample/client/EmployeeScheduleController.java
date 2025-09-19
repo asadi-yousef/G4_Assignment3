@@ -51,6 +51,10 @@ public class EmployeeScheduleController implements Initializable {
     private javafx.animation.Timeline autoRefresh;
     private volatile boolean inflight = false;
     private final java.util.Set<Long> inFlight = new java.util.HashSet<>();
+    private long lastScheduleSendAt = 0L;
+    private volatile boolean scheduleSendInFlight = false;
+
+
 
     private final javafx.collections.transformation.SortedList<ScheduleOrderDTO> sortedData =
             new javafx.collections.transformation.SortedList<>(filteredData);
@@ -208,26 +212,37 @@ public class EmployeeScheduleController implements Initializable {
     private void setStatus(String s) { System.out.println("[CLI][schedule] " + s); }
 
     private void requestDay() {
+        long now = System.currentTimeMillis();
+        // throttle: ignore calls that come within 300 ms (e.g., listener + first load)
+        if (scheduleSendInFlight || (now - lastScheduleSendAt) < 300) return;
+        scheduleSendInFlight = true;
+        lastScheduleSendAt = now;
+
         try {
-            if (!SimpleClient.getClient().isConnected()) {
-                System.out.println("[CLI][schedule] opening connection…");
-                SimpleClient.getClient().openConnection();
+            var cli = SimpleClient.getClient();
+            if (!cli.isConnected()) {
+                System.out.println("[CLI][schedule] reconnecting…");
+                cli.openConnection(); // <-- make the socket exist again
             }
+
             String dateStr = (dayPicker != null && dayPicker.getValue() != null)
                     ? dayPicker.getValue().toString()
-                    : LocalDate.now().toString();
+                    : java.time.LocalDate.now().toString();
 
             System.out.println("[CLI][schedule] SENDING key=request_orders_by_day obj=\"" + dateStr + "\" list=null");
-            SimpleClient.getClient().sendToServer(new Message("request_orders_by_day", dateStr, null));
-
+            cli.sendToServer(new Message("request_orders_by_day", dateStr, null));
             setStatus("Loading schedule…");
         } catch (Exception e) {
             System.out.println("[CLI][schedule] send failed: " + e.getClass().getName() + ": " + e.getMessage());
             e.printStackTrace();
             setStatus("Failed to open schedule");
+            // Optional: pause auto-refresh so we don't spam exceptions while offline.
+            if (autoRefresh != null) autoRefresh.pause();
+        } finally {
+            // Let auto-refresh / user actions send again soon
+            scheduleSendInFlight = false;
         }
     }
-
 
 
     private void updateFilter() {
@@ -369,6 +384,21 @@ public class EmployeeScheduleController implements Initializable {
                 }
                 status("Order completed.");
                 renderCards();
+            });
+
+            case "error", "server_error" -> Platform.runLater(() -> {
+                String details = String.valueOf(msg.getObject());
+                // Ignore unrelated errors from other screens, e.g., the Orders screen
+                if (details != null && details.toLowerCase().contains("orders")) {
+                    // don't spam the schedule with orders errors
+                    return;
+                }
+                // Only react if the error arrived right after our last send
+                if (System.currentTimeMillis() - lastScheduleSendAt < 3000) {
+                    status("Failed to load schedule" + (details == null ? "" : (": " + details)));
+                    masterData.setAll(java.util.List.of());
+                    renderCards();
+                }
             });
 
             case "orders_state_changed" -> Platform.runLater(() -> {

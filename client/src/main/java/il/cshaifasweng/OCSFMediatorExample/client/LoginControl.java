@@ -124,26 +124,21 @@ public class LoginControl implements Initializable {
                 try {
                     User user = (User) message.getObject();
                     SessionManager.getInstance().setCurrentUser(user);
-                    EventBus.getDefault().unregister(this);
-                    App.setRoot("primary");
-                    if(user instanceof Employee) {
-                        Employee employee = (Employee) user;
-                        if(employee.getRole().equals("customerservice")) {
-                            EventBus.getDefault().unregister(this);
-                            App.setRoot("complaintsList");
+                    if (EventBus.getDefault().isRegistered(this)) {
+                        EventBus.getDefault().unregister(this);
+                    }
+
+                    if (user instanceof Employee employee) {
+                        switch (String.valueOf(employee.getRole())) {
+                            case "customerservice" -> App.setRoot("complaintsList");
+                            case "systemadmin"     -> App.setRoot("AdminUsersView");
+                            case "driver"          -> App.setRoot("employeeScheduleView");  // go straight to schedule
+                            default                -> App.setRoot("primary");  // other employees -> schedule
                         }
-                        else if(employee.getRole().equals("systemadmin")) {
-                            EventBus.getDefault().unregister(this);
-                            App.setRoot("AdminUsersView");
-                        } else if (employee.getRole().equals("driver")) {
-                            // Driver uses the *same* schedule screen, but it will lock itself to deliveries
-                            EventBus.getDefault().unregister(this);
-                            App.setRoot("employeeScheduleView"); }
-                        else {
-                            EventBus.getDefault().unregister(this);
-                            App.setRoot("primary");
-                        }
-                        }
+                    } else {
+                        App.setRoot("primary"); // customers land on primary
+                    }
+
                 } catch (IOException e) {
                     showError("Failed to load the main page.");
                     e.printStackTrace();
