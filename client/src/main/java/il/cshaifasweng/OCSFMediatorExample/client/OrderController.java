@@ -104,6 +104,7 @@ public class OrderController implements Initializable {
     private double budgetAmountToUse = 0.0;
     private boolean usingBudget = false;
     private double currentOrderTotal;
+    private double orderTotal;
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
@@ -203,10 +204,13 @@ public class OrderController implements Initializable {
             storeLocationChoice.setDisable(true);
         }
 
+        currentOrderTotal = SessionManager.getInstance().getOrderTotal();
+        orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
+
         // React to delivery/pickup changes
         deliveryGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
             if (newToggle == deliveryRadio) {
-                // Delivery selected
+                currentOrderTotal = SessionManager.getInstance().getOrderTotal();
                 deliveryDetailsSection.setVisible(true);
                 deliveryDetailsSection.setManaged(true);
                 storeLocationSection.setVisible(false);
@@ -215,14 +219,15 @@ public class OrderController implements Initializable {
                 deliveryPriceLabel.setManaged(true);
                 orderTotalWithDelivery.setVisible(true);
                 orderTotalWithDelivery.setManaged(true);
-                double orderTotal = currentOrderTotal;
                 double deliveryPrice = 20;
+                orderTotal = currentOrderTotal;
                 orderTotal += deliveryPrice;
+                currentOrderTotal = orderTotal;
                 deliveryPriceLabel.setText("Delivery: 20₪");
                 orderTotalWithDelivery.setText("Total with delivery: ₪" + String.format("%.2f", orderTotal));
 
             } else if (newToggle == pickupRadio) {
-                // Pickup selected
+                currentOrderTotal = SessionManager.getInstance().getOrderTotal();
                 deliveryDetailsSection.setVisible(false);
                 deliveryDetailsSection.setManaged(false);
                 storeLocationSection.setVisible(true);
@@ -261,8 +266,7 @@ public class OrderController implements Initializable {
         newCardBox.setManaged(false);
 
 
-        currentOrderTotal = SessionManager.getInstance().getOrderTotal();
-        // Show/hidudget or new card based on selection
+
         paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             newCardBox.setVisible("New Card".equals(newVal));
             newCardBox.setManaged("New Card".equals(newVal));
@@ -309,7 +313,7 @@ public class OrderController implements Initializable {
             }
         });
 
-        orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
+
 
         placeOrderButton.setOnAction(e -> placeOrder());
         cancelButton.setOnAction(e -> goBackToCart());
@@ -341,13 +345,14 @@ public class OrderController implements Initializable {
             String recipientPhone = null;
             String deliveryAddress = null;
             double deliveryPrice = 20;
-            double orderTotal = SessionManager.getInstance().getOrderTotal();
+            orderTotal = SessionManager.getInstance().getOrderTotal();
 
             deliveryPriceLabel.setVisible(false);
             deliveryPriceLabel.setManaged(false);
             orderTotalWithDelivery.setVisible(false);
             orderTotalWithDelivery.setManaged(false);
             if ("Pickup".equals(deliveryMethod)) {
+                orderTotal = SessionManager.getInstance().getOrderTotal();
                 if (isNetworkCustomer) {
                     storeLocation = storeLocationChoice.getValue();
                     if (storeLocation == null || storeLocation.isBlank()) {
@@ -362,6 +367,7 @@ public class OrderController implements Initializable {
                     }
                 }
             } else {
+                orderTotal = SessionManager.getInstance().getOrderTotal();
                 deliveryPriceLabel.setVisible(true);
                 deliveryPriceLabel.setManaged(true);
                 orderTotalWithDelivery.setVisible(true);
@@ -568,7 +574,6 @@ public class OrderController implements Initializable {
                 ex.printStackTrace();
             }
 
-
         } catch (Exception ex) {
             showAlert("Error", "Failed to place order: " + ex.getMessage());
             ex.printStackTrace();
@@ -578,6 +583,7 @@ public class OrderController implements Initializable {
 
     @Subscribe
     public void onServerResponse(Message msg) {
+        System.out.println("[OrderController] Received message: " + msg.getMessage());
         if (msg.getMessage().equals("order_placed_successfully")) {
             Platform.runLater(() -> {
                 showAlert("Success", "Your order has been placed.");
@@ -598,29 +604,29 @@ public class OrderController implements Initializable {
             Platform.runLater(() -> {
                 Object obj = msg.getObject();
                 if (obj instanceof Customer dbCustomer) {
-                    // Replace session copy with canonical DB copy
-                    try { SessionManager.getInstance().setCurrentUser(dbCustomer);
-                        budgetBalanceLabel.setText("Current Budget: ₪" + String.format("%.2f", dbCustomer.getBudget().getBalance()));
+                    // update global session user
+                    try {
+                        SessionManager.getInstance().setCurrentUser(dbCustomer);
+                    } catch (Exception ignored) { }
 
-                    } catch (Exception ignored) {}
-
-                    // If there is a pending order waiting for the budget subtraction, send it now
-                    if (pendingOrder != null) {
-                        try {
-                            SimpleClient.getClient().sendToServer(new Message("place_order", pendingOrder, null));
-                            pendingOrder = null;
-                        } catch (IOException e) {
-                            showAlert("Error", "Failed to send order after budget update.");
-                            placeOrderButton.setDisable(false);
-                            placeOrderButton.setText("Place order");
+                    // update local UI components that show budget (if present)
+                    try {
+                        double newBal = (dbCustomer.getBudget() != null) ? dbCustomer.getBudget().getBalance() : 0.0;
+                        // OrderController has budgetBalanceLabel
+                        if (budgetBalanceLabel != null) {
+                            budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", newBal));
                         }
-                    } else {
-                        // no pending order: just update UI if needed
+                        // AddBudgetController has budgetBalanceLabel (it will also receive this message)
+                        // It will update itself in its handler (you already have identical code there)
+
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
                 }
             });
             return;
         }
+
 
         if (msg.getMessage().equals("budget_insufficient")) {
             Platform.runLater(() -> {

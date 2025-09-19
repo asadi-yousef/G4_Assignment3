@@ -191,12 +191,12 @@
 
                                         <HBox alignment="CENTER_LEFT" spacing="15.0">
                                             <children>
-                                                <Label text="📱 Recipient Phone:" textFill="#2c3e50" minWidth="140.0">
+                                                <Label text="📧 Recipient's Email:" textFill="#2c3e50" minWidth="140.0">
                                                     <font>
                                                         <Font name="System Bold" size="14.0" />
                                                     </font>
                                                 </Label>
-                                                <TextField fx:id="recipientPhoneField" promptText="Enter recipient's phone number" prefWidth="250.0" style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8; -fx-padding: 8;" />
+                                                <TextField fx:id="recipientPhoneField" promptText="Enter recipient's Email" prefWidth="250.0" style="-fx-background-radius: 8; -fx-border-color: #bdc3c7; -fx-border-radius: 8; -fx-padding: 8;" />
                                             </children>
                                         </HBox>
                                     </children>

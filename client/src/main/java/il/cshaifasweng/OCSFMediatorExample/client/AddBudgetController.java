@@ -3,6 +3,7 @@ package il.cshaifasweng.OCSFMediatorExample.client;
 import il.cshaifasweng.OCSFMediatorExample.entities.Budget;
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
+import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -33,7 +34,12 @@ public class AddBudgetController {
         // register for server messages
         if (!EventBus.getDefault().isRegistered(this)) EventBus.getDefault().register(this);
 
-        // populate payment methods
+        User user = SessionManager.getInstance().getCurrentUser();
+        if (user instanceof Customer customer) {
+            double bal = (customer.getBudget() != null) ? customer.getBudget().getBalance() : 0.0;
+            budgetBalanceLabel.setText("Current Budget: ₪" + String.format("%.2f", bal));
+            System.out.println("Budget loaded in initialize(): " + bal);
+        }
         paymentMethodChoice.getItems().setAll("Saved Card", "New Card");
         paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             boolean showNewCard = "New Card".equals(newVal);
@@ -153,33 +159,27 @@ public class AddBudgetController {
                 Platform.runLater(() -> {
                     Object obj = msg.getObject();
                     if (obj instanceof Customer dbCustomer) {
-                        // update SessionManager current user if needed
+                        // update global session user
                         try {
-                            // if SessionManager supports setCurrentUser, update it
                             SessionManager.getInstance().setCurrentUser(dbCustomer);
-                        } catch (Exception ignored) {}
+                        } catch (Exception ignored) { }
 
-                        // update UI
-                        double newBal = (dbCustomer.getBudget() != null) ? dbCustomer.getBudget().getBalance() : 0.0;
-                        budgetBalanceLabel.setText("Current Budget: ₪" + String.format("%.2f", newBal));
-
-                        // re-enable button and close (or show success)
-                        addButton.setDisable(false);
-                        Alert a = new Alert(Alert.AlertType.INFORMATION, "Budget updated successfully.");
-                        a.setHeaderText(null);
-                        a.showAndWait();
-
-                        EventBus.getDefault().unregister(this);
+                        // update local UI components that show budget (if present)
                         try {
-                            App.setRoot("primary"); // go back to main catalog
-                        } catch (IOException e) {
-                            showError("Failed to return to catalog: " + e.getMessage());
+                            double newBal = (dbCustomer.getBudget() != null) ? dbCustomer.getBudget().getBalance() : 0.0;
+                            // OrderController has budgetBalanceLabel
+                            if (budgetBalanceLabel != null) {
+                                budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", newBal));
+                            }
+                            // AddBudgetController has budgetBalanceLabel (it will also receive this message)
+                            // It will update itself in its handler (you already have identical code there)
+
+                        } catch (Exception e) {
+                            e.printStackTrace();
                         }
-                    } else {
-                        addButton.setDisable(false);
-                        showError("Unexpected server response.");
                     }
                 });
+                return;
             }
             case "budget_update_failed" -> Platform.runLater(() -> {
                 addButton.setDisable(false);

@@ -1011,6 +1011,17 @@ public class SimpleServer extends AbstractServer {
     private void handleReportComplaints(Message m, ConnectionToClient client, Session session) {
         try {
             Map<String,Object> crit = (Map<String,Object>) m.getObject();
+            ///
+            User currentUser = (User) client.getInfo("user");   // fetch authenticated user from connection
+            if (currentUser instanceof Employee emp) {
+                if ("branchmanager".equalsIgnoreCase(emp.getRole())) {
+                    Branch myBranch = emp.getBranch();
+                    if (myBranch != null) {
+                        crit.put("branch", myBranch.getName());  // override whatever client sent
+                    }
+                }
+            }
+
             LocalDateTime from  = (LocalDateTime) crit.get("from");
             LocalDateTime to    = (LocalDateTime) crit.get("to");
             String branch       = crit.get("branch") == null ? null : crit.get("branch").toString();
@@ -3319,6 +3330,10 @@ public class SimpleServer extends AbstractServer {
                         .getResultList();
             }
 
+            double baseTotal = cart.getTotalWithDiscount();
+            if(clientOrder.getDelivery()) {
+                baseTotal += 20;
+            }
             // 3) Build managed Order and copy fields
             Order order = new Order();
             order.setCustomer(managedCustomer);
@@ -3334,7 +3349,7 @@ public class SimpleServer extends AbstractServer {
             order.setPaymentDetails(clientOrder.getPaymentDetails());
             order.setCardExpiryDate(clientOrder.getCardExpiryDate());
             order.setCardCVV(clientOrder.getCardCVV());
-            order.setTotalPrice(cart.getTotalWithDiscount());
+            order.setTotalPrice(baseTotal);
 
 //            if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
 //                Budget budget = managedCustomer.getBudget();
@@ -3349,7 +3364,7 @@ public class SimpleServer extends AbstractServer {
 //            }
             if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
                 Budget budget = managedCustomer.getBudget();
-                double orderTotal = cart.getTotalWithDiscount();
+                double orderTotal = baseTotal;
 
                 if (budget == null || budget.getBalance() <= 0) {
                     client.sendToClient(new Message("order_error", "No available budget", null));
@@ -3364,7 +3379,6 @@ public class SimpleServer extends AbstractServer {
 
                 // Set the payment info on the order (optional: partial payment handling)
                 order.setPaymentMethod("BUDGET");
-                order.setTotalPrice(orderTotal);
             }
 
 
@@ -3410,6 +3424,12 @@ public class SimpleServer extends AbstractServer {
 
 
             tx.commit();
+            try {
+                // send budget update first so client UIs see new balance before order success UI transitions
+                client.sendToClient(new Message("budget_updated", managedCustomer, null));
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
             client.sendToClient(new Message("order_placed_successfully", order, null));
 
         } catch (Exception e) {
