@@ -120,15 +120,24 @@ public class App extends Application {
 
     @Override
     public void stop() throws Exception {
-        if(SessionManager.getInstance().getCurrentUser() != null) {
-            String username = (String) (SessionManager.getInstance().getCurrentUser().getUsername());
-            SimpleClient.getClient().sendToServer(new Message("logout",username,null));
+        try {
+            var current = SessionManager.getInstance().getCurrentUser();
+            if (current != null && SimpleClient.getClient().isConnected()) {
+                String username = current.getUsername();
+                try {
+                    SimpleClient.getClient().sendToServer(new Message("logout", username, null));
+                } catch (Exception ignored) {}
+
+                // best-effort: also ask server to remove this client
+                try { SimpleClient.getClient().sendToServer("remove client"); } catch (Exception ignored) {}
+            }
+        } finally {
+            try { EventBus.getDefault().unregister(this); } catch (Exception ignored) {}
+            try { if (client != null && client.isConnected()) client.closeConnection(); } catch (Exception ignored) {}
+            super.stop();
         }
-        EventBus.getDefault().unregister(this);
-        client.sendToServer("remove client");
-        client.closeConnection();
-        super.stop();
     }
+
 
     public static void openPopup(String fxml, String title) throws IOException {
         FXMLLoader fxmlLoader = new FXMLLoader(App.class.getResource(fxml + ".fxml"));

@@ -60,13 +60,13 @@ public class InboxController implements Initializable {
         switch (msg.getMessage()) {
             case "inbox_list" -> Platform.runLater(() -> {
                 InboxListDTO payload = (InboxListDTO) msg.getObject();
-                java.util.List<InboxItemDTO> personal  = payload == null ? java.util.List.of() : payload.getPersonal();
-                java.util.List<InboxItemDTO> broadcast = payload == null ? java.util.List.of() : payload.getBroadcast();
+                var personal = payload.getPersonal();
+                var broadcast = payload.getBroadcast();
 
                 personalList.getItems().setAll(personal);
                 broadcastList.getItems().setAll(broadcast);
 
-                status(String.format("Inbox: %d personal (%d unread), %d announcements",
+                status(String.format("Personal: %d (%d unread) • Announcements: %d",
                         personal.size(),
                         (int) personal.stream().filter(n -> !n.isRead()).count(),
                         broadcast.size()));

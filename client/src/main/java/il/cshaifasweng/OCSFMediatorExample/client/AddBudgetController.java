@@ -100,24 +100,29 @@ public class AddBudgetController {
                 showError("Please fill in all new card fields.");
                 return;
             }
-            // (Optional) You can create/update CreditCard on customer here if you want to persist it.
         }
 
         // Locally update Customer's Budget object (so UI reflects change immediately)
-        if (currentCustomer.getBudget() == null) {
-            Budget b = new Budget();
-            b.setCustomer(currentCustomer);
-            b.setBalance(0.0);
-            currentCustomer.setBudget(b);
-        }
-        currentCustomer.getBudget().addFunds(amount);
+     //   if (currentCustomer.getBudget() == null) {
+      //      Budget b = new Budget();
+      //      b.setCustomer(currentCustomer);
+      //      b.setBalance(0.0);
+      //      currentCustomer.setBudget(b);
+      //  }
+
+      //  currentCustomer.getBudget().addFunds(amount);
+        Customer payload = new Customer();
+        payload.setId(currentCustomer.getId());
+        Budget b = new Budget();
+        b.setBalance(amount); // delta
+        payload.setBudget(b);
 
         // Disable UI while waiting server
         addButton.setDisable(true);
 
         // Send to server using your project's pattern: message with object = Customer
         try {
-            SimpleClient.getClient().sendToServer(new Message("update_budget", currentCustomer, null));
+            SimpleClient.getClient().sendToServer(new Message("update_budget_add", payload, null));
         } catch (IOException e) {
             addButton.setDisable(false);
             e.printStackTrace();
@@ -164,6 +169,7 @@ public class AddBudgetController {
                         a.setHeaderText(null);
                         a.showAndWait();
 
+                        EventBus.getDefault().unregister(this);
                         try {
                             App.setRoot("primary"); // go back to main catalog
                         } catch (IOException e) {

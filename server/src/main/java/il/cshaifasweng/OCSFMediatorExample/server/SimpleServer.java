@@ -5,6 +5,7 @@ import il.cshaifasweng.OCSFMediatorExample.entities.*;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.AbstractServer;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.ConnectionToClient;
 import il.cshaifasweng.OCSFMediatorExample.server.ocsf.SubscribedClient;
+import jakarta.persistence.Transient;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Root;
@@ -15,6 +16,8 @@ import java.util.*;
 import org.hibernate.query.Query;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+
+import javax.swing.*;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -30,9 +33,6 @@ import java.util.stream.Collectors;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.time.LocalDate;
-import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
-import il.cshaifasweng.OCSFMediatorExample.entities.Subscription;
-import il.cshaifasweng.OCSFMediatorExample.entities.Message;
 
 import java.util.stream.Stream;
 
@@ -116,6 +116,37 @@ public class SimpleServer extends AbstractServer {
             cache.put(keyExtractor.apply(entity), entity);
         }
     }
+    @Override
+    protected void clientDisconnected(ConnectionToClient client) {
+        super.clientDisconnected(client);
+        safeAutoLogout(client);
+        subscribersList.removeIf(sc -> sc.getClient().equals(client));
+    }
+
+    @Override
+    protected void clientException(ConnectionToClient client, Throwable exception) {
+        safeAutoLogout(client);
+        subscribersList.removeIf(sc -> sc.getClient().equals(client));
+    }
+
+    private void safeAutoLogout(ConnectionToClient client) {
+        Object uid = client.getInfo("userId");
+        if (!(uid instanceof Number)) return;
+
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            Transaction tx = s.beginTransaction();
+            s.createQuery("update User u set u.isLoggedIn = false " +
+                            "where u.id = :id and u.isLoggedIn = true")
+                    .setParameter("id", ((Number) uid).longValue())
+                    .executeUpdate();
+            tx.commit();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            client.setInfo("userId", null);
+            client.setInfo("username", null);
+        }
+    }
 
     /* ----------------------- Request dispatch ----------------------- */
 
@@ -127,9 +158,6 @@ public class SimpleServer extends AbstractServer {
             if (msg instanceof Message) {
                 Message m = (Message) msg;
                 String key = m.getMessage();
-                System.out.println("[RX] key=" + key +
-                        " obj=" + (m.getObject()==null ? "null" : m.getObject().getClass().getSimpleName()) +
-                        " listSize=" + (m.getObjectList()==null ? 0 : m.getObjectList().size()));
 
                 if ("register".equals(key)) {
                     handleUserRegistration(m, client, session);
@@ -145,8 +173,6 @@ public class SimpleServer extends AbstractServer {
                     handleRemoveFromCart(m, client, session);
                 } else if (key != null && key.startsWith("request_cart")) {
                     handleCartRequest(m, client, session);
-                } else if (key != null && key.startsWith("request_orders")) {
-                    handleOrdersRequest(m, client, session);
                 } else if ("request_customer_data".equals(key)) {
                     handleCustomerDataRequest(m, client, session);
                 } else if ("update_profile".equals(key)) {
@@ -179,10 +205,10 @@ public class SimpleServer extends AbstractServer {
                     sendMsg(client, new Message("pong", "ok", null), "ping_echo");
                 } else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
-                }
-                else if("update_budget".equals(key))
-                {
-                    handleBudgetUpdate(m, client, session);
+                } else if("update_budget_add".equals(key)) {
+                    handleBudgetAdd(m, client, session);
+                } else if("update_budget_subtract".equals(key)) {
+                    handleBudgetSubtract(m, client, session);
                 }
                 else if("logout".equals(key)) {
                     handleLogout(client,session,m);
@@ -200,10 +226,6 @@ public class SimpleServer extends AbstractServer {
                     handleMarkNotificationRead(m, client, session);
                 } else if ("mark_notification_unread".equals(key)) {
                     handleMarkNotificationUnread(m, client, session);
-                } else if ("create_broadcast".equals(key)) {
-                }
-                else if ("mark_notification_unread".equals(key)) {
-                    handleMarkNotificationUnread(m, client, session);
                 }
                 else if ("create_broadcast".equals(key)) {
                     handleCreateBroadcast(m, client, session);
@@ -218,12 +240,15 @@ public class SimpleServer extends AbstractServer {
                     handleAdminDeleteUser(m, client, session);
                 } else if ("request_orders".equals(key)) {
                     handleOrdersRequest(m, client, session);
-                }else if("staff_mark_order_completed".equals(key)) {
+                } // ---------- EMPLOYEE SCHEDULE: state transitions ----------
+                else if ("mark_order_ready".equals(key) || "staff_mark_order_ready".equals(key)) {
+                    handleMarkOrderReady(m, client, session);
+                } else if ("mark_order_completed".equals(key) || "staff_mark_order_completed".equals(key)) {
+                    System.out.println("DEBUG : recieved mark_order_completed");
                     handleStaffMarkOrderCompleted(m, client, session);
-                } else if ("staff_send_delivery_email".equals(key)) {
+                }
+                else if ("staff_send_delivery_email".equals(key)) {
                     handleStaffSendDeliveryEmail(m, client, session);
-                }else if("renew_subscription".equals(key)) {
-                    handleRenewSubscription(m,client);
                 // ---------- EMPLOYEE SCHEDULE (accept multiple aliases) ----------
                 } else if ("request_orders_by_day".equals(key)
                         || "request_day".equals(key)
@@ -328,52 +353,6 @@ public class SimpleServer extends AbstractServer {
             e.printStackTrace();
             try { client.sendToClient(new Message("admin_delete_error", e.getMessage(), null)); }
             catch (IOException ignored) {}
-        }
-    }
-
-    private void handleRenewSubscription(Message msg, ConnectionToClient client) {
-        Transaction tx = null;
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            tx = session.beginTransaction();
-
-            Object payload = msg.getObject();
-            Long customerId = (payload instanceof Long) ? (Long) payload
-                    : ((Customer) payload).getId();
-
-            Customer c = session.get(Customer.class, customerId);
-            if (c == null) throw new IllegalArgumentException("Customer not found");
-
-            Subscription sub = c.getSubscription();
-
-            if (sub == null) {
-                // BUY: new 1-year end-exclusive window
-                LocalDate start = LocalDate.now();
-                LocalDate end   = start.plusYears(1);
-                sub = new Subscription(start, end, true, c);
-                c.setSubscription(sub);
-                session.save(sub); // if no cascade
-            } else {
-                // RENEW/EXTEND: exactly one year, keeping end-exclusive semantics
-                if (sub.isCurrentlyActive() && sub.getEndDate() != null) {
-                    sub.setEndDate(sub.getEndDate().plusYears(1));
-                } else {
-                    LocalDate start = LocalDate.now();
-                    sub.setStartDate(start);
-                    sub.setEndDate(start.plusYears(1));
-                }
-                sub.setActive(true);
-                session.update(sub);
-            }
-
-            c.setSubscribed(true);
-            c.setNetworkAccount(true);
-            session.update(c);
-
-            tx.commit();
-            client.sendToClient(new Message("subscription_renewal_success", c, null));
-        } catch (Exception ex) {
-            if (tx != null && tx.isActive()) try { tx.rollback(); } catch (Exception ignore) {}
-            try { client.sendToClient(new Message("subscription_renewal_failed", ex.getMessage(), null)); } catch (Exception ignore) {}
         }
     }
 
@@ -1354,10 +1333,7 @@ public class SimpleServer extends AbstractServer {
         }
     }
     private void handleStaffMarkOrderCompleted(Message m, ConnectionToClient client, org.hibernate.Session session) {
-        if (!canCompleteOrders(client)) {
-            try { client.sendToClient(new Message("order_completed_ack", null, null)); } catch (IOException ignored) {}
-            return;
-        }
+        try { client.sendToClient(new Message("order_completed_ack", null, null)); } catch (IOException ignored) {}
         handleMarkOrderCompleted(m, client, session);
     }
 
@@ -1369,7 +1345,7 @@ public class SimpleServer extends AbstractServer {
             Long orderId = null;
 
             // Accept either a Map {"orderId": ...} in objectList, a Number in objectList, or a Number in object
-            if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
+            if (m.getObjectList()!= null) {
                 Object first = m.getObjectList().get(0);
                 if (first instanceof java.util.Map<?,?> map) {
                     Object v = map.get("orderId");
@@ -1380,6 +1356,7 @@ public class SimpleServer extends AbstractServer {
             } else if (m.getObject() instanceof Number n) {
                 orderId = n.longValue();
             }
+            System.out.println("DEBUG: id class : " + orderId.getClass().getName() + " orderId: " + orderId);
 
             if (orderId == null) {
                 tx.rollback();
@@ -1400,6 +1377,7 @@ public class SimpleServer extends AbstractServer {
             // Idempotent: only act if status actually changes
             if (!before.equals(after)) {
                 o.setStatus(after);
+                System.out.println("DEBUG: status changed from "+ before+ "to" + after);
                 session.merge(o);
                 session.flush();
 
@@ -1421,8 +1399,10 @@ public class SimpleServer extends AbstractServer {
             tx.commit();
 
             // --- EMAIL: send only if final status is DELIVERED, after commit (async) ---
+            System.out.println("DEBUG customer name: "+o.getCustomer().getUsername());
+            System.out.println("DEBUG service "+Services.emailConfigured());
             if ("DELIVERED".equals(after) && Services.emailConfigured() && o.getCustomer() != null) {
-                if (!shouldEmailCustomerForGift(o)) {
+                if (shouldEmailCustomerForGift(o)) {
                     System.out.println("[Email] Skipped (recipient == customer or no recipient info) for order " + o.getId());
                 } else {
                  String to = o.getCustomer().getEmail();
@@ -1585,10 +1565,6 @@ public class SimpleServer extends AbstractServer {
     @SuppressWarnings("unchecked")
     private void handleRequestOrdersByDay(Message m, ConnectionToClient client, Session session) {
         try {
-            System.out.println("[SRV][orders_by_day] key=" + m.getMessage() +
-                    " obj=" + (m.getObject() == null ? "null" : m.getObject().getClass().getName()) +
-                    " listSize=" + (m.getObjectList() == null ? 0 : m.getObjectList().size()));
-
             // Accept "yyyy-MM-dd" or LocalDate/LocalDateTime; default to today
             LocalDate day = null;
             Object obj = m.getObject();
@@ -1625,8 +1601,10 @@ public class SimpleServer extends AbstractServer {
             List<ScheduleOrderDTO> dtoList = new ArrayList<>();
             for (Order o : orders) {
                 boolean delivery = o.getDelivery();
-                LocalDateTime when = (delivery ? o.getDeliveryDateTime() : o.getPickupDateTime());
-                if (when == null) when = o.getOrderDate(); // final fallback
+                java.time.LocalDateTime when = o.getDeliveryDateTime();
+               // java.time.LocalDateTime when = delivery
+               //         ? o.getDeliveryDateTime()
+               //         : o.getPickupDateTime(); // final fallback
 
                 String whereText;
                 if (delivery) {
@@ -1654,11 +1632,11 @@ public class SimpleServer extends AbstractServer {
                             Product p = oi.getProduct();
                             name = String.valueOf(p.getName());
                             imagePath = p.getImagePath();
-                            var snap = oi.getUnitPriceSnapshot();
+                            java.math.BigDecimal snap = oi.getUnitPriceSnapshot();
                             unitPrice = (snap != null) ? snap : java.math.BigDecimal.valueOf(p.getPrice());
                         } else if (oi.getCustomBouquet() != null) {
                             name = "Custom bouquet";
-                            var snap = oi.getUnitPriceSnapshot();
+                            java.math.BigDecimal snap = oi.getUnitPriceSnapshot();
                             if (snap != null) unitPrice = snap;
                         }
 
@@ -1673,14 +1651,13 @@ public class SimpleServer extends AbstractServer {
                         delivery,
                         when,
                         whereText,
-                        (o.getStatus() == null ? "PLACED" : o.getStatus())
+                        String.valueOf(o.getStatus() == null ? "PLACED" : o.getStatus())
                 );
                 row.setItems(items);
                 dtoList.add(row);
             }
 
             client.sendToClient(new Message("orders_for_day", dtoList, null));
-            System.out.println("[SEND][orders_by_day] -> orders_for_day (size=" + dtoList.size() + ")");
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -1688,8 +1665,6 @@ public class SimpleServer extends AbstractServer {
             catch (IOException ignored) {}
         }
     }
-
-
 
 
 
@@ -2101,8 +2076,6 @@ public class SimpleServer extends AbstractServer {
             try { client.sendToClient(new Message("staff_send_delivery_email_ack", e.getMessage(), null)); } catch (IOException ignored) {}
         }
     }
-
-
     // --- DTO mapper ---
     private InboxItemDTO toDTO(
             Notification n) {
@@ -2826,27 +2799,62 @@ public class SimpleServer extends AbstractServer {
 
             // Bulk JPQL bypasses the first-level cache → clear & reload before sending the entity out
             session.clear();
-            User fresh = session.find(User.class, user.getId());
-
-            client.setInfo("userId", fresh.getId());
-            client.setInfo("username", fresh.getUsername());
-            // Treat ANY non-customer subtype as staff (Employee/Manager/Driver/etc.)
-            boolean isStaff = !(fresh instanceof Customer);
-            //capture branch if staff has getBrachName()
-            String staffBranch = null;
-            try {
-                staffBranch = (String) fresh.getClass().getMethod("getBranchName").invoke(fresh);
-            } catch (Exception ignored) {}
-
-            client.setInfo("canCompleteOrders", isStaff);
-            if (staffBranch != null) client.setInfo("branch", staffBranch);
-            try { client.sendToClient(new Message("correct", fresh, null)); } catch (IOException ignored) {}
+            User u = session.find(User.class, user.getId());
+            client.setInfo("userId", u.getId());
+            client.setInfo("username", u.getUsername());
+            Customer customer;
+            Employee employee;
+            if(u instanceof Customer) {
+                customer = prepareCustomerForClient((Customer) u);
+                try {
+                    client.sendToClient(new Message("correct", customer, null));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            else{
+                employee = (Employee) u;
+                try {
+                    client.sendToClient(new Message("correct", employee, null));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
             try { client.sendToClient(new Message("authentication_error", null, null)); } catch (IOException ignored) {}
         }
     }
+    // In your server-side service/controller where you send the customer:
+    public Customer prepareCustomerForClient(Customer customer) {
+        if (customer.getCart() != null) {
+            // Initialize lazy collections to avoid LazyInitializationException
+            customer.getCart().getItems().size();
+
+            // Break circular references to prevent infinite loops during serialization
+            for (CartItem item : customer.getCart().getItems()) {
+                // Initialize product if exists
+                if (item.getProduct() != null) {
+                    item.getProduct().getName(); // Touch to initialize
+                }
+
+                // Initialize custom bouquet if exists
+                if (item.getCustomBouquet() != null) {
+                    item.getCustomBouquet().getTotalPrice(); // Touch to initialize
+                }
+
+                // CRITICAL: Break circular reference
+                item.setCart(null);
+            }
+        }
+
+        return customer;
+    }
+
+// Call this before sending customer to client:
+// Customer customerToSend = prepareCustomerForClient(customer);
+// sendToClient(customerToSend);
 
 
     public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,
@@ -3292,19 +3300,41 @@ public class SimpleServer extends AbstractServer {
             order.setNote(clientOrder.getNote());
             order.setPaymentMethod(clientOrder.getPaymentMethod());
             order.setPaymentDetails(clientOrder.getPaymentDetails());
+            order.setCardExpiryDate(clientOrder.getCardExpiryDate());
+            order.setCardCVV(clientOrder.getCardCVV());
             order.setTotalPrice(cart.getTotalWithDiscount());
 
+//            if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
+//                Budget budget = managedCustomer.getBudget();
+//                if (budget == null || budget.getBalance() < cart.getTotalWithDiscount()) {
+//                    client.sendToClient(new Message("order_error", "Insufficient budget", null));
+//                    tx.rollback();
+//                    return;
+//                }
+//                budget.subtractFunds(cart.getTotalWithDiscount());
+//                session.update(budget);
+//                order.setPaymentMethod("BUDGET");
+//            }
             if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
                 Budget budget = managedCustomer.getBudget();
-                if (budget == null || budget.getBalance() < cart.getTotalWithDiscount()) {
-                    client.sendToClient(new Message("order_error", "Insufficient budget", null));
+                double orderTotal = cart.getTotalWithDiscount();
+
+                if (budget == null || budget.getBalance() <= 0) {
+                    client.sendToClient(new Message("order_error", "No available budget", null));
                     tx.rollback();
                     return;
                 }
-                budget.setBalance(budget.getBalance() - cart.getTotalWithDiscount());
-                session.update(budget);
+
+                // Subtract budget safely: if balance < order total, use all remaining balance
+                double usedFromBudget = Math.min(budget.getBalance(), orderTotal);
+                budget.setBalance(budget.getBalance() - usedFromBudget);
+                session.update(budget); // persist the new balance
+
+                // Set the payment info on the order (optional: partial payment handling)
                 order.setPaymentMethod("BUDGET");
+                order.setTotalPrice(orderTotal);
             }
+
 
 
             // 4) Convert cart items -> order items, snapshotting
@@ -3359,24 +3389,21 @@ public class SimpleServer extends AbstractServer {
         }
     }
 
-    private void handleBudgetUpdate(Message msg, ConnectionToClient client, Session session) {
-        // Get the customer object from the message
-        Customer customer = (Customer) msg.getObject();
-
+    private void handleBudgetAdd(Message msg, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();
         try {
-            // Fetch managed entity from DB
-            Customer dbCustomer = session.get(Customer.class, customer.getId());
+            Customer payload = (Customer) msg.getObject();
+            Customer dbCustomer = session.get(Customer.class, payload.getId());
 
             if (dbCustomer != null && dbCustomer.getBudget() != null) {
-                dbCustomer.getBudget().setBalance(customer.getBudget().getBalance());
-                session.update(dbCustomer.getBudget());
+                double delta = payload.getBudget().getBalance(); // amount to add
+                dbCustomer.getBudget().addFunds(delta);
+                session.update(dbCustomer.getBudget()); // update the budget itself
             }
 
             tx.commit();
-
-            // Send confirmation back to client
             client.sendToClient(new Message("budget_updated", dbCustomer, null));
+
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
@@ -3385,6 +3412,27 @@ public class SimpleServer extends AbstractServer {
             } catch (IOException ignored) {}
         }
     }
+
+
+
+    private void handleBudgetSubtract(Message msg, ConnectionToClient client, Session session) {
+        Customer customer = (Customer) msg.getObject();
+        Transaction tx = session.beginTransaction();
+        try {
+            Customer dbCustomer = session.get(Customer.class, customer.getId());
+            if (dbCustomer != null && dbCustomer.getBudget() != null) {
+                dbCustomer.getBudget().subtractFunds(customer.getBudget().getBalance());
+                session.update(dbCustomer.getBudget());
+            }
+            tx.commit();
+            client.sendToClient(new Message("budget_updated", dbCustomer, null));
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            e.printStackTrace();
+            try { client.sendToClient(new Message("budget_update_failed", null, null)); } catch (IOException ignored) {}
+        }
+    }
+
 
 
     private CustomBouquet cloneBouquetForOrder(CustomBouquet src, Customer creator) {
@@ -3436,7 +3484,7 @@ public class SimpleServer extends AbstractServer {
             if (Boolean.FALSE.equals(isDelivery)) return;
         } catch (Exception ignore) { /* no isDelivery(): skip this check */ }
 
-        if(!shouldEmailCustomerForGift(order)) return;
+        if(shouldEmailCustomerForGift(order)) return;
 
         var customer = order.getCustomer();
         if (customer == null) return;
@@ -3514,11 +3562,8 @@ public class SimpleServer extends AbstractServer {
         if (o == null || o.getCustomer() == null) return false;
         String custPhone = o.getCustomer().getPhone();
 
-        String recPhone = o.getRecipientPhone();   // or o.getReceiverPhone()
-
-        // If there's no explicit recipient info, treat as "same person" → don't email
-        boolean hasRecipientInfo =!isBlank(recPhone);
-        if (!hasRecipientInfo) return false;
+        String recPhone = o.getRecipientPhone();
+        if(recPhone == null || recPhone.isBlank()) return false;
 
         boolean samePhone = !isBlank(recPhone)  && !isBlank(custPhone) &&
                 normPhone(recPhone).equals(normPhone(custPhone));
