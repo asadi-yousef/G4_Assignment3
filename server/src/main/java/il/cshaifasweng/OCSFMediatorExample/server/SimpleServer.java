@@ -1402,8 +1402,8 @@ public class SimpleServer extends AbstractServer {
             System.out.println("DEBUG customer name: "+o.getCustomer().getUsername());
             System.out.println("DEBUG service "+Services.emailConfigured());
             if ("DELIVERED".equals(after) && Services.emailConfigured() && o.getCustomer() != null) {
-                if (shouldEmailCustomerForGift(o)) {
-                    System.out.println("[Email] Skipped (recipient == customer or no recipient info) for order " + o.getId());
+                if (!shouldEmailCustomerForGift(o)) {
+                    System.out.println("[Email] Skipped (recipient != customer or no recipient info) for order " + o.getId());
                 } else {
                  String to = o.getCustomer().getEmail();
                     if (to != null && !to.isBlank()) {
@@ -1414,7 +1414,6 @@ public class SimpleServer extends AbstractServer {
                         String body =
                                 "Hi " + (name == null ? "" : name) + ",\n\n" +
                                         "Your order #" + o.getId() + " has been delivered.\n\n" +
-                                        "Branch: " + (o.getStoreLocation() == null ? "" : o.getStoreLocation()) + "\n" +
                                         "Delivered: " + java.time.LocalDateTime.now() + "\n\n" +
                                         "Thank you!";
                         Services.EMAIL.sendTextAsync(to, subject, body);
