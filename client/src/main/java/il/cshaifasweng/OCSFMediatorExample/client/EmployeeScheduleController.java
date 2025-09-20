@@ -316,38 +316,18 @@ public class EmployeeScheduleController implements Initializable {
         }
     }
 
-
-
     private void markCompleted(ScheduleOrderDTO dto) {
         if (dto == null || inFlight.contains(dto.getId())) return;
         inFlight.add(dto.getId());
         try {
             if (!SimpleClient.getClient().isConnected()) SimpleClient.getClient().openConnection();
-
-            // 1) Mark the order completed (existing behavior)
-            Map<String,Object> p = Map.of("orderId", dto.getId());
-            SimpleClient.getClient().sendToServer(new Message("mark_order_completed", null, List.of(p)));
+            SimpleClient.getClient().sendToServer(new Message("mark_order_completed", dto.getId(),null));
             status((dto.isDelivery() ? "Marking delivered #" : "Marking picked up #") + dto.getId() + "…");
-
-            // 2) If it's a delivery, also send the delivery email (same logic as your other controller)
-            if (dto.isDelivery()) {
-                // send with the primitive long id, like your onEmailCustomer does
-                SimpleClient.getClient().sendToServer(
-                        new il.cshaifasweng.OCSFMediatorExample.entities.Message(
-                                "staff_send_delivery_email", dto.getId(), null
-                        )
-                );
-                status("Requesting delivery email for order #" + dto.getId() + "…");
-            }
-
         } catch (IOException e) {
             inFlight.remove(dto.getId());
-            status("Failed to update order/email: " + e.getMessage());
+            status("Failed to update order.");
         }
     }
-
-
-
 
     @Subscribe
     public void onServer(Message msg) {

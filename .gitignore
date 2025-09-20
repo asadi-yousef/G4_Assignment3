@@ -45,6 +45,8 @@ nbdist/
 nbactions.xml
 nb-configuration.xml
 
+# Ignore all Java properties files
+*.properties
 
 # OS
 .DS_Store
