@@ -1193,6 +1193,32 @@ public class PrimaryController implements Initializable {
 			showAlert("Error", "Failed to open orders page.");
 		}
 	}
+	@FXML
+	private void onEmailCustomer(ActionEvent e) {
+		TextInputDialog d = new TextInputDialog();
+		d.setTitle("Email Customer");
+		d.setHeaderText("Send delivery email");
+		d.setContentText("Order ID:");
+		var idStr = d.showAndWait().orElse(null);
+		if (idStr == null) return;
+		long orderId;
+		try { orderId = Long.parseLong(idStr.trim()); }
+		catch (NumberFormatException ex) { new Alert(Alert.AlertType.ERROR, "Invalid Order ID").showAndWait(); return; }
+
+		// Choose one of these:
+		// a) Email only:
+		try {
+			SimpleClient.getClient().sendToServer(
+					new il.cshaifasweng.OCSFMediatorExample.entities.Message(
+							"staff_send_delivery_email", orderId, null));
+			// or: "staff_mark_order_completed" if you want status+email
+		} catch (IOException ex) {
+			ex.printStackTrace();
+			new Alert(Alert.AlertType.ERROR, "Network error: " + ex.getMessage()).showAndWait();
+		}
+		// SimpleClient.getClient().sendToServer(new Message("staff_mark_order_completed", orderId, null));
+	}
+
 
 	@FXML
 	public void handleAddBudget(ActionEvent actionEvent) {
