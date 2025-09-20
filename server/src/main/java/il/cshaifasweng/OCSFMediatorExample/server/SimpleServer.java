@@ -2818,21 +2818,27 @@ public class SimpleServer extends AbstractServer {
 
             // Bulk JPQL bypasses the first-level cache → clear & reload before sending the entity out
             session.clear();
-            User fresh = session.find(User.class, user.getId());
-
-            client.setInfo("userId", fresh.getId());
-            client.setInfo("username", fresh.getUsername());
-            // Treat ANY non-customer subtype as staff (Employee/Manager/Driver/etc.)
-            boolean isStaff = !(fresh instanceof Customer);
-            //capture branch if staff has getBrachName()
-            String staffBranch = null;
-            try {
-                staffBranch = (String) fresh.getClass().getMethod("getBranchName").invoke(fresh);
-            } catch (Exception ignored) {}
-
-            client.setInfo("canCompleteOrders", isStaff);
-            if (staffBranch != null) client.setInfo("branch", staffBranch);
-            try { client.sendToClient(new Message("correct", fresh, null)); } catch (IOException ignored) {}
+            User u = session.find(User.class, user.getId());
+            client.setInfo("userId", u.getId());
+            client.setInfo("username", u.getUsername());
+            Customer customer;
+            Employee employee;
+            if(u instanceof Customer) {
+                customer = prepareCustomerForClient((Customer) u);
+                try {
+                    client.sendToClient(new Message("correct", customer, null));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            else{
+                employee = (Employee) u;
+                try {
+                    client.sendToClient(new Message("correct", employee, null));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
 
         } catch (Exception e) {
             e.printStackTrace();
