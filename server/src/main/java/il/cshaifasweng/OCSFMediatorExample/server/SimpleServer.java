@@ -16,6 +16,8 @@ import java.util.*;
 import org.hibernate.query.Query;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
+
+import javax.swing.*;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -246,7 +248,7 @@ public class SimpleServer extends AbstractServer {
                 else if ("mark_order_ready".equals(key) || "staff_mark_order_ready".equals(key)) {
                     handleMarkOrderReady(m, client, session);
                 } else if ("mark_order_completed".equals(key) || "staff_mark_order_completed".equals(key)) {
-                    // Keep permission checks via the existing staff wrapper:
+                    System.out.println("DEBUG : recieved mark_order_completed");
                     handleStaffMarkOrderCompleted(m, client, session);
                 }
                 else if ("staff_send_delivery_email".equals(key)) {
@@ -1346,10 +1348,7 @@ public class SimpleServer extends AbstractServer {
         }
     }
     private void handleStaffMarkOrderCompleted(Message m, ConnectionToClient client, org.hibernate.Session session) {
-        if (!canCompleteOrders(client)) {
-            try { client.sendToClient(new Message("order_completed_ack", null, null)); } catch (IOException ignored) {}
-            return;
-        }
+        try { client.sendToClient(new Message("order_completed_ack", null, null)); } catch (IOException ignored) {}
         handleMarkOrderCompleted(m, client, session);
     }
 
@@ -1361,7 +1360,7 @@ public class SimpleServer extends AbstractServer {
             Long orderId = null;
 
             // Accept either a Map {"orderId": ...} in objectList, a Number in objectList, or a Number in object
-            if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
+            if (m.getObjectList()!= null) {
                 Object first = m.getObjectList().get(0);
                 if (first instanceof java.util.Map<?,?> map) {
                     Object v = map.get("orderId");
@@ -1372,6 +1371,7 @@ public class SimpleServer extends AbstractServer {
             } else if (m.getObject() instanceof Number n) {
                 orderId = n.longValue();
             }
+            System.out.println("DEBUG: id class : " + orderId.getClass().getName() + " orderId: " + orderId);
 
             if (orderId == null) {
                 tx.rollback();
@@ -1392,6 +1392,7 @@ public class SimpleServer extends AbstractServer {
             // Idempotent: only act if status actually changes
             if (!before.equals(after)) {
                 o.setStatus(after);
+                System.out.println("DEBUG: status changed from "+ before+ "to" + after);
                 session.merge(o);
                 session.flush();
 
@@ -1413,9 +1414,11 @@ public class SimpleServer extends AbstractServer {
             tx.commit();
 
             // --- EMAIL: send only if final status is DELIVERED, after commit (async) ---
+            System.out.println("DEBUG customer name: "+o.getCustomer().getUsername());
+            System.out.println("DEBUG service "+Services.emailConfigured());
             if ("DELIVERED".equals(after) && Services.emailConfigured() && o.getCustomer() != null) {
                 if (!shouldEmailCustomerForGift(o)) {
-                    System.out.println("[Email] Skipped (recipient == customer or no recipient info) for order " + o.getId());
+                    System.out.println("[Email] Skipped (recipient != customer or no recipient info) for order " + o.getId());
                 } else {
                  String to = o.getCustomer().getEmail();
                     if (to != null && !to.isBlank()) {
@@ -1584,29 +1587,27 @@ public class SimpleServer extends AbstractServer {
             // Accept a String "yyyy-MM-dd" or LocalDate/LocalDateTime; fallback to today.
             LocalDate day = null;
             Object obj = m.getObject();
-            if (obj instanceof LocalDate) {
-                day = (LocalDate) obj;
-            } else if (obj instanceof LocalDateTime) {
-                day = ((LocalDateTime) obj).toLocalDate();
+            if (obj instanceof LocalDate d) {
+                day = d;
+            } else if (obj instanceof LocalDateTime dt) {
+                day = dt.toLocalDate();
             } else if (obj instanceof String s && s.matches("\\d{4}-\\d{2}-\\d{2}")) {
                 day = LocalDate.parse(s);
             }
             if (day == null) day = LocalDate.now();
 
             LocalDateTime start = day.atStartOfDay();
-            LocalDateTime next  = day.plusDays(1).atStartOfDay();   // use < next (no off-by-nanos)
+            LocalDateTime next  = day.plusDays(1).atStartOfDay();
 
-            // HQL over your entity class name "Order"
+            // Use a single coalesced timestamp for filtering & ordering
             String hql =
                     "select distinct o " +
                             "from Order o " +
                             "left join fetch o.items i " +
                             "left join fetch i.product p " +
                             "left join fetch o.customer c " +
-                            "where (o.pickupDateTime is not null and o.pickupDateTime >= :start and o.pickupDateTime < :next) " +
-                            "   or (o.deliveryDateTime is not null and o.deliveryDateTime >= :start and o.deliveryDateTime < :next) " +
-                            "   or ( (o.pickupDateTime is null and o.deliveryDateTime is null) " +
-                            "        and o.orderDate >= :start and o.orderDate < :next ) " +
+                            "where coalesce(o.pickupDateTime, o.deliveryDateTime, o.orderDate) >= :start " +
+                            "  and coalesce(o.pickupDateTime, o.deliveryDateTime, o.orderDate) <  :next " +
                             "order by coalesce(o.pickupDateTime, o.deliveryDateTime, o.orderDate)";
 
             List<Order> orders = session.createQuery(hql, Order.class)
@@ -1614,7 +1615,7 @@ public class SimpleServer extends AbstractServer {
                     .setParameter("next",  next)
                     .getResultList();
 
-            // Map to DTOs the client expects
+            // Map to DTOs
             List<ScheduleOrderDTO> dtoList = new ArrayList<>();
             for (Order o : orders) {
                 boolean delivery = o.getDelivery();
@@ -1623,24 +1624,21 @@ public class SimpleServer extends AbstractServer {
                //         ? o.getDeliveryDateTime()
                //         : o.getPickupDateTime(); // final fallback
 
-                // whereText: branch for pickup, address for delivery
-                String whereText = "-";
+                String whereText;
                 if (delivery) {
-                    String addr = String.valueOf(o.getDeliveryAddress());
-                    if (addr != null && !addr.isBlank()) whereText = addr;
+                    String addr = o.getDeliveryAddress();
+                    whereText = (addr != null && !addr.isBlank()) ? addr : "-";
                 } else {
-                    String branch = o.getStoreLocation(); // this is your branchName string
-                    if (branch != null && !branch.isBlank()) whereText = branch;
+                    String branch = o.getStoreLocation();
+                    whereText = (branch != null && !branch.isBlank()) ? branch : "-";
                 }
 
-                // customer name (fallbacks safe)
                 String customerName = "-";
                 Customer cust = o.getCustomer();
                 if (cust != null && cust.getUsername() != null && !cust.getUsername().isBlank()) {
                     customerName = cust.getUsername();
                 }
 
-                // items
                 List<ScheduleItemDTO> items = new ArrayList<>();
                 if (o.getItems() != null) {
                     for (OrderItem oi : o.getItems()) {
@@ -1679,12 +1677,11 @@ public class SimpleServer extends AbstractServer {
 
             // Client’s EmployeeScheduleController listens for "orders_for_day" in the message.object (not objectList)
             client.sendToClient(new Message("orders_for_day", dtoList, null));
-            System.out.println("[SEND][orders_by_day] -> orders_for_day (obj=ArrayList, size=" + dtoList.size() + ")");
 
         } catch (Exception e) {
             e.printStackTrace();
             try { client.sendToClient(new Message("orders_for_day", List.of(), null)); }
-            catch (java.io.IOException ignored) {}
+            catch (IOException ignored) {}
         }
     }
 
@@ -2056,60 +2053,47 @@ public class SimpleServer extends AbstractServer {
     @SuppressWarnings("unchecked")
     private void handleStaffSendDeliveryEmail(Message m, ConnectionToClient client, org.hibernate.Session session) {
         try {
-            if (!canCompleteOrders(client)) {
-                client.sendToClient(new Message("staff_send_delivery_email_ack",
-                        java.util.Map.of("ok", false, "error", "forbidden"), null));
-                return;
-            }
-
-            Long orderId = null;
-            if (m.getObject() instanceof Number n) {
-                orderId = n.longValue();
-            } else if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
-                Object p0 = m.getObjectList().get(0);
-                if (p0 instanceof Number n) orderId = n.longValue();
-                else if (p0 instanceof java.util.Map<?,?> map) {
-                    Object v = map.get("orderId");
-                    if (v instanceof Number n2) orderId = n2.longValue();
-                }
-            }
-
+            Long orderId = (m.getObject() instanceof Number n) ? n.longValue() : null;
             if (orderId == null) {
-                client.sendToClient(new Message("staff_send_delivery_email_ack",
-                        java.util.Map.of("ok", false, "error", "missing_order_id"), null));
+                client.sendToClient(new Message("staff_send_delivery_email_ack", "missing orderId", null));
                 return;
             }
-
             Order o = session.get(Order.class, orderId);
             if (o == null) {
-                client.sendToClient(new Message("staff_send_delivery_email_ack",
-                        java.util.Map.of("ok", false, "error", "order_not_found"), null));
+                client.sendToClient(new Message("staff_send_delivery_email_ack", "order not found", null));
                 return;
             }
 
             if (!Services.emailConfigured()) {
-                client.sendToClient(new Message("staff_send_delivery_email_ack",
-                        java.util.Map.of("ok", false, "error", "email_not_configured"), null));
+                client.sendToClient(new Message("staff_send_delivery_email_ack", "email not configured on server", null));
+                return;
+            }
+            if (o.getCustomer() == null || o.getCustomer().getEmail() == null || o.getCustomer().getEmail().isBlank()) {
+                client.sendToClient(new Message("staff_send_delivery_email_ack", "customer has no email", null));
+                return;
+            }
+            // If you only email on deliveries:
+            if (!o.getDelivery()) {
+                client.sendToClient(new Message("staff_send_delivery_email_ack", "not a delivery order", null));
                 return;
             }
 
-            if (!shouldEmailCustomerForGift(o)) {
-                client.sendToClient(new Message("staff_send_delivery_email_ack",
-                        java.util.Map.of("ok", false, "error", "recipient_is_customer_or_missing"), null));
-                return;
-            }
+            String to = o.getCustomer().getEmail();
+            String name = (o.getCustomer().getFirstName() != null) ? o.getCustomer().getFirstName() : "";
+            String subject = "Your delivery has arrived";
+            String body =
+                    "Hi " + name + ",\n\n" +
+                            "Your order #" + o.getId() + " has been delivered.\n\n" +
+                            "Branch: " + (o.getStoreLocation() == null ? "" : o.getStoreLocation()) + "\n" +
+                            "Delivered: " + java.time.LocalDateTime.now() + "\n\n" +
+                            "Thank you!";
 
-            // Reuse your templated notifier
-            notifyCustomerOnDelivered(o);
-
-            client.sendToClient(new Message("staff_send_delivery_email_ack",
-                    java.util.Map.of("ok", true), null));
+            System.out.println("[Mail] sending to=" + to); // log
+            Services.EMAIL.sendTextAsync(to, subject, body);
+            client.sendToClient(new Message("staff_send_delivery_email_ack", Boolean.TRUE, null));
         } catch (Exception e) {
-            e.printStackTrace();
-            try {
-                client.sendToClient(new Message("staff_send_delivery_email_ack",
-                        java.util.Map.of("ok", false, "error", e.getClass().getSimpleName() + ": " + e.getMessage()), null));
-            } catch (IOException ignored) {}
+            System.err.println("[Mail] send error: " + e.getMessage());
+            try { client.sendToClient(new Message("staff_send_delivery_email_ack", e.getMessage(), null)); } catch (IOException ignored) {}
         }
     }
     // --- DTO mapper ---
@@ -3379,6 +3363,7 @@ public class SimpleServer extends AbstractServer {
 
                 // Set the payment info on the order (optional: partial payment handling)
                 order.setPaymentMethod("BUDGET");
+
             }
 
 
@@ -3614,11 +3599,8 @@ public class SimpleServer extends AbstractServer {
         if (o == null || o.getCustomer() == null) return false;
         String custPhone = o.getCustomer().getPhone();
 
-        String recPhone = o.getRecipientPhone();   // or o.getReceiverPhone()
-
-        // If there's no explicit recipient info, treat as "same person" → don't email
-        boolean hasRecipientInfo =!isBlank(recPhone);
-        if (!hasRecipientInfo) return false;
+        String recPhone = o.getRecipientPhone();
+        if(recPhone == null || recPhone.isBlank()) return false;
 
         boolean samePhone = !isBlank(recPhone)  && !isBlank(custPhone) &&
                 normPhone(recPhone).equals(normPhone(custPhone));

@@ -148,8 +148,8 @@ public class EmployeeScheduleController implements Initializable {
 
     private void addActionColumn() {
         colAction.setCellFactory(col -> new TableCell<>() {
-            private final Button readyBtn   = new Button("Ready for pick-up");
-            private final Button completeBtn= new Button(); // text set per row
+            private final Button readyBtn    = new Button("Ready for pick-up");
+            private final Button completeBtn = new Button(); // label per row
             private final HBox box = new HBox(8, readyBtn, completeBtn);
 
             {
@@ -163,6 +163,7 @@ public class EmployeeScheduleController implements Initializable {
                     readyBtn.setDisable(true);
                     markReady(dto);
                 });
+
                 completeBtn.setOnAction(e -> {
                     var dto = getTableView().getItems().get(getIndex());
                     if (dto == null) return;
@@ -172,25 +173,36 @@ public class EmployeeScheduleController implements Initializable {
                 });
             }
 
-            @Override protected void updateItem(Void v, boolean empty) {
+            @Override
+            protected void updateItem(Void v, boolean empty) {
                 super.updateItem(v, empty);
                 if (empty) { setGraphic(null); return; }
 
                 var dto = getTableView().getItems().get(getIndex());
                 if (dto == null) { setGraphic(null); return; }
 
-                String status = Objects.toString(dto.getStatus(), "PLACED");
-                boolean isPickup = !dto.isDelivery();
+                String status   = Objects.toString(dto.getStatus(), "PLACED");
+                boolean isPickup  = !dto.isDelivery();
                 boolean isPending = pending.contains(dto.getId());
 
-                // Default labels
+                // Labels
                 completeBtn.setText(isPickup ? "Picked up" : "Delivered");
 
-                boolean canReady            = isPickup && !"READY_FOR_PICKUP".equalsIgnoreCase(status) && !"PICKED_UP".equalsIgnoreCase(status);
-                boolean canCompletePickup   = isPickup && "READY_FOR_PICKUP".equalsIgnoreCase(status);
-                boolean canCompleteDelivery = !isPickup && !"DELIVERED".equalsIgnoreCase(status);
+                // Allow "Ready" for non-drivers on any not-final state
+                boolean canReady = !"READY_FOR_PICKUP".equalsIgnoreCase(status)
+                        && !"PICKED_UP".equalsIgnoreCase(status)
+                        && !"DELIVERED".equalsIgnoreCase(status);
 
-                // Driver mode: hide "Ready" and force complete to "Delivered"
+                // COMPLETE gating:
+                //  - pickups only when READY_FOR_PICKUP
+                //  - deliveries when READY_FOR_DELIVERY or OUT_FOR_DELIVERY (and also allow READY_FOR_PICKUP to be safe)
+                boolean canComplete = isPickup
+                        ? "READY_FOR_PICKUP".equalsIgnoreCase(status)
+                        : ("READY_FOR_DELIVERY".equalsIgnoreCase(status)
+                        || "OUT_FOR_DELIVERY".equalsIgnoreCase(status)
+                        || "READY_FOR_PICKUP".equalsIgnoreCase(status));
+
+                // Driver mode: hide Ready, keep Complete labeled "Delivered"
                 if (driverMode) {
                     readyBtn.setVisible(false);
                     readyBtn.setManaged(false);
@@ -200,13 +212,16 @@ public class EmployeeScheduleController implements Initializable {
                     readyBtn.setManaged(true);
                 }
 
-                // disable while pending OR when not allowed
-                readyBtn.setDisable(isPending || !canReady);
-                completeBtn.setDisable(isPending || !(isPickup ? canCompletePickup : canCompleteDelivery));
+                readyBtn.setDisable(isPending || inFlight.contains(dto.getId()) || driverMode || !canReady);
+                completeBtn.setDisable(isPending || inFlight.contains(dto.getId()) || !canComplete);
 
                 setGraphic(box);
-            }});
+            }
+        });
     }
+
+
+
 
 
     private void setStatus(String s) { System.out.println("[CLI][schedule] " + s); }
@@ -301,23 +316,18 @@ public class EmployeeScheduleController implements Initializable {
         }
     }
 
-
-
     private void markCompleted(ScheduleOrderDTO dto) {
         if (dto == null || inFlight.contains(dto.getId())) return;
         inFlight.add(dto.getId());
         try {
             if (!SimpleClient.getClient().isConnected()) SimpleClient.getClient().openConnection();
-            Map<String,Object> p = Map.of("orderId", dto.getId());
-            SimpleClient.getClient().sendToServer(new Message("mark_order_completed", null, List.of(p)));
+            SimpleClient.getClient().sendToServer(new Message("mark_order_completed", dto.getId(),null));
             status((dto.isDelivery() ? "Marking delivered #" : "Marking picked up #") + dto.getId() + "…");
         } catch (IOException e) {
             inFlight.remove(dto.getId());
             status("Failed to update order.");
         }
     }
-
-
 
     @Subscribe
     public void onServer(Message msg) {
@@ -422,9 +432,6 @@ public class EmployeeScheduleController implements Initializable {
 
 
     private javafx.scene.layout.VBox buildCard(ScheduleOrderDTO dto) {
-        //
-        System.out.println(dto.getScheduledAt());
-        //
         var box = new javafx.scene.layout.VBox(10);
         box.setPadding(new javafx.geometry.Insets(15));
         box.setStyle("-fx-background-color: white; -fx-background-radius: 12; -fx-border-color: #e1e8ed; -fx-border-width: 1; -fx-border-radius: 12; -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.08), 5, 0, 0, 2);");
@@ -462,30 +469,38 @@ public class EmployeeScheduleController implements Initializable {
             }
         }
 
-        // actions (same logic as table buttons)
+        // actions
         var actions = new javafx.scene.layout.HBox(8);
         actions.setAlignment(javafx.geometry.Pos.CENTER_RIGHT);
 
-        var readyBtn = new javafx.scene.control.Button("Ready for pick-up");
+        var readyBtn    = new javafx.scene.control.Button("Ready for pick-up");
         readyBtn.setStyle("-fx-background-color:#27ae60; -fx-text-fill:white; -fx-background-radius:8;");
         var completeBtn = new javafx.scene.control.Button(dto.isDelivery() ? "Delivered" : "Picked up");
         completeBtn.setStyle("-fx-background-color:#2ecc71; -fx-text-fill:white; -fx-background-radius:8;");
 
         String st = Objects.toString(dto.getStatus(), "PLACED");
         boolean isPickup = !dto.isDelivery();
-        boolean canReady = isPickup && !st.equalsIgnoreCase("READY_FOR_PICKUP") && !st.equalsIgnoreCase("PICKED_UP");
-        boolean canCompletePickup = isPickup && st.equalsIgnoreCase("READY_FOR_PICKUP");
-        boolean canCompleteDelivery = !isPickup && !st.equalsIgnoreCase("DELIVERED");
 
-        // Driver mode: only show Delivered
+        // Allow "Ready" for non-drivers on any not-final state
+        boolean canReady = !"READY_FOR_PICKUP".equalsIgnoreCase(st)
+                && !"PICKED_UP".equalsIgnoreCase(st)
+                && !"DELIVERED".equalsIgnoreCase(st);
+
+        // COMPLETE gating (same as table)
+        boolean canComplete = isPickup
+                ? "READY_FOR_PICKUP".equalsIgnoreCase(st)
+                : ("READY_FOR_DELIVERY".equalsIgnoreCase(st)
+                || "OUT_FOR_DELIVERY".equalsIgnoreCase(st)
+                || "READY_FOR_PICKUP".equalsIgnoreCase(st));
+
         if (driverMode) {
             readyBtn.setVisible(false);
             readyBtn.setManaged(false);
             completeBtn.setText("Delivered");
         }
 
-        readyBtn.setDisable(!canReady || inFlight.contains(dto.getId()));
-        completeBtn.setDisable(!(isPickup ? canCompletePickup : canCompleteDelivery) || inFlight.contains(dto.getId()));
+        readyBtn.setDisable(driverMode || inFlight.contains(dto.getId()) || !canReady);
+        completeBtn.setDisable(inFlight.contains(dto.getId()) || !canComplete);
 
         readyBtn.setOnAction(e -> { readyBtn.setDisable(true); markReady(dto); });
         completeBtn.setOnAction(e -> { completeBtn.setDisable(true); markCompleted(dto); });
@@ -494,6 +509,9 @@ public class EmployeeScheduleController implements Initializable {
         box.getChildren().addAll(title, when, where, status, itemsWrap, actions);
         return box;
     }
+
+
+
 
 
 

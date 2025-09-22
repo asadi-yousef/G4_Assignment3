@@ -53,6 +53,46 @@ public class Subscription implements Serializable {
     }
     public boolean isCurrentlyActive() {
         LocalDate today = LocalDate.now();
-        return active && startDate != null && endDate != null && ( !today.isBefore(startDate) && !today.isAfter(endDate) );
+        // start inclusive, end exclusive  →  [startDate, endDate)
+        return active
+                && startDate != null
+                && endDate != null
+                && (!today.isBefore(startDate) && today.isBefore(endDate));
     }
+
+
+    //subscription renwal methods
+    //Anchor date to extend from: current end when active, else today.
+    public LocalDate renewalAnchor() {
+        if (isCurrentlyActive() && getEndDate() != null) {
+            return getEndDate();
+        }
+        return LocalDate.now();
+    }
+
+    // --- Renewal helpers (keep endDate exclusive) ---
+    public void renewOneYear() {
+        if (isCurrentlyActive() && endDate != null) {
+            // extend exactly one more year from current exclusive end
+            setEndDate(endDate.plusYears(1));
+        } else {
+            LocalDate start = LocalDate.now();
+            setStartDate(start);
+            setEndDate(start.plusYears(1));
+        }
+        setActive(true);
+    }
+
+    public void renewYears(int years) {
+        if (years <= 0) return;
+        if (isCurrentlyActive() && endDate != null) {
+            setEndDate(endDate.plusYears(years));
+        } else {
+            LocalDate start = LocalDate.now();
+            setStartDate(start);
+            setEndDate(start.plusYears(years));
+        }
+        setActive(true);
+    }
+
 }

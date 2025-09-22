@@ -36,17 +36,9 @@ public class LoginControl implements Initializable {
 
     @Override
     public void initialize(URL location, ResourceBundle resources) {
-        if (!EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().register(this);
-        }
-        loadToggleImages();
-        setupPasswordToggle();
-    }
-
-    private void safeUnregister() {
-        if (EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().unregister(this);
-        }
+        EventBus.getDefault().register(this);
+        loadToggleImages(); // Load images first
+        setupPasswordToggle(); // Then set up the button
     }
 
     private void loadToggleImages() {
@@ -94,7 +86,7 @@ public class LoginControl implements Initializable {
         String username = usernameField.getText();
         String password = passwordField.getText();
 
-        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+        if (username.isEmpty() || password.isEmpty()) {
             showError("Username and password cannot be empty.");
             return;
         }
@@ -102,14 +94,15 @@ public class LoginControl implements Initializable {
         setLoading(true);
 
         Task<Void> loginTask = new Task<>() {
-            @Override protected Void call() throws Exception {
+            @Override
+            protected Void call() throws Exception {
                 if (!SimpleClient.getClient().isConnected()) {
-                    SimpleClient.getClient().openConnection(); // ideally done once app-wide
+                    SimpleClient.getClient().openConnection();
                 }
-                List<String> info = new ArrayList<>(2);
+                List<String> info = new ArrayList<String>();
                 info.add(username);
                 info.add(password);
-                SimpleClient.getClient().sendToServer(new Message("check existence", info, null));
+                SimpleClient.getClient().sendToServer( new Message("check existence", info , null));
                 return null;
             }
         };
@@ -169,15 +162,8 @@ public class LoginControl implements Initializable {
 
     @FXML
     void handleRegister(ActionEvent event) throws IOException {
-        safeUnregister();
+        EventBus.getDefault().unregister(this);
         App.setRoot("registerView");
-    }
-
-    @FXML
-    public void handleBack(ActionEvent actionEvent) {
-        safeUnregister();
-        try { App.setRoot("primary"); }
-        catch (Exception e) { throw new RuntimeException(e); }
     }
 
 
@@ -193,6 +179,16 @@ public class LoginControl implements Initializable {
         if (isLoading) {
             errorLabel.setVisible(false);
             errorLabel.setManaged(false);
+        }
+    }
+
+    @FXML
+    public void handleBack(ActionEvent actionEvent) {
+        EventBus.getDefault().unregister(this);
+        try {
+            App.setRoot("primary");
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 }
