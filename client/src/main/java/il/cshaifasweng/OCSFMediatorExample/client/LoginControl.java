@@ -146,7 +146,7 @@ public class LoginControl implements Initializable {
                         }
 
                         // Unregister before navigation to avoid duplicate listeners
-                        safeUnregister();
+                        EventBus.getDefault().unregister(this);
                         App.setRoot(target);
                     } catch (IOException e) {
                         showError("Failed to load the main page.");
