@@ -45,6 +45,7 @@ nbdist/
 nbactions.xml
 nb-configuration.xml
 
+*.properties
 
 # OS
 .DS_Store
