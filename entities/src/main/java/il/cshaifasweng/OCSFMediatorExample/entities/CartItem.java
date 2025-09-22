@@ -136,6 +136,6 @@ public class CartItem implements Serializable {
                     ? customBouquet.getTotalPrice().doubleValue() * quantity
                     : 0.0;
         }
-        return (product != null) ? product.getPrice() * quantity : 0.0;
+        return (product != null) ? product.getSalePrice() * quantity : 0.0;
     }
 }
