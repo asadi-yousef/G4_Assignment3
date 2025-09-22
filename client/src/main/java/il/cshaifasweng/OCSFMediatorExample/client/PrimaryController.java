@@ -43,6 +43,7 @@ public class PrimaryController implements Initializable {
 	@FXML private TextField maxPriceField;
     @FXML private Button inboxButton;
     @FXML private Button broadcastButton;
+	@FXML private Button usersPageButton;
 	@FXML private Button budgetButton;
     private int unreadPersonalCount = 0;
     private Label inboxBadge;
@@ -582,6 +583,15 @@ public class PrimaryController implements Initializable {
 		return false;
 	}
 
+	private boolean canSeeUsers() {
+		User u = SessionManager.getInstance().getCurrentUser();
+		if(u == null) return false;
+		if(u instanceof Employee) {
+			String role = ((Employee) u).getRole();
+			return role.contains("systemadmin");
+		}
+		return false;
+	}
 	private boolean isManager() {
 		User u = SessionManager.getInstance().getCurrentUser();
 		if (u == null) return false;
@@ -645,6 +655,12 @@ public class PrimaryController implements Initializable {
             broadcastButton.setVisible(isEmployee);
             broadcastButton.setManaged(isEmployee);
         }
+
+		if(usersPageButton != null) {
+			boolean showUsers = isLoggedIn && canSeeUsers();
+			usersPageButton.setVisible(showUsers);
+			usersPageButton.setManaged(showUsers);
+		}
 
     }
 
@@ -760,7 +776,16 @@ public class PrimaryController implements Initializable {
         }
     }
 
-
+	@FXML
+	private void handleUsersPage(javafx.event.ActionEvent e) {
+		if(!SessionManager.getInstance().isEmployee()) return;
+		if(!canSeeUsers()) return;
+		try {
+			App.setRoot("AdminUsersView");
+		} catch (IOException e1) {
+			throw new RuntimeException(e1);
+		}
+	}
 
     private void refreshInboxBadgeText() {
         if (inboxButton == null) return;
