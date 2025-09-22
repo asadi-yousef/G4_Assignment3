@@ -40,6 +40,7 @@ public class Cart implements Serializable {
         }
         return total;
     }
+
     @Transient
     public double getBaseTotal() {
         return items.stream()

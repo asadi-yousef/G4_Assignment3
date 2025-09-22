@@ -175,8 +175,8 @@ public class Order implements Serializable {
     }
     @Transient
     public LocalDateTime getScheduledAt() {
-        LocalDateTime when = getPickupDateTime();
-        if (getDelivery()) when = getDeliveryDateTime();
+        LocalDateTime when;
+        if (getDelivery()){ when = getDeliveryDateTime();} else { when = getPickupDateTime(); }
         if (when == null) when = getOrderDate();
         return when;
     }

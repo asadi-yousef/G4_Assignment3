@@ -1293,8 +1293,14 @@ public class SimpleServer extends AbstractServer {
 
             // Calculate refund based on delivery time
             double refund = 0;
-            if (customer != null && order.getDeliveryDateTime() != null) {
-                LocalDateTime deliveryTime = order.getDeliveryDateTime();
+            boolean delivery = order.getDelivery();
+            LocalDateTime deliveryTime;
+            if(delivery) {
+                deliveryTime = order.getDeliveryDateTime();
+            } else {
+                deliveryTime = order.getPickupDateTime();
+            }
+            if (customer != null && deliveryTime != null) {
                 LocalDateTime now = LocalDateTime.now();
                 Duration diff = Duration.between(now, deliveryTime);
                 long hoursUntilDelivery = diff.toHours();
@@ -1619,10 +1625,12 @@ public class SimpleServer extends AbstractServer {
             List<ScheduleOrderDTO> dtoList = new ArrayList<>();
             for (Order o : orders) {
                 boolean delivery = o.getDelivery();
-                java.time.LocalDateTime when = o.getDeliveryDateTime();
-               // java.time.LocalDateTime when = delivery
-               //         ? o.getDeliveryDateTime()
-               //         : o.getPickupDateTime(); // final fallback
+                java.time.LocalDateTime when;
+                if(delivery) {
+                    when = o.getDeliveryDateTime();
+                } else {
+                    when = o.getPickupDateTime();
+                }
 
                 String whereText;
                 if (delivery) {
@@ -3324,6 +3332,13 @@ public class SimpleServer extends AbstractServer {
             order.setStoreLocation(clientOrder.getStoreLocation());
             order.setDelivery(clientOrder.getDelivery());
             order.setOrderDate(LocalDateTime.now());
+            if(clientOrder.getDelivery()) {
+                order.setDeliveryDateTime(clientOrder.getDeliveryDateTime());
+                order.setPickupDateTime(null);
+            } else {
+                order.setPickupDateTime(clientOrder.getPickupDateTime());
+                order.setDeliveryDateTime(null);
+            }
             order.setDeliveryDateTime(clientOrder.getDeliveryDateTime());
             order.setPickupDateTime(clientOrder.getPickupDateTime());
             order.setRecipientPhone(clientOrder.getRecipientPhone());
@@ -3400,12 +3415,18 @@ public class SimpleServer extends AbstractServer {
 
             session.flush();
 
-            // add notification BEFORE tx.commit()
+            LocalDateTime deliveryTime;
+            boolean delivery = order.getDelivery();
+            if(delivery) {
+                deliveryTime = order.getDeliveryDateTime();
+            } else {
+                deliveryTime = order.getPickupDateTime();
+            }
             createPersonalNotification(session,
                     order.getCustomer().getId(),
                     "Order placed",
                     "Thanks! Your order #" + order.getId() + " was placed. " +
-                            (order.getDeliveryDateTime() == null ? "" : "Delivery: " + order.getDeliveryDateTime()));
+                            (deliveryTime == null ? "" : "Delivery: " + deliveryTime));
 
 
             tx.commit();

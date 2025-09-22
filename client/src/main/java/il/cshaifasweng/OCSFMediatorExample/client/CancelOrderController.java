@@ -51,10 +51,16 @@ public class CancelOrderController implements Initializable {
                 orderDateLabel.setText("Order Date: -");
             }
 
-            // Format delivery date
-            if (selectedOrder.getDeliveryDateTime() != null) {
+            LocalDateTime deliveryTime;
+            boolean delivery = selectedOrder.getDelivery();
+            if(delivery) {
+                deliveryTime = selectedOrder.getDeliveryDateTime();
+            } else {
+                deliveryTime = selectedOrder.getPickupDateTime();
+            }
+            if (deliveryTime != null) {
                 deliveryDateLabel.setText("Delivery/Pickup Date: " +
-                        selectedOrder.getDeliveryDateTime().format(
+                        deliveryTime.format(
                                 java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
                         )
                 );
@@ -88,11 +94,18 @@ public class CancelOrderController implements Initializable {
 
         try {
             double refund = selectedOrder.getTotalPrice();
-            LocalDateTime deliveryTime = selectedOrder.getDeliveryDateTime();
+            LocalDateTime deliveryTime;
+            boolean delivery = selectedOrder.getDelivery();
+            if(delivery) {
+                deliveryTime = selectedOrder.getDeliveryDateTime();
+            } else {
+                deliveryTime = selectedOrder.getPickupDateTime();
+            }
             LocalDateTime currentTime = LocalDateTime.now();
 
             Duration diff = Duration.between(currentTime, deliveryTime);
             long hoursUntilDelivery = diff.toHours();
+            hoursUntilDelivery += 3;
 
             if (hoursUntilDelivery > 0) {
                 if (hoursUntilDelivery >= 24) {
