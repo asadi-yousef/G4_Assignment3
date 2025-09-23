@@ -56,8 +56,16 @@ public class Customer extends User implements Serializable {
         this.city = city;
         this.country = country;
         this.creditCard = new CreditCard(cardNumber, expirationMonth, expirationYear, cvv, this);
-        this.subscription = new Subscription(subStartDate, subExpDate, true, this);
-        this.isSubscribed = isSubscribed;
+        this.isSubscribed = isSubscribed; // set the flag first
+        if (isSubscribed) {
+            // Expect end-exclusive semantics:
+            LocalDate start = (subStartDate != null) ? subStartDate : LocalDate.now();
+            LocalDate end   = (subExpDate   != null) ? subExpDate   : start.plusYears(1);
+            this.subscription = new Subscription(start, end, true, this);
+        } else {
+            this.subscription = null; // branch/network without yearly sub → no Subscription row
+        }
+
         this.budget = budget;
 
     }
@@ -117,6 +125,9 @@ public class Customer extends User implements Serializable {
     }
     public void setSubscribed(boolean isSubscribed) {
         this.isSubscribed = isSubscribed;
+        if(!isSubscribed){
+            if(this.subscription != null) this.subscription.setActive(false);
+        }
     }
     public Budget getBudget() {
         return budget;
@@ -125,4 +136,21 @@ public class Customer extends User implements Serializable {
         this.budget = budget;
         if(budget != null) budget.setCustomer(this);
     }
+
+    //renewal subscription
+    public void renewSubscriptionOneYear() {
+        LocalDate today = LocalDate.now();
+
+        if (this.getSubscription() == null) {
+            // Buying when none exists: create fresh sub
+            this.setSubscription(new Subscription(today, today.plusYears(1), true, this));
+        } else {
+            this.getSubscription().renewOneYear(); // extend/reactivate
+        }
+
+        // Keep flags consistent
+        this.setSubscribed(this.getSubscription().isCurrentlyActive());
+        this.setNetworkAccount(true); // yearly subscription implies network account
+    }
+
 }

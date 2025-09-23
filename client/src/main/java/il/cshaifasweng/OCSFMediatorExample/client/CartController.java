@@ -16,6 +16,7 @@ import javafx.geometry.Pos;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URL;
 import java.util.Objects;
 import java.util.ResourceBundle;
@@ -157,7 +158,7 @@ public class CartController implements Initializable {
                         // keep the linkage to Product, but refresh snapshots so price/name show the edited values
                         line.setFlower(updated);
                         line.setFlowerNameSnapshot(updated.getName());
-                        line.setUnitPriceSnapshot(BigDecimal.valueOf(updated.getSalePrice()));
+                        line.setUnitPriceSnapshot(updated.getSalePrice());
                         bouquetChanged = true;
                     }
                 }
@@ -180,7 +181,7 @@ public class CartController implements Initializable {
             System.out.println("Rendering cart with " + (cart == null ? 0 : cart.getItems().size()) + " items");
 
             cartListView.getItems().clear();
-            double total = 0;
+            BigDecimal total = BigDecimal.ZERO;
 
             if (cart == null || cart.getItems().isEmpty()) {
                 proceedToOrderButton.setDisable(true);
@@ -193,7 +194,8 @@ public class CartController implements Initializable {
             for (CartItem item : cart.getItems()) {
                 HBox itemBox = createCartItemBox(item);
                 cartListView.getItems().add(itemBox);
-                total += displayUnitPrice(item) * item.getQuantity();
+                total = total.add(displayUnitPrice(item)
+                        .multiply(BigDecimal.valueOf(item.getQuantity())));
             }
 
             applyDiscountAndUpdateTotal(total);
@@ -210,14 +212,18 @@ public class CartController implements Initializable {
                 "-fx-border-color: #dee2e6; -fx-border-width: 1; -fx-border-radius: 8;");
 
         final String nameText = displayName(item);
-        final double unit = displayUnitPrice(item);
+        final BigDecimal unit = displayUnitPrice(item);
 
-        Label namePriceLabel = new Label(nameText + " - ₪" + String.format("%.2f", unit));
+        Label namePriceLabel = new Label(nameText + " - ₪" + formatCurrency(unit));
         namePriceLabel.setStyle("-fx-font-size: 16px; -fx-text-fill: #2c3e50; -fx-font-weight: bold;");
-        Label totalItemLabel = new Label("₪" + String.format("%.2f", unit * item.getQuantity()));
+
+        BigDecimal itemTotal = unit.multiply(BigDecimal.valueOf(item.getQuantity()));
+        Label totalItemLabel = new Label("₪" + formatCurrency(itemTotal));
         totalItemLabel.setStyle("-fx-font-size: 14px; -fx-text-fill: #555;");
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
+
         Label qtyLbl = new Label("Qty:");
         qtyLbl.setStyle("-fx-text-fill: #2c3e50; -fx-font-size: 14px;");
 
@@ -228,8 +234,9 @@ public class CartController implements Initializable {
 
         quantitySpinner.valueProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null && !newVal.equals(oldVal) && quantitySpinner.isFocused()) {
-                double unitNow = displayUnitPrice(item);
-                totalItemLabel.setText("₪" + String.format("%.2f", unitNow * newVal));
+                BigDecimal unitNow = displayUnitPrice(item);
+                BigDecimal newTotal = unitNow.multiply(BigDecimal.valueOf(newVal));
+                totalItemLabel.setText("₪" + formatCurrency(newTotal));
                 updateCartTotalPreview(item, newVal);
                 updateCartItemQuantity(item, newVal);
             }
@@ -251,33 +258,38 @@ public class CartController implements Initializable {
     private void updateCartTotalPreview(CartItem changedItem, int newQty) {
         if (cart == null || cart.getItems() == null) return;
 
-        double total = 0.0;
+        BigDecimal total = BigDecimal.ZERO;
         for (CartItem ci : cart.getItems()) {
             int qty = (ci == changedItem
                     || (ci.getId() != null && changedItem.getId() != null && ci.getId().equals(changedItem.getId())))
                     ? newQty
                     : ci.getQuantity();
-            total += displayUnitPrice(ci) * qty;
+
+            BigDecimal unitPrice = displayUnitPrice(ci);
+            total = total.add(unitPrice.multiply(BigDecimal.valueOf(qty)));
         }
 
         applyDiscountAndUpdateTotal(total);
     }
-    private void applyDiscountAndUpdateTotal(double total) {
+    private void applyDiscountAndUpdateTotal(BigDecimal total) {
         Customer customer = (Customer) (SessionManager.getInstance().getCurrentUser());
-        if (customer.isSubscribed() && customer.getSubscription().isActive() && total > 50) {
-            double discountedTotal = cart.getTotalWithDiscount();
+        if (customer.isSubscribed() && customer.getSubscription().isActive()
+                && total.compareTo(BigDecimal.valueOf(50)) > 0) {
+
+            BigDecimal discountedTotal = cart.getTotalWithDiscount();
+
             discountContainer.setVisible(true);
             discountContainer.setManaged(true);
-            originalTotalLabel.setText("Total: ₪" + String.format("%.2f", total));
+            originalTotalLabel.setText("Total: ₪" + formatCurrency(total));
             originalTotalLabel.setStyle("-fx-background-color: transparent; -fx-strikethrough: true;");
-            totalLabel.setText("Total: ₪" + String.format("%.2f", discountedTotal));
+            totalLabel.setText("Total: ₪" + formatCurrency(discountedTotal));
             totalLabel.setTextFill(javafx.scene.paint.Color.web("#27ae60")); // Green for savings
 
         } else {
             discountContainer.setVisible(false);
             discountContainer.setManaged(false);
-            totalLabel.setText("Total: ₪" + String.format("%.2f", total));
-            totalLabel.setTextFill(javafx.scene.paint.Color.web("#2c3e50")); // Dark color for regular price
+            totalLabel.setText("Total: ₪" + formatCurrency(total));
+            totalLabel.setTextFill(javafx.scene.paint.Color.web("#2c3e50"));
         }
     }
 
@@ -370,13 +382,17 @@ public class CartController implements Initializable {
     }
 
     /** Unit price for either a product item or a custom bouquet item. */
-    private double displayUnitPrice(CartItem item) {
-        if (item == null) return 0.0;
-        if (item.getProduct() != null) return item.getProduct().getSalePrice();
+    private BigDecimal displayUnitPrice(CartItem item) {
+        if (item == null) return BigDecimal.ZERO;
+        if (item.getProduct() != null) return item.getProduct().getSalePrice(); // assume BigDecimal
         if (item.getCustomBouquet() != null && item.getCustomBouquet().getTotalPrice() != null) {
-            return item.getCustomBouquet().getTotalPrice().doubleValue();
+            return item.getCustomBouquet().getTotalPrice();
         }
-        return 0.0;
+        return BigDecimal.ZERO;
+    }
+
+    private String formatCurrency(BigDecimal value) {
+        return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     private void showAlert(String title, String content) {

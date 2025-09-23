@@ -2,6 +2,7 @@ package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 @Entity
 public class Budget implements Serializable {
@@ -16,32 +17,35 @@ public class Budget implements Serializable {
     private Customer customer;
 
     @Column(nullable = false)
-    private double balance;
+    private BigDecimal balance;
 
     public Budget() {}
 
-    public Budget(Customer customer, double balance) {
+    public Budget(Customer customer, BigDecimal balance) {
         this.customer = customer;
         this.balance = balance;
     }
 
-    // --- Business logic methods ---
-    public void addFunds(double amount) {
-        if (amount > 0) {
-            this.balance += amount;
+
+    public void addFunds(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) > 0) {
+            this.balance = this.balance.add(amount);
         }
     }
 
-    public boolean useFunds(double amount) {
-        if (amount > 0 && balance >= amount) {
-            this.balance -= amount;
+    public boolean useFunds(BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) > 0
+                && balance.compareTo(amount) >= 0) {
+            this.balance = this.balance.subtract(amount);
             return true;
         }
         return false;
     }
-    public void subtractFunds(double amount) {
-        if(amount > balance) throw new IllegalArgumentException("Not enough budget");
-        balance -= amount;
+    public void subtractFunds(BigDecimal amount) {
+        if (amount.compareTo(balance) > 0) {
+            throw new IllegalArgumentException("Not enough budget");
+        }
+        this.balance = this.balance.subtract(amount);
     }
 
     // --- Getters/Setters ---
@@ -57,11 +61,11 @@ public class Budget implements Serializable {
         this.customer = customer;
     }
 
-    public double getBalance() {
+    public BigDecimal getBalance() {
         return balance;
     }
 
-    public void setBalance(double balance) {
+    public void setBalance(BigDecimal balance) {
         this.balance = balance;
     }
 }

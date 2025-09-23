@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.SoftDelete;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Objects;
 
 @Entity
@@ -22,9 +24,9 @@ public class Product implements Serializable {
     @Column(name = "color")
     private String color;
     @Column(name = "price")
-    private double price;
+    private BigDecimal price;
     @Column(name = "discountPercentage")
-    private double discountPercentage;
+    private BigDecimal discountPercentage;
     @Column(name = "isDisabled")
     private boolean isDisabled;
     @Column(name = "ImagePath")
@@ -32,13 +34,13 @@ public class Product implements Serializable {
 
     public Product() { }
 
-    public Product(String name, String type, double price,String color, String image_path) {
+    public Product(String name, String type, BigDecimal price,String color, String image_path) {
         this.name = name;
         this.type = type;
         this.price = price;
         this.image_path = image_path;
         this.color = color;
-        this.discountPercentage = 0;
+        this.discountPercentage = BigDecimal.ZERO;
         this.isDisabled = false;
     }
 
@@ -66,10 +68,10 @@ public class Product implements Serializable {
     public Long getId() {
         return id;
     }
-    public double getPrice() {
+    public BigDecimal getPrice() {
         return price;
     }
-    public void setPrice(double price) {
+    public void setPrice(BigDecimal price) {
         this.price = price;
     }
     public String getImagePath() {
@@ -78,11 +80,11 @@ public class Product implements Serializable {
     public void setImagePath(String image_path) {
         this.image_path = image_path;
     }
-    public double getDiscountPercentage() {
+    public BigDecimal getDiscountPercentage() {
         return discountPercentage;
     }
 
-    public void setDiscountPercentage(double discountPercentage) {
+    public void setDiscountPercentage(BigDecimal discountPercentage) {
         this.discountPercentage = discountPercentage;
     }
     public String getColor() {
@@ -92,12 +94,15 @@ public class Product implements Serializable {
         this.color = color;
     }
 
-    public double getSalePrice() {
-        if (this.discountPercentage > 0) {
-            double discountAmount = this.getPrice() * (this.discountPercentage / 100.0);
-            return this.getPrice() - discountAmount;
+    public BigDecimal getSalePrice() {
+        if (this.discountPercentage.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal discountAmount = this.getPrice()
+                    .multiply(this.discountPercentage)
+                    .divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP);
+
+            return this.getPrice().subtract(discountAmount).setScale(2, RoundingMode.HALF_UP);
         } else {
-            return this.price;
+            return this.getPrice().setScale(2, RoundingMode.HALF_UP);
         }
     }
 

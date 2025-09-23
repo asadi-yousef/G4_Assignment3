@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.Check;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.util.Objects;
 
 @Entity
@@ -108,14 +109,13 @@ public class CartItem implements Serializable {
     }
 
     @Transient
-    public double getDisplayUnitPrice() {
+    public BigDecimal getDisplayUnitPrice() {
         if (isBouquet()) {
-            // totalPrice is BigDecimal (per your model). Use double for UI display.
             return (customBouquet != null && customBouquet.getTotalPrice() != null)
-                    ? customBouquet.getTotalPrice().doubleValue()
-                    : 0.0;
+                    ? customBouquet.getTotalPrice()
+                    : BigDecimal.ZERO;
         }
-        return (product != null) ? product.getPrice() : 0.0;
+        return (product != null) ? product.getPrice() : BigDecimal.ZERO;
     }
 
     @Transient
@@ -129,13 +129,14 @@ public class CartItem implements Serializable {
     }
 
     @Transient
-    public double getSubtotal() {
-        // FIX: respect XOR (bouquet OR product)
+    public BigDecimal getSubtotal() {
         if (isBouquet()) {
             return (customBouquet != null && customBouquet.getTotalPrice() != null)
-                    ? customBouquet.getTotalPrice().doubleValue() * quantity
-                    : 0.0;
+                    ? customBouquet.getTotalPrice().multiply(BigDecimal.valueOf(quantity))
+                    : BigDecimal.ZERO;
         }
-        return (product != null) ? product.getPrice() * quantity : 0.0;
+        return (product != null)
+                ? product.getSalePrice().multiply(BigDecimal.valueOf(quantity))
+                : BigDecimal.ZERO;
     }
 }

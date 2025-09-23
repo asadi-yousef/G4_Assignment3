@@ -10,6 +10,7 @@ import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -51,10 +52,16 @@ public class CancelOrderController implements Initializable {
                 orderDateLabel.setText("Order Date: -");
             }
 
-            // Format delivery date
-            if (selectedOrder.getDeliveryDateTime() != null) {
+            LocalDateTime deliveryTime;
+            boolean delivery = selectedOrder.getDelivery();
+            if(delivery) {
+                deliveryTime = selectedOrder.getDeliveryDateTime();
+            } else {
+                deliveryTime = selectedOrder.getPickupDateTime();
+            }
+            if (deliveryTime != null) {
                 deliveryDateLabel.setText("Delivery/Pickup Date: " +
-                        selectedOrder.getDeliveryDateTime().format(
+                        deliveryTime.format(
                                 java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
                         )
                 );
@@ -87,31 +94,36 @@ public class CancelOrderController implements Initializable {
         }
 
         try {
-            double refund = selectedOrder.getTotalPrice();
-            LocalDateTime deliveryTime = selectedOrder.getDeliveryDateTime();
+            BigDecimal refund = selectedOrder.getTotalPrice();
+
+            LocalDateTime deliveryTime = selectedOrder.getDelivery()
+                    ? selectedOrder.getDeliveryDateTime()
+                    : selectedOrder.getPickupDateTime();
             LocalDateTime currentTime = LocalDateTime.now();
 
             Duration diff = Duration.between(currentTime, deliveryTime);
-            long hoursUntilDelivery = diff.toHours();
+            long hoursUntilDelivery = diff.toHours() + 3;
 
             if (hoursUntilDelivery > 0) {
                 if (hoursUntilDelivery >= 24) {
                     showAlert("Success", "Full Refund, your refund is stored in your budget balance.");
                 } else if (hoursUntilDelivery >= 3) {
                     showAlert("Success", "50% Refund, your refund is stored in your budget balance.");
-                    refund /= 2;
+                    refund = refund.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
                 } else {
                     showAlert("Success", "No Refund");
-                    refund = 0;
+                    refund = BigDecimal.ZERO;
                 }
 
-                // Update local budget
-                //budget.addFunds(refund);
+                // Locally update budget if you want
+                // budget.addFunds(refund);
 
                 // Send cancel request along with refund amount to server
                 ArrayList<Object> payload = new ArrayList<>();
                 payload.add(selectedOrder.getId());
-                payload.add(refund); // pass refund to server
+                // if your server expects BigDecimal, send directly. If it expects double, use refund.doubleValue()
+                payload.add(refund);
+
                 Message message = new Message("cancel_order", null, payload);
                 SimpleClient.getClient().sendToServer(message);
 

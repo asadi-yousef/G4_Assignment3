@@ -2,6 +2,8 @@ package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,27 +29,32 @@ public class Cart implements Serializable {
 
     public void setCustomer(Customer customer) {
         this.customer = customer;
-        if (customer != null && customer.getCart() != this) {
-            customer.setCart(this);
-        }
     }
     public Long getId() {
         return id;
     }
 
     @Transient
-    public double getTotalWithDiscount() {
-        double total = getBaseTotal(); // sum of item prices * quantities
-        if (customer != null && customer.hasValidSubscription() && total > 50) {
-            return total * 0.9; // apply 10% discount
+    public BigDecimal getTotalWithDiscount() {
+        BigDecimal total = getBaseTotal();
+
+        if (customer != null
+                && customer.hasValidSubscription()
+                && total.compareTo(BigDecimal.valueOf(50)) > 0) {
+            // Apply 10% discount: multiply by 0.9
+            total = total.multiply(BigDecimal.valueOf(0.9));
         }
-        return total;
+
+        // Optionally enforce 2 decimal places (e.g., for currency)
+        return total.setScale(2, RoundingMode.HALF_UP);
     }
+
     @Transient
-    public double getBaseTotal() {
+    public BigDecimal getBaseTotal() {
         return items.stream()
-                .mapToDouble(CartItem::getSubtotal)
-                .sum();
+                .map(CartItem::getSubtotal)   // make sure getSubtotal() returns BigDecimal
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP); // ensures 2 decimal precision
     }
 
 
