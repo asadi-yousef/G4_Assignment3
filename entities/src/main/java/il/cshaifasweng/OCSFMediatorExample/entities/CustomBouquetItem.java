@@ -46,7 +46,7 @@ public class CustomBouquetItem implements Serializable {
         if (flower != null) {
             this.flowerNameSnapshot = flower.getName();
             // If your Product.price is double, convert to BigDecimal; adjust if you have BigDecimal already.
-            this.unitPriceSnapshot = BigDecimal.valueOf(flower.getSalePrice());
+            this.unitPriceSnapshot = flower.getSalePrice();
         }
     }
 
