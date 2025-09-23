@@ -14,6 +14,8 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 public class AddBudgetController {
 
@@ -36,8 +38,10 @@ public class AddBudgetController {
 
         User user = SessionManager.getInstance().getCurrentUser();
         if (user instanceof Customer customer) {
-            double bal = (customer.getBudget() != null) ? customer.getBudget().getBalance() : 0.0;
-            budgetBalanceLabel.setText("Current Budget: ₪" + String.format("%.2f", bal));
+            BigDecimal bal = (customer.getBudget() != null)
+                    ? customer.getBudget().getBalance()
+                    : BigDecimal.ZERO;
+            budgetBalanceLabel.setText("Current Budget: ₪" + bal.setScale(2, RoundingMode.HALF_UP));
             System.out.println("Budget loaded in initialize(): " + bal);
         }
         paymentMethodChoice.getItems().setAll("Saved Card", "New Card");
@@ -75,14 +79,14 @@ public class AddBudgetController {
         }
 
         String amtStr = amountField.getText();
-        double amount;
+        BigDecimal amount;
         try {
-            amount = Double.parseDouble(amtStr);
+            amount = amount = new BigDecimal(amtStr);
         } catch (Exception e) {
             showError("Please enter a valid number for amount.");
             return;
         }
-        if (amount <= 0) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             showError("Amount must be greater than 0.");
             return;
         }
@@ -108,15 +112,7 @@ public class AddBudgetController {
             }
         }
 
-        // Locally update Customer's Budget object (so UI reflects change immediately)
-     //   if (currentCustomer.getBudget() == null) {
-      //      Budget b = new Budget();
-      //      b.setCustomer(currentCustomer);
-      //      b.setBalance(0.0);
-      //      currentCustomer.setBudget(b);
-      //  }
 
-      //  currentCustomer.getBudget().addFunds(amount);
         Customer payload = new Customer();
         payload.setId(currentCustomer.getId());
         Budget b = new Budget();
@@ -166,10 +162,11 @@ public class AddBudgetController {
 
                         // update local UI components that show budget (if present)
                         try {
-                            double newBal = (dbCustomer.getBudget() != null) ? dbCustomer.getBudget().getBalance() : 0.0;
-                            // OrderController has budgetBalanceLabel
+                            BigDecimal newBal = (dbCustomer.getBudget() != null)
+                                    ? dbCustomer.getBudget().getBalance()
+                                    : BigDecimal.ZERO;
                             if (budgetBalanceLabel != null) {
-                                budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", newBal));
+                                budgetBalanceLabel.setText("Budget Balance: ₪" + newBal.setScale(2, RoundingMode.HALF_UP));
                             }
                             // AddBudgetController has budgetBalanceLabel (it will also receive this message)
                             // It will update itself in its handler (you already have identical code there)

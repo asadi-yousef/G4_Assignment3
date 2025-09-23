@@ -1,6 +1,7 @@
 package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 public class AuthUserDTO implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -17,7 +18,7 @@ public class AuthUserDTO implements Serializable {
     private String branchName;
     private String role;         // only for EMPLOYEE
     private Boolean frozen;      // only for CUSTOMER
-    private double budget;
+    private BigDecimal budget;
     private boolean isSubbed;
 
     public AuthUserDTO() {}
@@ -57,8 +58,8 @@ public class AuthUserDTO implements Serializable {
     public void setBranchName(String branchName) { this.branchName = branchName; }
     public void setRole(String role) { this.role = role; }
     public void setFrozen(Boolean frozen) { this.frozen = frozen; }
-    public void setBudget(double budget) { this.budget = budget; }
-    public double getBudget() { return budget; }
+    public void setBudget(BigDecimal budget) { this.budget = budget; }
+    public BigDecimal getBudget() { return budget; }
 
     public boolean isSubscribed() {
         return isSubbed;

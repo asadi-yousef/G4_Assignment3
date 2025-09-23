@@ -23,6 +23,7 @@ import org.greenrobot.eventbus.Subscribe;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -113,15 +114,14 @@ public class PrimaryController implements Initializable {
 
 			String searchQuery = valueOrEmpty(searchTextField.getText()).toLowerCase();
 			String selectedType = typeFilterComboBox.getValue();
-			Optional<Double> minPrice = parseDouble(minPriceField.getText());
-			Optional<Double> maxPrice = parseDouble(maxPriceField.getText());
-
+			Optional<BigDecimal> minPrice = parseBigDecimal(minPriceField.getText());
+			Optional<BigDecimal> maxPrice = parseBigDecimal(maxPriceField.getText());
 			List<Product> productsToRender = catalog.getFlowers().stream()
 					.distinct()
 					.filter(p -> searchQuery.isEmpty() || safeLower(p.getName()).contains(searchQuery))
 					.filter(p -> selectedType == null || selectedType.equals("All Types") || safeEqualsIgnoreCase(p.getType(), selectedType))
-					.filter(p -> minPrice.map(min -> p.getPrice() >= min).orElse(true))
-					.filter(p -> maxPrice.map(max -> p.getPrice() <= max).orElse(true))
+					.filter(p -> minPrice.map(min -> p.getPrice().compareTo(min) >= 0).orElse(true))
+					.filter(p -> maxPrice.map(max -> p.getPrice().compareTo(max) <= 0).orElse(true))
 					.collect(Collectors.toList());
 
 			int col = 0;
@@ -306,10 +306,13 @@ public class PrimaryController implements Initializable {
 	}
 	private String valueOrEmpty(String s) { return s == null ? "" : s; }
 
-	private Optional<Double> parseDouble(String text) {
+	private Optional<BigDecimal> parseBigDecimal(String text) {
 		if (text == null || text.trim().isEmpty()) return Optional.empty();
-		try { return Optional.of(Double.parseDouble(text.trim())); }
-		catch (NumberFormatException e) { return Optional.empty(); }
+		try {
+			return Optional.of(new BigDecimal(text.trim()));
+		} catch (NumberFormatException e) {
+			return Optional.empty();
+		}
 	}
 
 	private void populateTypeFilter(Catalog base) {

@@ -22,6 +22,8 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URL;
 import java.text.NumberFormat;
 import java.util.Locale;
@@ -109,9 +111,9 @@ public class ProductCardController {
         priceLabel.setVisible(true);
         priceLabel.setManaged(true);
 
-        double price = currentProduct.getPrice();
-        double discountPct = currentProduct.getDiscountPercentage();
-        boolean discounted = discountPct > 0.0;
+        BigDecimal price = currentProduct.getPrice();
+        BigDecimal discountPct = currentProduct.getDiscountPercentage();
+        boolean discounted = discountPct != null && discountPct.compareTo(BigDecimal.ZERO) > 0;
 
         if (discounted) {
             // Old price (Text uses -fx-fill, not -fx-text-fill)
@@ -120,8 +122,8 @@ public class ProductCardController {
             oldPriceText.setStyle("-fx-fill: #7f8c8d;");
 
             // Sale price (use the FXML label, style explicitly so scene-level CSS can't hide it)
-            double salePrice = currentProduct.getSalePrice();
-            priceLabel.setText(CURRENCY.format(salePrice));
+            BigDecimal salePrice = currentProduct.getSalePrice(); // BigDecimal
+            priceLabel.setText(formatCurrency(salePrice));
             priceLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #c0392b;");
             priceLabel.setFont(new Font("Bell MT", 16));
 
@@ -131,7 +133,7 @@ public class ProductCardController {
             saleBadge.setManaged(true);
         } else {
             // Regular price in the FXML label
-            priceLabel.setText(CURRENCY.format(price));
+            priceLabel.setText(formatCurrency(price));
             priceLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #2c3e50;");
             priceLabel.setFont(new Font("Bell MT", 16));
 
@@ -370,13 +372,18 @@ public class ProductCardController {
 
                 productToSave.setName(nameField.getText().trim());
                 productToSave.setType(typeField.getText().trim());
-                productToSave.setPrice(Double.parseDouble(priceField.getText().trim()));
-
-                double discount = 0.0;
+                productToSave.setPrice(new BigDecimal(priceField.getText().trim()));
+                BigDecimal discount = BigDecimal.ZERO;
                 String d = discountField.getText() == null ? "" : discountField.getText().trim();
-                if (!d.isEmpty()) discount = Double.parseDouble(d);
-                discount = Math.max(0, Math.min(100, discount));
-                productToSave.setDiscountPercentage(discount);
+                if (!d.isEmpty()) {
+                    try {
+                        discount = new BigDecimal(d);
+                    } catch(NumberFormatException ignored) {
+                        discount = BigDecimal.ZERO;
+                    }
+                }
+                if (discount.compareTo(BigDecimal.ZERO) < 0) discount = BigDecimal.ZERO;
+                if (discount.compareTo(BigDecimal.valueOf(100)) > 0) discount = BigDecimal.valueOf(100);
 
                 productToSave.setColor(toHexString(colorPicker.getValue()));
 
@@ -424,6 +431,11 @@ public class ProductCardController {
         editVBox.setManaged(false);
         displayVBox.setVisible(true);
         displayVBox.setManaged(true);
+    }
+
+    private String formatCurrency(BigDecimal value) {
+        if (value == null) return "0.00";
+        return "₪" + value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     private String toHexString(Color color) {

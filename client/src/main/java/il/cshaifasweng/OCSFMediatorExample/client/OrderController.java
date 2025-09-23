@@ -12,6 +12,8 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -101,10 +103,10 @@ public class OrderController implements Initializable {
     private ChoiceBox<String> secondPaymentMethod;
 
     private Order pendingOrder = null;
-    private double budgetAmountToUse = 0.0;
+    private BigDecimal budgetAmountToUse = BigDecimal.ZERO;
     private boolean usingBudget = false;
-    private double currentOrderTotal;
-    private double orderTotal;
+    private BigDecimal currentOrderTotal;
+    private BigDecimal orderTotal;
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
@@ -213,15 +215,15 @@ public class OrderController implements Initializable {
                 currentOrderTotal = SessionManager.getInstance().getOrderTotal();
                 deliveryDetailsSection.setVisible(true);
                 deliveryDetailsSection.setManaged(true);
-                storeLocationSection.setVisible(false);
-                storeLocationSection.setManaged(false);
+                storeLocationSection.setVisible(true);
+                storeLocationSection.setManaged(true);
                 deliveryPriceLabel.setVisible(true);
                 deliveryPriceLabel.setManaged(true);
                 orderTotalWithDelivery.setVisible(true);
                 orderTotalWithDelivery.setManaged(true);
-                double deliveryPrice = 20;
+                BigDecimal deliveryPrice = BigDecimal.valueOf(20);
                 orderTotal = currentOrderTotal;
-                orderTotal += deliveryPrice;
+                orderTotal = orderTotal.add(deliveryPrice);
                 currentOrderTotal = orderTotal;
                 deliveryPriceLabel.setText("Delivery: 20₪");
                 orderTotalWithDelivery.setText("Total with delivery: ₪" + String.format("%.2f", orderTotal));
@@ -276,11 +278,12 @@ public class OrderController implements Initializable {
                 budgetBox.setManaged(true);
 
                 if (current != null && current.getBudget() != null) {
-                    double balance = current.getBudget().getBalance();
-                    budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", balance));
-
+                    BigDecimal balance = (current.getBudget() != null)
+                            ? current.getBudget().getBalance()
+                            : BigDecimal.ZERO;
+                    budgetBalanceLabel.setText("Budget Balance: ₪" + formatCurrency(balance));
                     // 🔹 SHOW extra dropdown *immediately* if not enough
-                    if (balance < currentOrderTotal) {
+                    if (balance.compareTo(currentOrderTotal) < 0) {
                         insufficientBudgetBox.setVisible(true);
                         insufficientBudgetBox.setManaged(true);
                     } else {
@@ -344,7 +347,7 @@ public class OrderController implements Initializable {
             LocalDateTime deliveryTime = null;
             String recipientPhone = null;
             String deliveryAddress = null;
-            double deliveryPrice = 20;
+            BigDecimal deliveryPrice = BigDecimal.valueOf(20);
             orderTotal = SessionManager.getInstance().getOrderTotal();
 
             deliveryPriceLabel.setVisible(false);
@@ -372,7 +375,7 @@ public class OrderController implements Initializable {
                 deliveryPriceLabel.setManaged(true);
                 orderTotalWithDelivery.setVisible(true);
                 orderTotalWithDelivery.setManaged(true);
-                orderTotal += deliveryPrice;
+                orderTotal = orderTotal.add(deliveryPrice);
                 deliveryPriceLabel.setText("Delivery: 20₪");
                 orderTotalWithDelivery.setText("Total with delivery: ₪" + String.format("%.2f", orderTotal));
                 deliveryAddress = deliveryAddressField.getText();
@@ -448,23 +451,23 @@ public class OrderController implements Initializable {
                     // switch to second payment method for the remainder
                     paymentMethod = secondPayment;
                     Budget budget = customer.getBudget();
-                    if (budget == null || budget.getBalance() <= 0) {
+                    if (budget == null || budget.getBalance().compareTo(BigDecimal.ZERO) <= 0) {
                         showAlert("Insufficient Funds", "Your budget is empty. Please select another payment method.");
                         return;
                     }
 
                     // determine how much we will take from the budget (delta)
-                    if (budget.getBalance() >= orderTotal) {
+                    if (budget.getBalance().compareTo(orderTotal) >= 0) {
                         // budget will cover whole order
                         budgetAmountToUse = orderTotal;
-                        orderTotal = 0;
+                        orderTotal = BigDecimal.ZERO;
                         isPaid = true;
                         usingBudget = true;
 
                     } else {
                         // budget only covers part -> use it, remainder must be paid by second payment
-                        double fromBudget = budget.getBalance();
-                        double remaining = orderTotal - fromBudget;
+                        BigDecimal fromBudget = budget.getBalance();
+                        BigDecimal remaining = orderTotal.subtract(fromBudget);
                         budgetAmountToUse = fromBudget;
                         orderTotal = remaining;
 
@@ -611,11 +614,11 @@ public class OrderController implements Initializable {
 
                     // update local UI components that show budget (if present)
                     try {
-                        double newBal = (dbCustomer.getBudget() != null) ? dbCustomer.getBudget().getBalance() : 0.0;
-                        // OrderController has budgetBalanceLabel
+                        BigDecimal newBal = (dbCustomer.getBudget() != null)
+                                ? dbCustomer.getBudget().getBalance()
+                                : BigDecimal.ZERO;// OrderController has budgetBalanceLabel
                         if (budgetBalanceLabel != null) {
-                            budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", newBal));
-                        }
+                            budgetBalanceLabel.setText("Budget Balance: ₪" + newBal.setScale(2, RoundingMode.HALF_UP));                        }
                         // AddBudgetController has budgetBalanceLabel (it will also receive this message)
                         // It will update itself in its handler (you already have identical code there)
 
@@ -719,7 +722,6 @@ public class OrderController implements Initializable {
             });
         }
 
-
     }
 
     private String getAssignedBranchName(Customer current) {
@@ -760,6 +762,11 @@ public class OrderController implements Initializable {
         } catch (Exception e) {
             showAlert("Error", "Failed to return to catalog.");
         }
+    }
+
+    private String formatCurrency(BigDecimal value) {
+        if (value == null) return "0.00";
+        return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     private void showAlert(String title, String content) {

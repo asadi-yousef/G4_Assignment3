@@ -5,6 +5,8 @@ import il.cshaifasweng.OCSFMediatorExample.entities.Employee;
 import il.cshaifasweng.OCSFMediatorExample.entities.Product;
 import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import il.cshaifasweng.OCSFMediatorExample.entities.Order;
+
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -14,7 +16,7 @@ public class SessionManager {
     private List<Product> cart;
     private List<Order> orders = new ArrayList<>();
     private Order selectedOrder;
-    private double orderTotal;
+    private BigDecimal orderTotal;
 
     private SessionManager() {
         cart = new ArrayList<>();  // Initialize the cart
@@ -76,10 +78,10 @@ public class SessionManager {
     public Order getSelectedOrder() {
         return selectedOrder;
     }
-    public void setOrderTotal(double orderTotal) {
+    public void setOrderTotal(BigDecimal orderTotal) {
         this.orderTotal = orderTotal;
     }
-    public double getOrderTotal() {
+    public BigDecimal getOrderTotal() {
         return orderTotal;
     }
 }

@@ -10,8 +10,10 @@ import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Root;
 import java.io.IOException;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import org.hibernate.query.Query;
 import org.hibernate.Session;
@@ -728,7 +730,10 @@ public class SimpleServer extends AbstractServer {
                     if (dto.getIdNumber()  != null) c.setIdNumber(dto.getIdNumber().trim());
 
                     // Customer-only fields
-                    if (dto.getBudget() != null && dto.getBudget().signum() >= 0) c.getBudget().setBalance(dto.getBudget().doubleValue());
+                    if (dto.getBudget() != null && dto.getBudget().signum() >= 0) {
+                        c.getBudget().setBalance(dto.getBudget());
+                    }
+
                     if (dto.getFrozen() != null) c.setFrozen(dto.getFrozen());
 
                     // Network/branch invariants
@@ -855,7 +860,7 @@ public class SimpleServer extends AbstractServer {
         } else if (u instanceof Customer) {
             Customer c = (Customer) u;     // classic cast
             if (c.getBudget() != null) {
-                dto.setBudget(java.math.BigDecimal.valueOf(c.getBudget().getBalance()));
+                dto.setBudget(c.getBudget().getBalance());
             }
             try {
                 dto.setFrozen(c.isFrozen());
@@ -1127,55 +1132,59 @@ public class SimpleServer extends AbstractServer {
 
             List<Order> orders = fetchOrdersForRange(session, from, to, branch);
 
-            Map<String, Double> perDay = new TreeMap<>();
-            double totalRevenue = 0.0;
+            Map<String, BigDecimal> perDay = new TreeMap<>();
+            BigDecimal totalRevenue = BigDecimal.ZERO;
 
             for (Order o : orders) {
-                double orderTotal = 0.0;
+                BigDecimal orderTotal = BigDecimal.ZERO;
                 if (o.getItems() != null) {
                     for (OrderItem it : o.getItems()) {
                         if (it == null) continue;
                         if (it.getProduct() != null) {
-                            orderTotal += it.getProduct().getPrice() * it.getQuantity();
+                            orderTotal = orderTotal.add(
+                                    it.getProduct().getPrice().multiply(BigDecimal.valueOf(it.getQuantity()))
+                            );
                         } else if (it.getCustomBouquet() != null) {
                             CustomBouquet cb = it.getCustomBouquet();
-                            double price = 0.0;
+                            BigDecimal price = BigDecimal.ZERO;
                             if (cb.getTotalPrice() != null) {
-                                price = cb.getTotalPrice().doubleValue();
+                                price = cb.getTotalPrice();
                             } else if (cb.getItems() != null) {
                                 price = cb.getItems().stream()
-                                        .mapToDouble(li -> {
-                                            var unit = li.getUnitPriceSnapshot();
-                                            return (unit == null ? 0.0 : unit.doubleValue()) * Math.max(0, li.getQuantity());
-                                        }).sum();
+                                        .map(li -> {
+                                            BigDecimal unit = li.getUnitPriceSnapshot() != null ? li.getUnitPriceSnapshot() : BigDecimal.ZERO;
+                                            return unit.multiply(BigDecimal.valueOf(Math.max(0, li.getQuantity())));
+                                        })
+                                        .reduce(BigDecimal.ZERO, BigDecimal::add);
                             }
-                            orderTotal += price * Math.max(1, it.getQuantity());
+                            orderTotal = orderTotal.add(price.multiply(BigDecimal.valueOf(Math.max(1, it.getQuantity()))));
                         }
                     }
                 }
-                totalRevenue += orderTotal;
+                totalRevenue = totalRevenue.add(orderTotal);
                 String day = (o.getOrderDate() == null ? "unknown" : o.getOrderDate().toLocalDate().toString());
-                perDay.merge(day, orderTotal, Double::sum);
+                perDay.merge(day, orderTotal, BigDecimal::add);
             }
 
-            double totalExpenses = 0.0; // plug COGS later if you want
-            double net           = totalRevenue - totalExpenses;
+            BigDecimal totalExpenses = BigDecimal.ZERO;
+            BigDecimal net = totalRevenue.subtract(totalExpenses);
 
             long days = 1;
             if (from != null && to != null) {
-                long d = java.time.temporal.ChronoUnit.DAYS.between(from.toLocalDate(), to.toLocalDate());
+                long d = ChronoUnit.DAYS.between(from.toLocalDate(), to.toLocalDate());
                 if (d > 0) days = d;
             }
-            double avgDailyNet = net / days;
+            BigDecimal avgDailyNet = net.divide(BigDecimal.valueOf(days), 2, RoundingMode.HALF_UP);
+
 
             // ---- Map payload only (no DTOs) ----
             Map<String,Object> payload = new HashMap<>();
-            payload.put("histogram", perDay);             // Map<String, Double>
-            payload.put("totalRevenue", totalRevenue);    // double
-            payload.put("totalExpenses", totalExpenses);  // double
-            payload.put("netProfit", net);                // double
-            payload.put("avgDailyNet", avgDailyNet);      // double
-            payload.put("transactions", orders.size());   // int
+            payload.put("histogram", perDay);
+            payload.put("totalRevenue", totalRevenue);
+            payload.put("totalExpenses", totalExpenses);
+            payload.put("netProfit", net);
+            payload.put("avgDailyNet", avgDailyNet);
+            payload.put("transactions", orders.size());
 
             // Compare-mode routing (safe to include)
             payload.put("requestId", crit.get("requestId"));
@@ -1292,7 +1301,7 @@ public class SimpleServer extends AbstractServer {
             Customer customer = order.getCustomer();
 
             // Calculate refund based on delivery time
-            double refund = 0;
+            BigDecimal refund = BigDecimal.ZERO;
             boolean delivery = order.getDelivery();
             LocalDateTime deliveryTime;
             if(delivery) {
@@ -1308,15 +1317,17 @@ public class SimpleServer extends AbstractServer {
                 if (hoursUntilDelivery >= 24) {
                     refund = order.getTotalPrice(); // full refund
                 } else if (hoursUntilDelivery >= 3) {
-                    refund = order.getTotalPrice() * 0.5; // 50% refund
+                    refund = order.getTotalPrice()
+                            .multiply(BigDecimal.valueOf(0.5))
+                            .setScale(2, RoundingMode.HALF_UP); // 50% refund
                 } else {
-                    refund = 0; // no refund
+                    refund = BigDecimal.ZERO; // no refund
                 }
             }
 
             // Apply refund to customer's budget
             Budget budget = customer.getBudget();
-            if (budget != null && refund > 0) {
+            if (budget != null && refund.compareTo(BigDecimal.ZERO) > 0) {
                 budget.addFunds(refund);
                 session.update(budget); // persist update
             }
@@ -1659,7 +1670,7 @@ public class SimpleServer extends AbstractServer {
                             name = String.valueOf(p.getName());
                             imagePath = p.getImagePath();
                             java.math.BigDecimal snap = oi.getUnitPriceSnapshot();
-                            unitPrice = (snap != null) ? snap : java.math.BigDecimal.valueOf(p.getPrice());
+                            unitPrice = (snap != null) ? snap : p.getPrice();
                         } else if (oi.getCustomBouquet() != null) {
                             name = "Custom bouquet";
                             java.math.BigDecimal snap = oi.getUnitPriceSnapshot();
@@ -1961,12 +1972,12 @@ public class SimpleServer extends AbstractServer {
                 if (managedCustomer != null) {
                     Budget budget = managedCustomer.getBudget();
                     if (budget == null) {
-                        budget = new Budget(managedCustomer, 0);
+                        budget = new Budget(managedCustomer, BigDecimal.ZERO);;
                         managedCustomer.setBudget(budget);
                         session.persist(budget);
                     }
-                    double oldBal = budget.getBalance();
-                    budget.addFunds(compensation.doubleValue());
+                    BigDecimal oldBal = budget.getBalance();
+                    budget.addFunds(compensation);
 
                     // No need for session.update(budget) if budget is managed
                     session.merge(managedCustomer);  // ensure customer + budget changes are tracked
@@ -2717,7 +2728,7 @@ public class SimpleServer extends AbstractServer {
             """, Long.class).setParameter("pid", productId).getResultList();
 
             if (!affectedCartIds.isEmpty()) {
-                BigDecimal newUnit = BigDecimal.valueOf(managed.getSalePrice());
+                BigDecimal newUnit = managed.getSalePrice();
 
                 for (Long cid : affectedCartIds) {
                     Cart cart = fetchCartWithEverything(session, cid);
@@ -2893,7 +2904,7 @@ public class SimpleServer extends AbstractServer {
 
 
     public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,
-                                 double newPrice, double newDiscount, String newType, String newImagePath) {
+                                 BigDecimal newPrice, BigDecimal newDiscount, String newType, String newImagePath) {
         catalogLock.writeLock().lock();
         Transaction tx = session.beginTransaction();
         try {
@@ -3322,9 +3333,9 @@ public class SimpleServer extends AbstractServer {
                         .getResultList();
             }
 
-            double baseTotal = cart.getTotalWithDiscount();
-            if(clientOrder.getDelivery()) {
-                baseTotal += 20;
+            BigDecimal baseTotal = cart.getTotalWithDiscount();
+            if (clientOrder.getDelivery()) {
+                baseTotal = baseTotal.add(BigDecimal.valueOf(20));
             }
             // 3) Build managed Order and copy fields
             Order order = new Order();
@@ -3363,19 +3374,18 @@ public class SimpleServer extends AbstractServer {
 //            }
             if ("BUDGET".equalsIgnoreCase(clientOrder.getPaymentMethod())) {
                 Budget budget = managedCustomer.getBudget();
-                double orderTotal = baseTotal;
+                BigDecimal orderTotal = baseTotal; // baseTotal should already be BigDecimal
 
-                if (budget == null || budget.getBalance() <= 0) {
+                if (budget == null || budget.getBalance().compareTo(BigDecimal.ZERO) <= 0) {
                     client.sendToClient(new Message("order_error", "No available budget", null));
                     tx.rollback();
                     return;
                 }
 
-                // Subtract budget safely: if balance < order total, use all remaining balance
-                double usedFromBudget = Math.min(budget.getBalance(), orderTotal);
-                budget.setBalance(budget.getBalance() - usedFromBudget);
-                session.update(budget); // persist the new balance
-
+// Subtract from budget safely
+                BigDecimal usedFromBudget = budget.getBalance().min(orderTotal); // equivalent of Math.min
+                budget.setBalance(budget.getBalance().subtract(usedFromBudget));
+                session.update(budget);
                 // Set the payment info on the order (optional: partial payment handling)
                 order.setPaymentMethod("BUDGET");
 
@@ -3454,9 +3464,9 @@ public class SimpleServer extends AbstractServer {
             Customer dbCustomer = session.get(Customer.class, payload.getId());
 
             if (dbCustomer != null && dbCustomer.getBudget() != null) {
-                double delta = payload.getBudget().getBalance(); // amount to add
+                BigDecimal delta = payload.getBudget().getBalance();
                 dbCustomer.getBudget().addFunds(delta);
-                session.update(dbCustomer.getBudget()); // update the budget itself
+                session.update(dbCustomer.getBudget());
             }
 
             tx.commit();

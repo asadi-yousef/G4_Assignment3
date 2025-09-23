@@ -352,7 +352,7 @@ public class OrdersScreenController implements Initializable {
 
         // *** Snapshot-first rendering ***
         String name = item.getDisplayName();
-        BigDecimal unitPrice = BigDecimal.valueOf(item.getDisplayUnitPrice());
+        BigDecimal unitPrice = item.getDisplayUnitPrice();
 
         String imagePath = item.getDisplayImagePath();
         if (imagePath != null && !imagePath.isEmpty()) {

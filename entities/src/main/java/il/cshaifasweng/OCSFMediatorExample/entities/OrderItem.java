@@ -61,7 +61,7 @@ public class OrderItem implements Serializable {
     public void snapshotFromProduct(Product p) {
         if (p == null) return;
         this.nameSnapshot = p.getName();
-        this.unitPriceSnapshot = BigDecimal.valueOf(p.getSalePrice());
+        this.unitPriceSnapshot = p.getSalePrice();
         this.imagePathSnapshot = p.getImagePath();
     }
 
@@ -107,11 +107,16 @@ public class OrderItem implements Serializable {
     }
 
     @Transient
-    public double getDisplayUnitPrice() {
-        if (unitPriceSnapshot != null) return unitPriceSnapshot.doubleValue();
-        if (isBouquet()) return customBouquet != null && customBouquet.getTotalPrice() != null
-                ? customBouquet.getTotalPrice().doubleValue() : 0.0;
-        return product != null ? product.getPrice() : 0.0;
+    public BigDecimal getDisplayUnitPrice() {
+        if (unitPriceSnapshot != null) {
+            return unitPriceSnapshot;
+        }
+        if (isBouquet()) {
+            return (customBouquet != null && customBouquet.getTotalPrice() != null)
+                    ? customBouquet.getTotalPrice()
+                    : BigDecimal.ZERO;
+        }
+        return (product != null) ? product.getPrice() : BigDecimal.ZERO;
     }
 
     @Transient
