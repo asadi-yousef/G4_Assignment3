@@ -39,9 +39,14 @@ public class ComplaintsListController implements Initializable {
     private final DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private final List<ComplaintDTO> backing = new ArrayList<>();
 
+    private volatile boolean disposed = false;
+
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
-        if (!EventBus.getDefault().isRegistered(this)) EventBus.getDefault().register(this);
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this);
+        }
+        disposed = false;
 
         idColumn.setCellValueFactory(data -> new SimpleObjectProperty<>(data.getValue().getId()));
         customerColumn.setCellValueFactory(d ->
@@ -149,13 +154,22 @@ public class ComplaintsListController implements Initializable {
         compensationField.clear();
     }
 
+    public void onClose() {
+        disposed = true;
+        try { EventBus.getDefault().unregister(this); } catch (Throwable ignore) {}
+    }
+
     @FXML
     private void handleBack() {
+        onClose();
         try { App.setRoot("primary"); } catch (IOException e) { throw new RuntimeException(e); }
     }
 
     @Subscribe
     public void onServerMessage(Message msg) {
+        boolean nodeAttached = (complaintsTable != null && complaintsTable.getScene() != null);
+        if (disposed || !nodeAttached) return;
+
         switch (msg.getMessage()) {
             case "complaints_list":
                 Platform.runLater(() -> {

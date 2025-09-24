@@ -28,10 +28,14 @@ public class ComplaintsScreenController implements Initializable {
     private static final int MAX_LEN = 120;
     private Order order;
     private ComplaintDTO existingForOrder; // cache what server returns
+    private volatile boolean disposed = false;
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
-        if (!EventBus.getDefault().isRegistered(this)) EventBus.getDefault().register(this);
+        if (!EventBus.getDefault().isRegistered(this)) {
+            EventBus.getDefault().register(this);
+        }
+        disposed = false;
 
         order = SessionManager.getInstance().getSelectedOrder();
         if (order != null) {
@@ -68,6 +72,9 @@ public class ComplaintsScreenController implements Initializable {
 
     @Subscribe
     public void onServer(Message msg) {
+        boolean nodeAttached = (orderLabel != null && orderLabel.getScene() != null);
+        if (disposed || !nodeAttached) return;
+
         switch (msg.getMessage()) {
             case "order_complaint_status":
                 javafx.application.Platform.runLater(() -> {
@@ -169,8 +176,14 @@ public class ComplaintsScreenController implements Initializable {
         }
     }
 
+    public void onClose() {
+        disposed = true;
+        try { EventBus.getDefault().unregister(this); } catch (Throwable ignore) {}
+    }
+
     @FXML
     private void handleBack(ActionEvent event) {
+        onClose();
         try { App.setRoot("ordersScreenView"); } catch (IOException e) { throw new RuntimeException(e); }
     }
 
