@@ -15,6 +15,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+
+import org.hibernate.Hibernate;
 import org.hibernate.query.Query;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
@@ -162,8 +164,8 @@ public class SimpleServer extends AbstractServer {
                 Message m = (Message) msg;
                 String key = m.getMessage();
                 System.out.println("[RX] key=" + key +
-                        " obj=" + (m.getObject()==null ? "null" : m.getObject().getClass().getSimpleName()) +
-                        " listSize=" + (m.getObjectList()==null ? 0 : m.getObjectList().size()));
+                        " obj=" + (m.getObject() == null ? "null" : m.getObject().getClass().getSimpleName()) +
+                        " listSize=" + (m.getObjectList() == null ? 0 : m.getObjectList().size()));
 
                 if ("register".equals(key)) {
                     handleUserRegistration(m, client, session);
@@ -211,38 +213,33 @@ public class SimpleServer extends AbstractServer {
                     sendMsg(client, new Message("pong", "ok", null), "ping_echo");
                 } else if ("get_order_complaint_status".equals(key)) {
                     handleGetOrderComplaintStatus(m, client, session);
-                } else if("update_budget_add".equals(key)) {
+                } else if ("update_budget_add".equals(key)) {
                     handleBudgetAdd(m, client, session);
-                } else if("update_budget_subtract".equals(key)) {
+                } else if ("update_budget_subtract".equals(key)) {
                     handleBudgetSubtract(m, client, session);
-                }
-                else if("logout".equals(key)) {
-                    handleLogout(client,session,m);
-                }
-                else if ("admin_list_users".equals(key)) {
+                } else if ("logout".equals(key)) {
+                    handleLogout(client, session, m);
+                } else if ("admin_list_users".equals(key)) {
                     handleAdminListUsers(m, client, session);
                 } else if ("admin_update_user".equals(key)) {
                     handleAdminUpdateUser(m, client, session);
                 } else if ("admin_freeze_customer".equals(key)) {
                     handleAdminFreezeCustomer(m, client, session);
-                }
-                else if ("get_inbox".equals(key)) {
+                } else if ("get_inbox".equals(key)) {
                     handleGetInbox(m, client, session);
                 } else if ("mark_notification_read".equals(key)) {
                     handleMarkNotificationRead(m, client, session);
                 } else if ("mark_notification_unread".equals(key)) {
                     handleMarkNotificationUnread(m, client, session);
-                }
-                else if ("create_broadcast".equals(key)) {
+                } else if ("create_broadcast".equals(key)) {
                     handleCreateBroadcast(m, client, session);
-                }
-                else if ("request_report_income".equals(key)) {
+                } else if ("request_report_income".equals(key)) {
                     handleReportIncome(m, client, session);
                 } else if ("request_report_orders".equals(key)) {
                     handleReportOrders(m, client, session);
                 } else if ("request_report_complaints".equals(key)) {
                     handleReportComplaints(m, client, session);
-                }else if("admin_delete_user".equals(key)) {
+                } else if ("admin_delete_user".equals(key)) {
                     handleAdminDeleteUser(m, client, session);
                 } else if ("request_orders".equals(key)) {
                     handleOrdersRequest(m, client, session);
@@ -252,8 +249,9 @@ public class SimpleServer extends AbstractServer {
                 } else if ("mark_order_completed".equals(key) || "staff_mark_order_completed".equals(key)) {
                     System.out.println("DEBUG : recieved mark_order_completed");
                     handleStaffMarkOrderCompleted(m, client, session);
-                }
-                else if ("staff_send_delivery_email".equals(key)) {
+                } else if ("renew_subscription".equals(key)) {
+                    handleRenewSubscription(m, client,session);
+                }else if ("staff_send_delivery_email".equals(key)) {
                     handleStaffSendDeliveryEmail(m, client, session);
                 // ---------- EMPLOYEE SCHEDULE (accept multiple aliases) ----------
                 } else if ("request_orders_by_day".equals(key)
@@ -288,6 +286,96 @@ public class SimpleServer extends AbstractServer {
 
 
     /* ----------------------- Handlers (all receive Session) ----------------------- */
+    private void handleRenewSubscription(Message message, ConnectionToClient client, Session session) {
+        Transaction tx = session.getTransaction().isActive() ? session.getTransaction() : session.beginTransaction();
+        try {
+            Long customerId = null;
+            Object payload = message.getObject();
+            if (payload instanceof Long) {
+                customerId = (Long) payload;
+            } else if (payload instanceof Customer) {
+                customerId = ((Customer) payload).getId();
+            }
+
+            if (customerId == null) {
+                if (tx.isActive()) tx.rollback();
+                client.sendToClient(new Message("subscription_renew_failed", "Invalid customer id", null));
+                return;
+            }
+
+            Customer customer = session.get(Customer.class, customerId);
+            if (customer == null) {
+                if (tx.isActive()) tx.rollback();
+                client.sendToClient(new Message("subscription_renew_failed", "Customer not found", null));
+                return;
+            }
+
+            Subscription sub = customer.getSubscription();
+            java.time.LocalDate today = java.time.LocalDate.now();
+
+            if (sub == null) {
+                // NEW subscription: set BOTH sides BEFORE save/update
+                sub = new Subscription();
+                sub.setStartDate(today);
+                sub.setEndDate(today.plusYears(1));
+                sub.setActive(true);
+
+                sub.setCustomer(customer);       // <-- REQUIRED (fixes your error)
+                customer.setSubscription(sub);   // keep inverse side consistent
+
+                // Order matters: customer is persistent; now saving sub is fine
+                session.save(sub);
+                session.update(customer);
+            } else {
+                // Existing subscription: ensure the owner side is set
+                if (sub.getCustomer() == null) {
+                    sub.setCustomer(customer);          // <-- ensure not-null
+                }
+                boolean active = (sub.getEndDate() != null) && !sub.getEndDate().isBefore(today);
+                if (active && sub.getEndDate() != null) {
+                    sub.setEndDate(sub.getEndDate().plusYears(1));
+                } else {
+                    sub.setStartDate(today);
+                    sub.setEndDate(today.plusYears(1));
+                    sub.setActive(true);
+                }
+                session.update(sub);
+                if (customer.getSubscription() == null) {
+                    customer.setSubscription(sub);      // keep inverse side consistent
+                    session.update(customer);
+                }
+            }
+
+            tx.commit();
+
+            // Return fresh, initialized snapshot so UI shows it immediately
+            session.clear();
+            Customer fresh = session.get(Customer.class, customer.getId());
+            fresh = hydrateCustomerWithSubscription(session, fresh);  // your helper that refreshes & Hibernate.initialize(subscription)
+            client.sendToClient(new Message("subscription_renewed_success", fresh, null));
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            try { if (tx.isActive()) tx.rollback(); } catch (Exception ignored) {}
+            try { client.sendToClient(new Message("subscription_renew_failed", "Server error: " + e.getMessage(), null)); }
+            catch (IOException ignored) {}
+        }
+    }
+
+    /** Ensure Customer is fresh from DB and the subscription is initialized (no lazy proxy). */
+    private Customer hydrateCustomerWithSubscription(Session session, Customer customer) {
+        if (customer == null) return null;
+        try {
+            session.refresh(customer); // get latest fields
+        } catch (Exception ignored) {}
+        try {
+            if (customer.getSubscription() != null) {
+                Hibernate.initialize(customer.getSubscription()); // avoid LAZY proxy after session closes
+            }
+        } catch (Exception ignored) {}
+        return customer;
+    }
+
     @SuppressWarnings("unchecked")
     private void handleAdminDeleteUser(Message m, ConnectionToClient client, Session session) {
         Map<String,Object> req = (m.getObject() instanceof Map) ? (Map<String,Object>) m.getObject() : null;
@@ -2297,6 +2385,7 @@ public class SimpleServer extends AbstractServer {
                     ? (Customer) user
                     : session.get(Customer.class, user.getId());
 
+            customer = hydrateCustomerWithSubscription(session, customer);
             client.sendToClient(new Message("customer_data_response", customer, null));
 
         } catch (Exception e) {
@@ -2357,6 +2446,7 @@ public class SimpleServer extends AbstractServer {
             Long id = (managedCustomer != null) ? managedCustomer.getId() : managedUser.getId();
             Customer fresh = session.get(Customer.class, id);
 
+            fresh = hydrateCustomerWithSubscription(session, fresh);
             // Send success WITH the fresh object
             client.sendToClient(new Message("profile_updated_success", fresh, null));
 
