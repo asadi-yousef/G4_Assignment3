@@ -344,6 +344,19 @@ public class OrderController implements Initializable {
             }
 
             String storeLocation = null;
+            if (isNetworkCustomer) {
+                storeLocation = storeLocationChoice.getValue();
+                if (storeLocation == null || storeLocation.isBlank()) {
+                    showAlert("Missing Data", "Please select a store branch.");
+                    return;
+                }
+            } else {
+                storeLocation = getAssignedBranchName(customer);
+                if (storeLocation == null || storeLocation.isBlank()) {
+                    showAlert("Missing Data", "Your account is not linked to a branch.");
+                    return;
+                }
+            }
             LocalDateTime deliveryTime = null;
             String recipientPhone = null;
             String deliveryAddress = null;
@@ -356,19 +369,7 @@ public class OrderController implements Initializable {
             orderTotalWithDelivery.setManaged(false);
             if ("Pickup".equals(deliveryMethod)) {
                 orderTotal = SessionManager.getInstance().getOrderTotal();
-                if (isNetworkCustomer) {
-                    storeLocation = storeLocationChoice.getValue();
-                    if (storeLocation == null || storeLocation.isBlank()) {
-                        showAlert("Missing Data", "Please select a store branch.");
-                        return;
-                    }
-                } else {
-                    storeLocation = getAssignedBranchName(customer);
-                    if (storeLocation == null || storeLocation.isBlank()) {
-                        showAlert("Missing Data", "Your account is not linked to a branch.");
-                        return;
-                    }
-                }
+
             } else {
                 orderTotal = SessionManager.getInstance().getOrderTotal();
                 deliveryPriceLabel.setVisible(true);
