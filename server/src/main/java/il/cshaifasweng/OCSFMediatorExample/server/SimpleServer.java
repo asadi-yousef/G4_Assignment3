@@ -449,7 +449,6 @@ public class SimpleServer extends AbstractServer {
                 .executeUpdate();
     }
 
-
     /** Resolve a product image path (server DB value) to a File on the server disk. */
     private static File resolveServerImageFile(String storedPath) {
         if (storedPath == null || storedPath.isBlank()) return null;

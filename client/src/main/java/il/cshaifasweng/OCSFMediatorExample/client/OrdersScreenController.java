@@ -345,8 +345,7 @@ public class OrdersScreenController implements Initializable {
 
         VBox info = new VBox(5);
         info.setAlignment(Pos.CENTER_LEFT);
-
-        // *** Snapshot-first rendering ***
+        // *** Snapshot-first rendering **
         String name = item.getDisplayName();
         BigDecimal unitPrice = BigDecimal.valueOf(item.getDisplayUnitPrice());
 

@@ -35,7 +35,7 @@ public class ViewFlowerController {
 
         try {
             // Load the reusable card component
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("ProductCard.fxml"));
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("productCard.fxml"));
             StackPane cardNode = loader.load();
             ProductCardController cardController = loader.getController();
 
