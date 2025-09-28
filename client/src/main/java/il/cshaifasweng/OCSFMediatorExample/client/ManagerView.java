@@ -18,6 +18,8 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.*;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URL;
 import java.util.Optional;
 import java.util.ResourceBundle;
@@ -34,7 +36,7 @@ public class ManagerView implements Initializable {
     @FXML private TableView<Product> productTable;
     @FXML private TableColumn<Product, Long> idColumn;
     @FXML private TableColumn<Product, String> nameColumn;
-    @FXML private TableColumn<Product, Double> priceColumn;
+    @FXML private TableColumn<Product, BigDecimal> priceColumn;
     @FXML private TableColumn<Product, String> categoryColumn;
     @FXML private TableColumn<Product, String> imagePathColumn;
 
@@ -95,14 +97,15 @@ public class ManagerView implements Initializable {
         imagePathColumn.setCellValueFactory(new PropertyValueFactory<>("imagePath"));
 
         // Format price column to show currency
-        priceColumn.setCellFactory(col -> new TableCell<Product, Double>() {
+        priceColumn.setCellFactory(col -> new TableCell<Product, BigDecimal>() {
             @Override
-            protected void updateItem(Double price, boolean empty) {
+            protected void updateItem(BigDecimal price, boolean empty) {
                 super.updateItem(price, empty);
                 if (empty || price == null) {
                     setText(null);
                 } else {
-                    setText(String.format("$%.2f", price));
+                    // Format with 2 decimals
+                    setText("₪" + price.setScale(2, RoundingMode.HALF_UP).toPlainString());
                 }
             }
         });
@@ -115,7 +118,6 @@ public class ManagerView implements Initializable {
                 if (empty || imagePath == null || imagePath.isEmpty()) {
                     setText("No image");
                 } else {
-                    // Show only filename, not full path
                     String fileName = new File(imagePath).getName();
                     setText(fileName.isEmpty() ? "No image" : fileName);
                 }
@@ -386,7 +388,11 @@ public class ManagerView implements Initializable {
         }
 
         try {
-            Double.parseDouble(productPriceField.getText());
+            BigDecimal price = new BigDecimal(productPriceField.getText().trim());
+            if (price.compareTo(BigDecimal.ZERO) < 0) {
+                showAlert("Validation Error", "Price must be positive");
+                return false;
+            }
         } catch (NumberFormatException e) {
             showAlert("Validation Error", "Price must be a valid number");
             return false;
@@ -403,22 +409,20 @@ public class ManagerView implements Initializable {
     private Product createProductFromForm() {
         Product product = new Product();
         product.setName(productNameField.getText().trim());
-        product.setPrice(Double.parseDouble(productPriceField.getText()));
+        product.setPrice(new BigDecimal(productPriceField.getText().trim())); // BigDecimal
         product.setType(categoryComboBox.getValue());
+
         String originalPath = imagePathField.getText().trim();
         if (!originalPath.isEmpty()) {
             File sourceFile = new File(originalPath);
             if (sourceFile.exists()) {
                 try {
-                    // Destination directory in resources
                     File destDir = new File("src/main/resources/il/cshaifasweng/OCSFMediatorExample/client/images");
                     if (!destDir.exists()) destDir.mkdirs();
 
-                    // Use original filename or a unique one to avoid conflicts
                     String fileName = sourceFile.getName();
                     File destFile = new File(destDir, fileName);
 
-                    // Copy file
                     try (InputStream in = new FileInputStream(sourceFile);
                          OutputStream out = new FileOutputStream(destFile)) {
                         byte[] buffer = new byte[1024];
@@ -428,7 +432,6 @@ public class ManagerView implements Initializable {
                         }
                     }
 
-                    // Save only the relative path
                     product.setImagePath("/il/cshaifasweng/OCSFMediatorExample/client/images/" + fileName);
                     updateStatus("Image copied successfully");
                 } catch (IOException e) {

@@ -9,6 +9,7 @@ import org.hibernate.service.ServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.Scanner;
 
 public class App {
@@ -88,21 +89,21 @@ public class App {
                 ).getSingleResult();
 
                 if (productCount == null || productCount == 0L) {
-                    Product product1 = new Product("Roses", "Flower", 19.99, "Red",
+                    Product product1 = new Product("Roses", "Flower", BigDecimal.valueOf(19.99), "Red",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/roses.png");
-                    Product product2 = new Product("Tulips", "Flower", 14.50, "Purple",
+                    Product product2 = new Product("Tulips", "Flower", BigDecimal.valueOf(14.50), "Purple",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/white tulip.png");
-                    Product product3 = new Product("Pretty in Pink Lilies", "Bouquet", 17.25, "Pink",
+                    Product product3 = new Product("Pretty in Pink Lilies", "Bouquet", BigDecimal.valueOf(17.25), "Pink",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/lilies.png");
-                    Product product4 = new Product("Sunflower Bouquet", "Bouquet", 12.00, "Yellow",
+                    Product product4 = new Product("Sunflower Bouquet", "Bouquet", BigDecimal.valueOf(12.00), "Yellow",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/sunflower.png");
-                    Product product5 = new Product("Orange Carnations Bouquet", "Bouquet", 25.75, "Orange",
+                    Product product5 = new Product("Orange Carnations Bouquet", "Bouquet", BigDecimal.valueOf(25.75), "Orange",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/carnations.png");
-                    Product productPot1 = new Product("Purple Orchid Pot", "pot", 9.99, "Purple",
+                    Product productPot1 = new Product("Purple Orchid Pot", "pot", BigDecimal.valueOf(9.99), "Purple",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/orchids.png");
-                    Product productPot2 = new Product("Ceramic Pot", "pot", 14.49, "Black",
+                    Product productPot2 = new Product("Ceramic Pot", "pot", BigDecimal.valueOf(14.49), "Black",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/ceramic.png");
-                    Product productPot3 = new Product("Plastic Pot", "pot", 4.75, "Brown",
+                    Product productPot3 = new Product("Plastic Pot", "pot", BigDecimal.valueOf(4.75), "Brown",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/plastic.png");
 
                     session.save(product1);
@@ -135,6 +136,13 @@ public class App {
                     Employee e = new Employee("212735468","renata","haiek","renata","123","driver",null,true);
                     session.save(e);
                     session.flush();
+                    Session session1 = sessionFactory.openSession();
+                    Transaction tx1 = session1.beginTransaction();
+                    Branch haifaBranch = session1.get(Branch.class, 1L);
+                    Employee employee3 = new Employee("212744916", "Renata_", "Haiek", "Renata_", "renata2002", "branchmanager", haifaBranch, true);
+                    employee3.setBranch(haifaBranch);
+                    session1.save(employee3);
+                    tx1.commit();
                 } else {
                     System.out.println("User table already contains data. Skipping insert.");
                 }

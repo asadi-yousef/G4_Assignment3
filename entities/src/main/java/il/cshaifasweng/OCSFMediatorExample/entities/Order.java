@@ -2,6 +2,8 @@ package il.cshaifasweng.OCSFMediatorExample.entities;
 
 import jakarta.persistence.*;
 import java.io.Serializable;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +33,7 @@ public class Order implements Serializable {
     private String paymentDetails;
     private String cardExpiryDate;
     private String cardCVV;
-    private double totalPrice;
+    private BigDecimal totalPrice;
     private String status; // "PLACED","IN_PREP","READY_FOR_PICKUP","OUT_FOR_DELIVERY","DELIVERED","CANCELLED"
     public String getStatus(){ return status; }
     public void setStatus(String s){ this.status = s; }
@@ -44,7 +46,7 @@ public class Order implements Serializable {
     public Order(Customer customer, String branchName, boolean delivery,
                  LocalDateTime orderDate, LocalDateTime deliveryDateTime, LocalDateTime pickupDateTime,
                  String recipientPhone, String deliveryAddress, String note,
-                 String paymentMethod, String paymentDetails, double totalPrice) {
+                 String paymentMethod, String paymentDetails, BigDecimal totalPrice) {
         this.customer = customer;
         this.branchName = branchName;
         this.delivery = delivery;
@@ -142,10 +144,10 @@ public class Order implements Serializable {
     public String getCardCVV() { return cardCVV; }
     public void setCardCVV(String cardCVV) { this.cardCVV = cardCVV; }
 
-    public double getTotalPrice() {
+    public BigDecimal getTotalPrice() {
         return totalPrice;
     }
-    public void setTotalPrice(double totalPrice) {
+    public void setTotalPrice(BigDecimal totalPrice) {
         this.totalPrice = totalPrice;
     }
 
@@ -161,22 +163,26 @@ public class Order implements Serializable {
     }
 
     @Transient
-    public double calculateFinalTotal() {
-        double total = items.stream()
-                .mapToDouble(item -> item.getDisplayUnitPrice() * item.getQuantity())
-                .sum();
+    public BigDecimal calculateFinalTotal() {
+        // Sum of unit price * quantity as BigDecimal
+        BigDecimal total = items.stream()
+                .map(item -> item.getDisplayUnitPrice()
+                        .multiply(BigDecimal.valueOf(item.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Network-account discount (10%) for orders >= 50
         boolean network = (customer != null) && customer.isNetworkAccount();
-        if (network && total >= 50.0) {
-            total *= 0.9;
+        if (network && total.compareTo(BigDecimal.valueOf(50)) >= 0) {
+            total = total.multiply(BigDecimal.valueOf(0.9));
         }
-        return total;
+
+        // Always normalize to 2 decimal places (currency style)
+        return total.setScale(2, RoundingMode.HALF_UP);
     }
     @Transient
     public LocalDateTime getScheduledAt() {
-        LocalDateTime when = getPickupDateTime();
-        if (getDelivery()) when = getDeliveryDateTime();
+        LocalDateTime when;
+        if (getDelivery()){ when = getDeliveryDateTime();} else { when = getPickupDateTime(); }
         if (when == null) when = getOrderDate();
         return when;
     }

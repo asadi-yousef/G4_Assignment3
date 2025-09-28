@@ -98,10 +98,17 @@ public class ReportsViewController implements Initializable {
             startDatePicker.setValue(today.minusMonths(1));
             endDatePicker.setValue(today);
         } else if (isBranchManager()) {
-            String myBranchName = Optional.ofNullable(currentUserBranchName()).orElse("My Branch");
-            branchComboBox.getItems().setAll(myBranchName);
-            branchComboBox.getSelectionModel().selectFirst();
-            branchComboBox.setDisable(true);
+            User current = SessionManager.getInstance().getCurrentUser();
+            Branch myBranch = current.getBranch();
+            if(myBranch != null) {
+                branchComboBox.getItems().setAll(myBranch.getName());
+                branchComboBox.getSelectionModel().selectFirst();
+                branchComboBox.setDisable(true);
+            }
+         //   String myBranchName = Optional.ofNullable(currentUserBranchName()).orElse("My Branch");
+         //   branchComboBox.getItems().setAll(myBranchName);
+         //   branchComboBox.getSelectionModel().selectFirst();
+         //   branchComboBox.setDisable(true);
 
             startDatePicker.setValue(firstOfMonth);
             endDatePicker.setValue(today.isBefore(lastOfMonth) ? today : lastOfMonth);

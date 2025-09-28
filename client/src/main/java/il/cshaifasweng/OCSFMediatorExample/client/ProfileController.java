@@ -369,52 +369,52 @@ public class ProfileController implements Initializable {
 
     @Subscribe
     public void onMessageFromServer(Message msg) {
-        boolean nodeAttached = (welcomeLabel != null && welcomeLabel.getScene() != null);
-        D("onMessageFromServer: "+msg.getMessage()+" | disposed="+disposed+" | nodeAttached="+nodeAttached);
-
+        D("onMessageFromServer: " + msg.getMessage() + " | disposed=" + disposed);
         if (disposed) { D("  -> IGNORED (disposed)"); return; }
-        if (!nodeAttached) { D("  -> IGNORED (node not attached)"); return; }
 
         switch (msg.getMessage()) {
-            case "customer_data_response":
+
+            case "customer_data_response": {
                 try {
-                    Customer payload = (Customer) msg.getObject();
+                    final Customer payload = (Customer) msg.getObject();
                     Platform.runLater(() -> {
-                        this.currentCustomer = payload;       // assign model
-                        loadUserProfile();                    // fills the fields
-                        isEditing = false;                    // your state flag
-                        setFieldsEditable(false);             // <-- now on FX thread
+                        this.currentCustomer = payload;
+                        // keep global snapshot fresh so other screens don’t go stale
+                        try { SessionManager.getInstance().setCurrentUser(payload); } catch (Throwable ignored) {}
+                        isEditing = false;
+                        setFieldsEditable(false);
                         editButton.setVisible(true);
                         saveButton.setVisible(false);
                         cancelButton.setVisible(false);
+                        loadUserProfile();              // fills all fields + calls updateSubscriptionUi(...)
+                        updateSubscriptionUi(payload);  // extra-safe: ensure subscription label/button refresh
                     });
                 } catch (Throwable t) { E("customer_data_response handling failed", t); }
                 break;
+            }
 
-            case "profile_updated_success":
+            case "profile_updated_success": {
                 Platform.runLater(() -> {
                     D("profile_updated_success: updating UI (has payload? " + (msg.getObject()!=null) + ")");
                     Customer updated = null;
                     try { updated = (Customer) msg.getObject(); } catch (ClassCastException ignored) {}
 
                     if (updated != null) {
-                        // Replace local models with the server snapshot
                         this.currentCustomer = updated;
                         if (this.currentUser != null) {
                             this.currentUser.setFirstName(updated.getFirstName());
                             this.currentUser.setUsername(updated.getUsername());
                         }
+                        try { SessionManager.getInstance().setCurrentUser(updated); } catch (Throwable ignored) {}
                     } else {
                         try {
                             SimpleClient.getClient().sendToServer(new Message("request_customer_data", currentUser, null));
                         } catch (java.io.IOException ex) {
                             D("IOException while requesting fresh customer data: " + ex);
                             showAlert("Connection error", "Couldn't refresh your profile:\n" + ex.getMessage());
-                            // if this ran inside a save flow, make sure the UI isn't stuck:
                             saveButton.setDisable(false);
                             cancelButton.setDisable(false);
                         }
-
                     }
 
                     showAlert("Success", "Profile updated successfully!");
@@ -423,71 +423,64 @@ public class ProfileController implements Initializable {
                     editButton.setVisible(true);
                     saveButton.setVisible(false);
                     cancelButton.setVisible(false);
-
-                    // Make sure next edit starts enabled
                     saveButton.setDisable(false);
                     cancelButton.setDisable(false);
 
                     loadUserProfile();
+                    updateSubscriptionUi(this.currentCustomer);
                 });
                 break;
+            }
 
-            case "profile_update_failed":
+            case "profile_update_failed": {
                 Platform.runLater(() -> {
-                    String reason = (msg.getObject() instanceof String)
-                            ? (String) msg.getObject()
-                            : "Unknown error";
+                    String reason = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Unknown error";
                     showAlert("Update failed", "Failed to update profile: " + reason);
 
-                    // Stay in edit mode so the user can fix and retry
                     isEditing = true;
                     setFieldsEditable(true);
-
                     editButton.setVisible(false);
                     saveButton.setVisible(true);
                     cancelButton.setVisible(true);
-
-                    // IMPORTANT: re-enable them (you disabled in handleSave)
                     saveButton.setDisable(false);
                     cancelButton.setDisable(false);
 
-                    saveButton.setDisable(false);
-                    cancelButton.setDisable(false);
                     loadUserProfile();
                 });
                 break;
-            case "subscription_renewal_success": {
+            }
+
+            // ✅ Correct message names to match server
+            case "subscription_renewed_success": {
                 Platform.runLater(() -> {
-                    Object payload = msg.getObject();
-                    if (payload instanceof Customer) {
-                        this.currentCustomer = (Customer) payload;
-                        // keep username/first name in sync with header if you use them there
-                        if (this.currentUser != null) {
-                            this.currentUser.setFirstName(this.currentCustomer.getFirstName());
-                            this.currentUser.setUsername(this.currentCustomer.getUsername());
-                        }
+                    Customer updated = null;
+                    try { updated = (Customer) msg.getObject(); } catch (ClassCastException ignored) {}
+                    if (updated != null) {
+                        this.currentCustomer = updated;
+                        try { SessionManager.getInstance().setCurrentUser(updated); } catch (Throwable ignored) {}
+                        updateSubscriptionUi(updated);
+                        loadUserProfile();
+                        showAlert("Success", "Subscription updated!");
                     } else {
-                        // fallback: fetch fresh snapshot if server returned something else
+                        // fallback: ask again
                         try {
                             SimpleClient.getClient().sendToServer(new Message("request_customer_data", currentUser, null));
                         } catch (Exception ignored) { }
                     }
-                    showAlert("Success", "Subscription updated!");
-                    updateSubscriptionUi(this.currentCustomer);
-                    renewBuySubscriptionButton.setDisable(false);
+                    if (renewBuySubscriptionButton != null) renewBuySubscriptionButton.setDisable(false);
                 });
                 break;
             }
-            case "subscription_renewal_failed": {
+
+            case "subscription_renew_failed": {
                 Platform.runLater(() -> {
                     String reason = (msg.getObject() instanceof String) ? (String) msg.getObject() : "Unknown error";
-                    showAlert("Renewal failed", reason);
-                    renewBuySubscriptionButton.setDisable(false);
+                    showAlert("Subscription", "Failed to renew: " + reason);
+                    if (renewBuySubscriptionButton != null) renewBuySubscriptionButton.setDisable(false);
                 });
                 break;
             }
         }
-
     }
 
     private void setFieldsEditable(boolean editable) {

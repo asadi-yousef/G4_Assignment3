@@ -3,6 +3,7 @@ package il.cshaifasweng.OCSFMediatorExample.client;
 import il.cshaifasweng.OCSFMediatorExample.entities.Budget;
 import il.cshaifasweng.OCSFMediatorExample.entities.Customer;
 import il.cshaifasweng.OCSFMediatorExample.entities.Message;
+import il.cshaifasweng.OCSFMediatorExample.entities.User;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -13,6 +14,8 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 public class AddBudgetController {
 
@@ -33,7 +36,14 @@ public class AddBudgetController {
         // register for server messages
         if (!EventBus.getDefault().isRegistered(this)) EventBus.getDefault().register(this);
 
-        // populate payment methods
+        User user = SessionManager.getInstance().getCurrentUser();
+        if (user instanceof Customer customer) {
+            BigDecimal bal = (customer.getBudget() != null)
+                    ? customer.getBudget().getBalance()
+                    : BigDecimal.ZERO;
+            budgetBalanceLabel.setText("Current Budget: ₪" + bal.setScale(2, RoundingMode.HALF_UP));
+            System.out.println("Budget loaded in initialize(): " + bal);
+        }
         paymentMethodChoice.getItems().setAll("Saved Card", "New Card");
         paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             boolean showNewCard = "New Card".equals(newVal);
@@ -69,14 +79,14 @@ public class AddBudgetController {
         }
 
         String amtStr = amountField.getText();
-        double amount;
+        BigDecimal amount;
         try {
-            amount = Double.parseDouble(amtStr);
+            amount = amount = new BigDecimal(amtStr);
         } catch (Exception e) {
             showError("Please enter a valid number for amount.");
             return;
         }
-        if (amount <= 0) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             showError("Amount must be greater than 0.");
             return;
         }
@@ -102,15 +112,7 @@ public class AddBudgetController {
             }
         }
 
-        // Locally update Customer's Budget object (so UI reflects change immediately)
-     //   if (currentCustomer.getBudget() == null) {
-      //      Budget b = new Budget();
-      //      b.setCustomer(currentCustomer);
-      //      b.setBalance(0.0);
-      //      currentCustomer.setBudget(b);
-      //  }
 
-      //  currentCustomer.getBudget().addFunds(amount);
         Customer payload = new Customer();
         payload.setId(currentCustomer.getId());
         Budget b = new Budget();
@@ -153,33 +155,28 @@ public class AddBudgetController {
                 Platform.runLater(() -> {
                     Object obj = msg.getObject();
                     if (obj instanceof Customer dbCustomer) {
-                        // update SessionManager current user if needed
+                        // update global session user
                         try {
-                            // if SessionManager supports setCurrentUser, update it
                             SessionManager.getInstance().setCurrentUser(dbCustomer);
-                        } catch (Exception ignored) {}
+                        } catch (Exception ignored) { }
 
-                        // update UI
-                        double newBal = (dbCustomer.getBudget() != null) ? dbCustomer.getBudget().getBalance() : 0.0;
-                        budgetBalanceLabel.setText("Current Budget: ₪" + String.format("%.2f", newBal));
-
-                        // re-enable button and close (or show success)
-                        addButton.setDisable(false);
-                        Alert a = new Alert(Alert.AlertType.INFORMATION, "Budget updated successfully.");
-                        a.setHeaderText(null);
-                        a.showAndWait();
-
-                        EventBus.getDefault().unregister(this);
+                        // update local UI components that show budget (if present)
                         try {
-                            App.setRoot("primary"); // go back to main catalog
-                        } catch (IOException e) {
-                            showError("Failed to return to catalog: " + e.getMessage());
+                            BigDecimal newBal = (dbCustomer.getBudget() != null)
+                                    ? dbCustomer.getBudget().getBalance()
+                                    : BigDecimal.ZERO;
+                            if (budgetBalanceLabel != null) {
+                                budgetBalanceLabel.setText("Budget Balance: ₪" + newBal.setScale(2, RoundingMode.HALF_UP));
+                            }
+                            // AddBudgetController has budgetBalanceLabel (it will also receive this message)
+                            // It will update itself in its handler (you already have identical code there)
+
+                        } catch (Exception e) {
+                            e.printStackTrace();
                         }
-                    } else {
-                        addButton.setDisable(false);
-                        showError("Unexpected server response.");
                     }
                 });
+                return;
             }
             case "budget_update_failed" -> Platform.runLater(() -> {
                 addButton.setDisable(false);

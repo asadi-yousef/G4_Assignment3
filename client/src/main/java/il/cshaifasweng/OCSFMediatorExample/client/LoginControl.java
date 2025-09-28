@@ -33,6 +33,7 @@ public class LoginControl implements Initializable {
     private ImageView eyeOpenView;
     private ImageView eyeClosedView;
 
+
     @Override
     public void initialize(URL location, ResourceBundle resources) {
         EventBus.getDefault().register(this);
@@ -110,47 +111,51 @@ public class LoginControl implements Initializable {
             setLoading(false);
             showError("Connection to server failed. Please try again later.");
         });
-
-        new Thread(loginTask).start();
+        new Thread(loginTask).start(); // short-lived background send
     }
+
 
     @Subscribe
     public void onMessage(Message message) {
-        Platform.runLater(() -> { // Wrap UI updates in Platform.runLater()
-            System.out.println(message.getMessage());
+        // Only react to the login flow messages
+        String key = message.getMessage();
+        if (!"correct".equals(key) && !"incorrect".equals(key)
+                && !"already_logged".equals(key) && !"frozen".equals(key)) {
+            return; // ignore unrelated traffic
+        }
+
+        Platform.runLater(() -> {
             setLoading(false);
-            if ("correct".equals(message.getMessage())) {
-                System.out.println("correct");
-                try {
-                    User user = (User) message.getObject();
-                    SessionManager.getInstance().setCurrentUser(user);
-                    if (EventBus.getDefault().isRegistered(this)) {
-                        EventBus.getDefault().unregister(this);
-                    }
 
-                    if (user instanceof Employee employee) {
-                        switch (String.valueOf(employee.getRole())) {
-                            case "customerservice" -> App.setRoot("complaintsList");
-                            case "systemadmin"     -> App.setRoot("AdminUsersView");
-                            case "driver"          -> App.setRoot("employeeScheduleView");  // go straight to schedule
-                            default                -> App.setRoot("primary");  // other employees -> schedule
+            switch (key) {
+                case "correct" -> {
+                    try {
+                        User user = (User) message.getObject();
+                        SessionManager.getInstance().setCurrentUser(user);
+
+                        // Decide target view ONCE
+                        String target = "primary";
+                        if (user instanceof Employee emp) {
+                            String role = emp.getRole();
+                            if (role != null) {
+                                String r = role.trim().toLowerCase(Locale.ROOT);
+                                if (r.equals("customerservice"))      target = "complaintsList";
+                                else if (r.equals("systemadmin"))     target = "AdminUsersView";
+                                else if (r.equals("driver"))          target = "employeeScheduleView";
+                            }
                         }
-                    } else {
-                        App.setRoot("primary"); // customers land on primary
-                    }
 
-                } catch (IOException e) {
-                    showError("Failed to load the main page.");
-                    e.printStackTrace();
+                        // Unregister before navigation to avoid duplicate listeners
+                        EventBus.getDefault().unregister(this);
+                        App.setRoot(target);
+                    } catch (IOException e) {
+                        showError("Failed to load the main page.");
+                        e.printStackTrace();
+                    }
                 }
-            } else if ("incorrect".equals(message.getMessage())) {
-                showError("Invalid username or password.");
-            }
-            else if ("already_logged".equals(message.getMessage())) {
-                showError("User already logged from another computer.");
-            }
-            else if("frozen".equals(message.getMessage())) {
-                showError("This account is frozen, contact the administrator.");
+                case "incorrect" -> showError("Invalid username or password.");
+                case "already_logged" -> showError("User already logged from another computer.");
+                case "frozen" -> showError("This account is frozen, contact the administrator.");
             }
         });
     }
@@ -160,6 +165,7 @@ public class LoginControl implements Initializable {
         EventBus.getDefault().unregister(this);
         App.setRoot("registerView");
     }
+
 
     private void showError(String message) {
         errorLabel.setText(message);

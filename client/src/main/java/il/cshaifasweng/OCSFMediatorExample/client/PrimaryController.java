@@ -23,6 +23,7 @@ import org.greenrobot.eventbus.Subscribe;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,6 +44,7 @@ public class PrimaryController implements Initializable {
 	@FXML private TextField maxPriceField;
     @FXML private Button inboxButton;
     @FXML private Button broadcastButton;
+	@FXML private Button usersPageButton;
 	@FXML private Button budgetButton;
     private int unreadPersonalCount = 0;
     private Label inboxBadge;
@@ -112,15 +114,14 @@ public class PrimaryController implements Initializable {
 
 			String searchQuery = valueOrEmpty(searchTextField.getText()).toLowerCase();
 			String selectedType = typeFilterComboBox.getValue();
-			Optional<Double> minPrice = parseDouble(minPriceField.getText());
-			Optional<Double> maxPrice = parseDouble(maxPriceField.getText());
-
+			Optional<BigDecimal> minPrice = parseBigDecimal(minPriceField.getText());
+			Optional<BigDecimal> maxPrice = parseBigDecimal(maxPriceField.getText());
 			List<Product> productsToRender = catalog.getFlowers().stream()
 					.distinct()
 					.filter(p -> searchQuery.isEmpty() || safeLower(p.getName()).contains(searchQuery))
 					.filter(p -> selectedType == null || selectedType.equals("All Types") || safeEqualsIgnoreCase(p.getType(), selectedType))
-					.filter(p -> minPrice.map(min -> p.getPrice() >= min).orElse(true))
-					.filter(p -> maxPrice.map(max -> p.getPrice() <= max).orElse(true))
+					.filter(p -> minPrice.map(min -> p.getPrice().compareTo(min) >= 0).orElse(true))
+					.filter(p -> maxPrice.map(max -> p.getPrice().compareTo(max) <= 0).orElse(true))
 					.collect(Collectors.toList());
 
 			int col = 0;
@@ -305,10 +306,13 @@ public class PrimaryController implements Initializable {
 	}
 	private String valueOrEmpty(String s) { return s == null ? "" : s; }
 
-	private Optional<Double> parseDouble(String text) {
+	private Optional<BigDecimal> parseBigDecimal(String text) {
 		if (text == null || text.trim().isEmpty()) return Optional.empty();
-		try { return Optional.of(Double.parseDouble(text.trim())); }
-		catch (NumberFormatException e) { return Optional.empty(); }
+		try {
+			return Optional.of(new BigDecimal(text.trim()));
+		} catch (NumberFormatException e) {
+			return Optional.empty();
+		}
 	}
 
 	private void populateTypeFilter(Catalog base) {
@@ -502,7 +506,7 @@ public class PrimaryController implements Initializable {
 						EventBus.getDefault().unregister(this);
 						App.setRoot("ordersScreenView");
 					} catch (IOException e) {
-						showAlert("Error", "Failed to open orders page.");
+						e.printStackTrace();
 					}
 					break;
 				}
@@ -582,6 +586,15 @@ public class PrimaryController implements Initializable {
 		return false;
 	}
 
+	private boolean canSeeUsers() {
+		User u = SessionManager.getInstance().getCurrentUser();
+		if(u == null) return false;
+		if(u instanceof Employee) {
+			String role = ((Employee) u).getRole();
+			return role.contains("systemadmin");
+		}
+		return false;
+	}
 	private boolean isManager() {
 		User u = SessionManager.getInstance().getCurrentUser();
 		if (u == null) return false;
@@ -645,6 +658,12 @@ public class PrimaryController implements Initializable {
             broadcastButton.setVisible(isEmployee);
             broadcastButton.setManaged(isEmployee);
         }
+
+		if(usersPageButton != null) {
+			boolean showUsers = isLoggedIn && canSeeUsers();
+			usersPageButton.setVisible(showUsers);
+			usersPageButton.setManaged(showUsers);
+		}
 
     }
 
@@ -760,7 +779,16 @@ public class PrimaryController implements Initializable {
         }
     }
 
-
+	@FXML
+	private void handleUsersPage(javafx.event.ActionEvent e) {
+		if(!SessionManager.getInstance().isEmployee()) return;
+		if(!canSeeUsers()) return;
+		try {
+			App.setRoot("AdminUsersView");
+		} catch (IOException e1) {
+			throw new RuntimeException(e1);
+		}
+	}
 
     private void refreshInboxBadgeText() {
         if (inboxButton == null) return;
@@ -1074,7 +1102,7 @@ public class PrimaryController implements Initializable {
 			App.setRoot("ordersView");
 			EventBus.getDefault().unregister(this);
 		} catch (IOException e) {
-			showAlert("Error", "Failed to open orders page.");
+			showAlert("Error", "///////Failed to open orders page.");
 		}
 	}
 
@@ -1200,7 +1228,13 @@ public class PrimaryController implements Initializable {
 			}
 			App.setRoot("ordersScreenView");
 		} catch (IOException e) {
-			showAlert("Error", "Failed to open orders page.");
+			e.printStackTrace();
+			System.out.println("Retrying load of ordersScreemView..");
+			try {
+				App.setRoot("ordersScreenView");
+			} catch(IOException e1) {
+				showAlert("Error", "Failed to open orders page.");
+			}
 		}
 	}
 

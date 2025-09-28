@@ -13,6 +13,7 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URL;
 import java.time.LocalDate;
 import java.time.Year;
@@ -182,11 +183,14 @@ public class RegisterControl implements Initializable {
                         initialBudget
                 );
                 initialBudget.setCustomer(newCustomer);
-                initialBudget.setBalance(0.0);
+                initialBudget.setBalance(BigDecimal.ZERO);
 
                 if (!isNetworkAccount) {
                     newCustomer.setBranch(getSelectedBranch());
                 }
+                System.out.println("[RegisterControl] Selected: " + accountTypeComboBox.getValue()
+                        + ", isNetwork=" + isNetworkAccount + ", isSubscribed=" + isSubscribed
+                        + ", Branch=" + (branchComboBox.isVisible() ? getSelectedBranch() : "none"));
 
                 Message msg = new Message("register", newCustomer, null);
                 SimpleClient.getClient().sendToServer(msg);

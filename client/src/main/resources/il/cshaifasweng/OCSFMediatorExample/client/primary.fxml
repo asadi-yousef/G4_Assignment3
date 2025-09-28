@@ -101,7 +101,8 @@
                           style="-fx-background-color:white; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-border-color:#d9c6ef; -fx-border-radius:20; -fx-padding:6 14;"/>
                   <Button fx:id="broadcastButton" text="Broadcast" onAction="#handleBroadcast"
                           style="-fx-background-color:#ffafcc; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-padding:6 14;"/>
-                  
+                  <Button fx:id="usersPageButton" text="Users page" onAction="#handleUsersPage"
+                          style="-fx-background-color:#ffafcc; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-padding:6 14;"/>
                    <Button fx:id="Schedule" text="Schedule" onAction="#openEmployeeSchedule"
                            style="-fx-background-color:#ffafcc; -fx-text-fill:#5b2e7e; -fx-background-radius:20; -fx-padding:6 14;"/>
                </children>

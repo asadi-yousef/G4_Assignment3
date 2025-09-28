@@ -12,6 +12,8 @@ import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -101,9 +103,10 @@ public class OrderController implements Initializable {
     private ChoiceBox<String> secondPaymentMethod;
 
     private Order pendingOrder = null;
-    private double budgetAmountToUse = 0.0;
+    private BigDecimal budgetAmountToUse = BigDecimal.ZERO;
     private boolean usingBudget = false;
-    private double currentOrderTotal;
+    private BigDecimal currentOrderTotal;
+    private BigDecimal orderTotal;
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
@@ -203,26 +206,30 @@ public class OrderController implements Initializable {
             storeLocationChoice.setDisable(true);
         }
 
+        currentOrderTotal = SessionManager.getInstance().getOrderTotal();
+        orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
+
         // React to delivery/pickup changes
         deliveryGroup.selectedToggleProperty().addListener((obs, oldToggle, newToggle) -> {
             if (newToggle == deliveryRadio) {
-                // Delivery selected
+                currentOrderTotal = SessionManager.getInstance().getOrderTotal();
                 deliveryDetailsSection.setVisible(true);
                 deliveryDetailsSection.setManaged(true);
-                storeLocationSection.setVisible(false);
-                storeLocationSection.setManaged(false);
+                storeLocationSection.setVisible(true);
+                storeLocationSection.setManaged(true);
                 deliveryPriceLabel.setVisible(true);
                 deliveryPriceLabel.setManaged(true);
                 orderTotalWithDelivery.setVisible(true);
                 orderTotalWithDelivery.setManaged(true);
-                double orderTotal = currentOrderTotal;
-                double deliveryPrice = 20;
-                orderTotal += deliveryPrice;
+                BigDecimal deliveryPrice = BigDecimal.valueOf(20);
+                orderTotal = currentOrderTotal;
+                orderTotal = orderTotal.add(deliveryPrice);
+                currentOrderTotal = orderTotal;
                 deliveryPriceLabel.setText("Delivery: 20₪");
                 orderTotalWithDelivery.setText("Total with delivery: ₪" + String.format("%.2f", orderTotal));
 
             } else if (newToggle == pickupRadio) {
-                // Pickup selected
+                currentOrderTotal = SessionManager.getInstance().getOrderTotal();
                 deliveryDetailsSection.setVisible(false);
                 deliveryDetailsSection.setManaged(false);
                 storeLocationSection.setVisible(true);
@@ -261,8 +268,7 @@ public class OrderController implements Initializable {
         newCardBox.setManaged(false);
 
 
-        currentOrderTotal = SessionManager.getInstance().getOrderTotal();
-        // Show/hidudget or new card based on selection
+
         paymentMethodChoice.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             newCardBox.setVisible("New Card".equals(newVal));
             newCardBox.setManaged("New Card".equals(newVal));
@@ -272,11 +278,12 @@ public class OrderController implements Initializable {
                 budgetBox.setManaged(true);
 
                 if (current != null && current.getBudget() != null) {
-                    double balance = current.getBudget().getBalance();
-                    budgetBalanceLabel.setText("Budget Balance: ₪" + String.format("%.2f", balance));
-
+                    BigDecimal balance = (current.getBudget() != null)
+                            ? current.getBudget().getBalance()
+                            : BigDecimal.ZERO;
+                    budgetBalanceLabel.setText("Budget Balance: ₪" + formatCurrency(balance));
                     // 🔹 SHOW extra dropdown *immediately* if not enough
-                    if (balance < currentOrderTotal) {
+                    if (balance.compareTo(currentOrderTotal) < 0) {
                         insufficientBudgetBox.setVisible(true);
                         insufficientBudgetBox.setManaged(true);
                     } else {
@@ -309,7 +316,7 @@ public class OrderController implements Initializable {
             }
         });
 
-        orderTotalLabel.setText("₪" + String.format("%.2f", currentOrderTotal));
+
 
         placeOrderButton.setOnAction(e -> placeOrder());
         cancelButton.setOnAction(e -> goBackToCart());
@@ -337,36 +344,39 @@ public class OrderController implements Initializable {
             }
 
             String storeLocation = null;
+            if (isNetworkCustomer) {
+                storeLocation = storeLocationChoice.getValue();
+                if (storeLocation == null || storeLocation.isBlank()) {
+                    showAlert("Missing Data", "Please select a store branch.");
+                    return;
+                }
+            } else {
+                storeLocation = getAssignedBranchName(customer);
+                if (storeLocation == null || storeLocation.isBlank()) {
+                    showAlert("Missing Data", "Your account is not linked to a branch.");
+                    return;
+                }
+            }
             LocalDateTime deliveryTime = null;
             String recipientPhone = null;
             String deliveryAddress = null;
-            double deliveryPrice = 20;
-            double orderTotal = SessionManager.getInstance().getOrderTotal();
+            BigDecimal deliveryPrice = BigDecimal.valueOf(20);
+            orderTotal = SessionManager.getInstance().getOrderTotal();
 
             deliveryPriceLabel.setVisible(false);
             deliveryPriceLabel.setManaged(false);
             orderTotalWithDelivery.setVisible(false);
             orderTotalWithDelivery.setManaged(false);
             if ("Pickup".equals(deliveryMethod)) {
-                if (isNetworkCustomer) {
-                    storeLocation = storeLocationChoice.getValue();
-                    if (storeLocation == null || storeLocation.isBlank()) {
-                        showAlert("Missing Data", "Please select a store branch.");
-                        return;
-                    }
-                } else {
-                    storeLocation = getAssignedBranchName(customer);
-                    if (storeLocation == null || storeLocation.isBlank()) {
-                        showAlert("Missing Data", "Your account is not linked to a branch.");
-                        return;
-                    }
-                }
+                orderTotal = SessionManager.getInstance().getOrderTotal();
+
             } else {
+                orderTotal = SessionManager.getInstance().getOrderTotal();
                 deliveryPriceLabel.setVisible(true);
                 deliveryPriceLabel.setManaged(true);
                 orderTotalWithDelivery.setVisible(true);
                 orderTotalWithDelivery.setManaged(true);
-                orderTotal += deliveryPrice;
+                orderTotal = orderTotal.add(deliveryPrice);
                 deliveryPriceLabel.setText("Delivery: 20₪");
                 orderTotalWithDelivery.setText("Total with delivery: ₪" + String.format("%.2f", orderTotal));
                 deliveryAddress = deliveryAddressField.getText();
@@ -379,7 +389,7 @@ public class OrderController implements Initializable {
                         ? recipientPhoneField.getText()
                         : customer.getPhone();
                 if (recipientPhone == null || recipientPhone.trim().isEmpty()) {
-                    showAlert("Missing Data", "Please enter the recipient's phone number.");
+                    showAlert("Missing Data", "Please enter the recipient's email address.");
                     return;
                 }
             }
@@ -442,23 +452,23 @@ public class OrderController implements Initializable {
                     // switch to second payment method for the remainder
                     paymentMethod = secondPayment;
                     Budget budget = customer.getBudget();
-                    if (budget == null || budget.getBalance() <= 0) {
+                    if (budget == null || budget.getBalance().compareTo(BigDecimal.ZERO) <= 0) {
                         showAlert("Insufficient Funds", "Your budget is empty. Please select another payment method.");
                         return;
                     }
 
                     // determine how much we will take from the budget (delta)
-                    if (budget.getBalance() >= orderTotal) {
+                    if (budget.getBalance().compareTo(orderTotal) >= 0) {
                         // budget will cover whole order
                         budgetAmountToUse = orderTotal;
-                        orderTotal = 0;
+                        orderTotal = BigDecimal.ZERO;
                         isPaid = true;
                         usingBudget = true;
 
                     } else {
                         // budget only covers part -> use it, remainder must be paid by second payment
-                        double fromBudget = budget.getBalance();
-                        double remaining = orderTotal - fromBudget;
+                        BigDecimal fromBudget = budget.getBalance();
+                        BigDecimal remaining = orderTotal.subtract(fromBudget);
                         budgetAmountToUse = fromBudget;
                         orderTotal = remaining;
 
@@ -568,7 +578,6 @@ public class OrderController implements Initializable {
                 ex.printStackTrace();
             }
 
-
         } catch (Exception ex) {
             showAlert("Error", "Failed to place order: " + ex.getMessage());
             ex.printStackTrace();
@@ -578,6 +587,7 @@ public class OrderController implements Initializable {
 
     @Subscribe
     public void onServerResponse(Message msg) {
+        System.out.println("[OrderController] Received message: " + msg.getMessage());
         if (msg.getMessage().equals("order_placed_successfully")) {
             Platform.runLater(() -> {
                 showAlert("Success", "Your order has been placed.");
@@ -598,29 +608,29 @@ public class OrderController implements Initializable {
             Platform.runLater(() -> {
                 Object obj = msg.getObject();
                 if (obj instanceof Customer dbCustomer) {
-                    // Replace session copy with canonical DB copy
-                    try { SessionManager.getInstance().setCurrentUser(dbCustomer);
-                        budgetBalanceLabel.setText("Current Budget: ₪" + String.format("%.2f", dbCustomer.getBudget().getBalance()));
+                    // update global session user
+                    try {
+                        SessionManager.getInstance().setCurrentUser(dbCustomer);
+                    } catch (Exception ignored) { }
 
-                    } catch (Exception ignored) {}
+                    // update local UI components that show budget (if present)
+                    try {
+                        BigDecimal newBal = (dbCustomer.getBudget() != null)
+                                ? dbCustomer.getBudget().getBalance()
+                                : BigDecimal.ZERO;// OrderController has budgetBalanceLabel
+                        if (budgetBalanceLabel != null) {
+                            budgetBalanceLabel.setText("Budget Balance: ₪" + newBal.setScale(2, RoundingMode.HALF_UP));                        }
+                        // AddBudgetController has budgetBalanceLabel (it will also receive this message)
+                        // It will update itself in its handler (you already have identical code there)
 
-                    // If there is a pending order waiting for the budget subtraction, send it now
-                    if (pendingOrder != null) {
-                        try {
-                            SimpleClient.getClient().sendToServer(new Message("place_order", pendingOrder, null));
-                            pendingOrder = null;
-                        } catch (IOException e) {
-                            showAlert("Error", "Failed to send order after budget update.");
-                            placeOrderButton.setDisable(false);
-                            placeOrderButton.setText("Place order");
-                        }
-                    } else {
-                        // no pending order: just update UI if needed
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
                 }
             });
             return;
         }
+
 
         if (msg.getMessage().equals("budget_insufficient")) {
             Platform.runLater(() -> {
@@ -713,7 +723,6 @@ public class OrderController implements Initializable {
             });
         }
 
-
     }
 
     private String getAssignedBranchName(Customer current) {
@@ -754,6 +763,11 @@ public class OrderController implements Initializable {
         } catch (Exception e) {
             showAlert("Error", "Failed to return to catalog.");
         }
+    }
+
+    private String formatCurrency(BigDecimal value) {
+        if (value == null) return "0.00";
+        return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     private void showAlert(String title, String content) {
