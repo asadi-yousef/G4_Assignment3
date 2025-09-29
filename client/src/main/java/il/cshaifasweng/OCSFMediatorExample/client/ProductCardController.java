@@ -40,7 +40,7 @@ public class ProductCardController {
     @FXML private Rectangle colorDisplayRect;
 
     @FXML private HBox  priceBox;
-    @FXML private Label priceLabel;     // <-- now wired to the FXML label
+    @FXML private Label priceLabel;     // <-- wired to the FXML label
 
     @FXML private HBox buttonBox;
     @FXML private Label saleBadge;
@@ -77,68 +77,87 @@ public class ProductCardController {
         nameLabel.setText(currentProduct.getName());
         typeLabel.setText("Type: " + currentProduct.getType());
 
-        // Image (bytes → cache → path)
-        boolean setFromBytes = false;
+        // -------- IMAGE (prefer per-user cache; then PrimaryController bytes; then path) --------
+        boolean imageSet = false;
+
         try {
-            if (currentProduct.getId() != null &&
+            // A) Try per-user cache FIRST (so an edited image shows immediately)
+            String fileName = fileNameFromPath(currentProduct.getImagePath());
+            if (fileName == null || fileName.isBlank()) {
+                fileName = currentProduct.getId() + ".img";
+            }
+            File cached = new File(LOCAL_IMAGE_CACHE_DIR, fileName);
+            if (cached.exists()) {
+                try (InputStream is = new FileInputStream(cached)) {
+                    productImageView.setImage(null); // bust previous reference
+                    productImageView.setImage(new Image(is));
+                    imageSet = true;
+                } catch (Exception ignored) {}
+            }
+
+            // B) If cache not available, try bytes from PrimaryController
+            if (!imageSet && currentProduct.getId() != null &&
                     PrimaryController.hasImageBytes(currentProduct.getId())) {
                 byte[] data = PrimaryController.getImageBytes(currentProduct.getId());
                 if (data != null && data.length > 0) {
-                    String fileName = fileNameFromPath(currentProduct.getImagePath());
-                    if (fileName == null || fileName.isBlank()) {
-                        fileName = currentProduct.getId() + ".img";
-                    }
-                    File cached = new File(LOCAL_IMAGE_CACHE_DIR, fileName);
+                    // persist to cache with the same filename so future loads are cache-first
                     try (OutputStream os = new FileOutputStream(cached)) { os.write(data); } catch (Exception ignored) {}
-                    try (InputStream is = new ByteArrayInputStream(data)) { productImageView.setImage(new Image(is)); }
-                    setFromBytes = true;
+                    try (InputStream is = new ByteArrayInputStream(data)) {
+                        productImageView.setImage(null); // bust previous reference
+                        productImageView.setImage(new Image(is));
+                        imageSet = true;
+                    }
                 }
             }
         } catch (Exception ignore) {}
 
-        if (!setFromBytes) {
+// C) Final fallback: resolve by path (this already checks per-user cache first internally)
+        if (!imageSet) {
             setImageFromPath(currentProduct.getImagePath());
         }
 
+
+        // 2) If we didn’t get bytes directly, resolve via path (which now checks per-user cache FIRST)
+        if (!imageSet) {
+            setImageFromPath(currentProduct.getImagePath());
+        }
+
+        // Color
         try {
             colorDisplayRect.setFill(Color.web(currentProduct.getColor()));
         } catch (Exception e) {
             colorDisplayRect.setFill(Color.GRAY);
         }
 
-        // -------- PRICE (reuses FXML priceLabel; no invisible ad-hoc labels) --------
+        // -------- PRICE (reuses FXML priceLabel) --------
         priceBox.getChildren().clear();
         priceLabel.setVisible(true);
         priceLabel.setManaged(true);
 
         BigDecimal price = currentProduct.getPrice();
-        BigDecimal discountPct = currentProduct.getDiscountPercentage();
-        boolean discounted = discountPct != null && discountPct.compareTo(BigDecimal.ZERO) > 0;
+        double discountPct = currentProduct.getDiscountPercentage();
+        boolean discounted = discountPct > 0 && discountPct <= 100;
 
         if (discounted) {
-            // Old price (Text uses -fx-fill, not -fx-text-fill)
+            // Old price
             Text oldPriceText = new Text(CURRENCY.format(price));
             oldPriceText.setStrikethrough(true);
             oldPriceText.setStyle("-fx-fill: #7f8c8d;");
 
-            // Sale price (use the FXML label, style explicitly so scene-level CSS can't hide it)
-            BigDecimal salePrice = currentProduct.getSalePrice(); // BigDecimal
+            // Sale price
+            BigDecimal salePrice = currentProduct.getSalePrice();
             priceLabel.setText(formatCurrency(salePrice));
             priceLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #c0392b;");
             priceLabel.setFont(new Font("Bell MT", 16));
 
             priceBox.getChildren().addAll(oldPriceText, priceLabel);
-
             saleBadge.setVisible(true);
             saleBadge.setManaged(true);
         } else {
-            // Regular price in the FXML label
             priceLabel.setText(formatCurrency(price));
             priceLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #2c3e50;");
             priceLabel.setFont(new Font("Bell MT", 16));
-
             priceBox.getChildren().add(priceLabel);
-
             saleBadge.setVisible(false);
             saleBadge.setManaged(false);
         }
@@ -146,11 +165,13 @@ public class ProductCardController {
 
     /**
      * Load an image robustly from:
+     * - per-user cache (~/.ocsf_app/images/<file>)
+     * - server-relative "images/<file>"
      * - file: URL (via InputStream for freshness)
-     * - http(s) URL
      * - absolute filesystem path
      * - classpath resource (for seeded images)
-     * - server-relative "images/<file>" via the local cache (~/.ocsf_app/images/<file>)
+     *
+     * NOTE: http/https loading intentionally removed per your request.
      */
     private void setImageFromPath(String path) {
         if (path == null || path.isBlank()) {
@@ -160,30 +181,26 @@ public class ProductCardController {
 
         Image img = null;
         try {
-            if (path.startsWith("images/") || path.startsWith("\\images\\") || path.startsWith("/images/")) {
-                String fileName = fileNameFromPath(path);
-                if (fileName != null) {
-                    File cached = new File(LOCAL_IMAGE_CACHE_DIR, fileName);
-                    if (cached.exists()) {
-                        try (InputStream is = new FileInputStream(cached)) { img = new Image(is); }
-                    } else {
-                        try {
-                            if (currentProduct != null && currentProduct.getId() != null &&
-                                    PrimaryController.hasImageBytes(currentProduct.getId())) {
-                                byte[] data = PrimaryController.getImageBytes(currentProduct.getId());
-                                if (data != null && data.length > 0) {
-                                    try (OutputStream os = new FileOutputStream(cached)) { os.write(data); }
-                                    try (InputStream is = new ByteArrayInputStream(data)) { img = new Image(is); }
-                                }
-                            } else {
-                                System.err.println("Cache miss for server path: " + path);
-                            }
-                        } catch (Exception ignored) {
-                            System.err.println("Cache miss for server path: " + path);
-                        }
+            String fileName = fileNameFromPath(path);
+
+            // A) ALWAYS check per-user cache first (this is the key change)
+            if (fileName != null) {
+                File cached = new File(LOCAL_IMAGE_CACHE_DIR, fileName);
+                if (cached.exists()) {
+                    try (InputStream is = new FileInputStream(cached)) {
+                        img = new Image(is);
                     }
                 }
-            } else if (img == null && path.startsWith("file:")) {
+            }
+
+            // B) Server-relative images/ path: nothing else to do if cache already gave us the image
+            if (img == null && (path.startsWith("images/") || path.startsWith("\\images\\") || path.startsWith("/images/"))) {
+                // If not in cache, nothing more to load (we intentionally avoid http)
+                // Fall through to file:/abs/classpath checks
+            }
+
+            // C) file: URL
+            if (img == null && path.startsWith("file:")) {
                 try {
                     File f = new File(java.net.URI.create(path));
                     if (f.exists()) {
@@ -192,35 +209,41 @@ public class ProductCardController {
                         System.err.println("file: URL does not exist: " + path);
                     }
                 } catch (IllegalArgumentException badUri) {
-                    img = new Image(path, true);
+                    // ignore (no http usage)
                 }
-            } else if (img == null && (path.startsWith("http://") || path.startsWith("https://"))) {
-                img = new Image(path, true);
-            } else if (img == null) {
+            }
+
+            // D) Absolute filesystem path
+            if (img == null) {
                 File f = new File(path);
                 if (f.isAbsolute() && f.exists()) {
                     try (InputStream is = new FileInputStream(f)) { img = new Image(is); }
-                } else if (path.startsWith("/")) {
-                    URL res = getClass().getResource(path);
-                    if (res != null) {
-                        img = new Image(res.toExternalForm(), true);
-                    } else {
-                        System.err.println("Classpath resource not found: " + path);
-                    }
-                } else {
-                    System.err.println("Unrecognized image path: " + path);
                 }
             }
+
+            // E) Classpath resource (e.g., "/il/.../client/images/foo.png")
+            if (img == null && path.startsWith("/")) {
+                URL res = getClass().getResource(path);
+                if (res != null) {
+                    img = new Image(res.toExternalForm(), true);
+                } else {
+                    System.err.println("Classpath resource not found: " + path);
+                }
+            }
+
         } catch (Exception e) {
             System.err.println("Error loading image '" + path + "': " + e);
         }
 
         if (img != null) {
+            // Force a refresh even if JavaFX thinks it’s the same image
+            productImageView.setImage(null);
             productImageView.setImage(img);
         } else {
             System.err.println("Failed to resolve image: " + path);
             productImageView.setImage(null);
         }
+
     }
 
     // === helpers ===
@@ -310,8 +333,17 @@ public class ProductCardController {
 
         TextField nameField = new TextField(isNewProduct ? "" : currentProduct.getName());
         TextField typeField = new TextField(isNewProduct ? "" : currentProduct.getType());
-        TextField priceField = new TextField(isNewProduct ? "" : String.format("%.2f", currentProduct.getPrice()));
+
+        // Price is BigDecimal – format safely
+        String priceInit = "";
+        if (!isNewProduct && currentProduct.getPrice() != null) {
+            priceInit = currentProduct.getPrice().setScale(2, RoundingMode.HALF_UP).toPlainString();
+        }
+        TextField priceField = new TextField(isNewProduct ? "" : priceInit);
+
+        // Discount is double
         TextField discountField = new TextField(isNewProduct ? "0" : String.valueOf(currentProduct.getDiscountPercentage()));
+
         ColorPicker colorPicker = new ColorPicker(isNewProduct ? Color.WHITE : Color.web(currentProduct.getColor()));
         TextField imagePathField = new TextField(isNewProduct ? "" : currentProduct.getImagePath());
 
@@ -372,18 +404,26 @@ public class ProductCardController {
 
                 productToSave.setName(nameField.getText().trim());
                 productToSave.setType(typeField.getText().trim());
+
+                // Price stays BigDecimal
                 productToSave.setPrice(new BigDecimal(priceField.getText().trim()));
-                BigDecimal discount = BigDecimal.ZERO;
+
+                // ---- Discount as double ----
+                double discount = 0.0;
                 String d = discountField.getText() == null ? "" : discountField.getText().trim();
                 if (!d.isEmpty()) {
                     try {
-                        discount = new BigDecimal(d);
-                    } catch(NumberFormatException ignored) {
-                        discount = BigDecimal.ZERO;
+                        d = d.replace("%", "")
+                                .replace(",", ".")
+                                .replaceAll("[^0-9.]", "");
+                        if (!d.isEmpty()) discount = Double.parseDouble(d);
+                    } catch (NumberFormatException ignored) {
+                        discount = 0.0;
                     }
                 }
-                if (discount.compareTo(BigDecimal.ZERO) < 0) discount = BigDecimal.ZERO;
-                if (discount.compareTo(BigDecimal.valueOf(100)) > 0) discount = BigDecimal.valueOf(100);
+                if (discount < 0.0) discount = 0.0;
+                if (discount > 100.0) discount = 100.0;
+                productToSave.setDiscountPercentage(discount);
 
                 productToSave.setColor(toHexString(colorPicker.getValue()));
 

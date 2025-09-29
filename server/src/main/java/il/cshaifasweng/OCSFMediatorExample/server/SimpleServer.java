@@ -2772,20 +2772,41 @@ public class SimpleServer extends AbstractServer {
 
     private void handleProductEdit(Message msg, ConnectionToClient client, Session session) {
         Product incoming = (Product) msg.getObject();
-        if (incoming == null) return;
+        if (incoming == null || incoming.getId() == null) return;
 
-        // Persist (this already normalizes and copies the image into images/ if accessible)
-        boolean updateSuccess = updateProduct(session, incoming.getId(),
-                incoming.getName(), incoming.getColor(), incoming.getPrice(),
-                incoming.getDiscountPercentage(), incoming.getType(), incoming.getImagePath());
+        // --- Extract & normalize fields ---
+        final Long        id    = incoming.getId();
+        final String      name  = incoming.getName()  != null ? incoming.getName().trim()  : "";
+        final String      color = incoming.getColor() != null ? incoming.getColor().trim() : "";
+        final String      type  = incoming.getType()  != null ? incoming.getType().trim()  : "";
+        final BigDecimal  price = incoming.getPrice() != null ? incoming.getPrice()        : BigDecimal.ZERO;
+        final String      img   = incoming.getImagePath();
 
+        // discountPercentage is now double; clamp to [0, 100]
+        double discount = incoming.getDiscountPercentage();
+        if (Double.isNaN(discount) || Double.isInfinite(discount)) discount = 0.0;
+        if (discount < 0.0)   discount = 0.0;
+        if (discount > 100.0) discount = 100.0;
+
+        // --- Persist update ---
+        // NOTE: updateProduct signature must now accept double for discountPercentage
+        boolean updateSuccess = updateProduct(
+                session,
+                id,
+                name,
+                color,
+                price,
+                discount,      // <-- double
+                type,
+                img
+        );
         if (!updateSuccess) return;
 
-        // Re-read the managed product so we have the final (possibly new) imagePath
-        Product managed = session.get(Product.class, incoming.getId());
+        // --- Re-read managed entity (to get final imagePath etc.) ---
+        Product managed = session.get(Product.class, id);
         if (managed == null) return;
 
-        // Refresh in-memory catalog + propagate to open carts
+        // --- Refresh catalog & propagate to open carts ---
         catalogLock.writeLock().lock();
         try {
             catalog.setFlowers(getListFromDB(session, Product.class));
@@ -2794,13 +2815,13 @@ public class SimpleServer extends AbstractServer {
         }
         propagateProductEditToOpenCarts(session, managed.getId());
 
-        // Try to attach image bytes (same idea as in handleAddProduct)
+        // --- Attach image bytes if available (optional payload) ---
         List<Object> payload = null;
         try {
             String sp = managed.getImagePath();
             if (sp != null && !sp.isBlank()) {
                 File f = resolveServerImageFile(sp);
-                if (f != null && f.exists() && f.isFile()) {
+                if (f != null && f.isFile() && f.exists()) {
                     byte[] bytes = java.nio.file.Files.readAllBytes(f.toPath());
                     if (bytes != null && bytes.length > 0) {
                         payload = java.util.List.of(java.util.Map.of("imageBytes", bytes));
@@ -2811,50 +2832,66 @@ public class SimpleServer extends AbstractServer {
             System.err.println("[editProduct] couldn't attach image bytes: " + ex.getMessage());
         }
 
+        // --- Broadcast updated product (use managed instance) ---
         try {
-            // Use the managed product (with final imagePath) in the broadcast
             sendToAllClients(new Message(msg.getMessage(), managed, payload));
         } catch (Exception ignored) {}
     }
 
 
+
     private void propagateProductEditToOpenCarts(Session session, Long productId) {
         if (productId == null) return;
-        Transaction tx = session.beginTransaction();
+
+        // Begin a transaction only if none is active right now.
+        org.hibernate.Transaction cur = session.getTransaction();
+        boolean startedHere = (cur == null || !cur.isActive());
+        org.hibernate.Transaction tx = null;
+        if (startedHere) {
+            tx = session.beginTransaction();
+        } else {
+            tx = cur;  // use the caller's active tx
+        }
+
         try {
             Product managed = session.get(Product.class, productId);
             if (managed == null) {
-                tx.rollback();
+                if (startedHere && tx != null && tx.isActive()) tx.rollback();
                 return;
             }
 
-            List<Long> affectedCartIds = session.createQuery("""
-                select distinct ci.cart.id
-                  from CartItem ci
-                  left join ci.customBouquet cb
-                  left join cb.items cbi
-                 where (ci.product.id = :pid)
-                    or (cbi.flower.id = :pid)
-            """, Long.class).setParameter("pid", productId).getResultList();
+            java.util.List<Long> affectedCartIds = session.createQuery("""
+            select distinct ci.cart.id
+              from CartItem ci
+              left join ci.customBouquet cb
+              left join cb.items cbi
+             where (ci.product.id = :pid)
+                or (cbi.flower.id = :pid)
+        """, Long.class)
+                    .setParameter("pid", productId)
+                    .getResultList();
 
             if (!affectedCartIds.isEmpty()) {
-                BigDecimal newUnit = managed.getSalePrice();
+                java.math.BigDecimal newUnit = managed.getSalePrice();
 
                 for (Long cid : affectedCartIds) {
                     Cart cart = fetchCartWithEverything(session, cid);
                     boolean cartChanged = false;
 
                     for (CartItem ci : cart.getItems()) {
-                        if (ci.getProduct() != null && Objects.equals(ci.getProduct().getId(), productId)) {
+                        if (ci.getProduct() != null && java.util.Objects.equals(ci.getProduct().getId(), productId)) {
                             ci.setProduct(managed);
+                            // If you snapshot unit price on CartItem itself, also update it here.
+                            // ci.setUnitPriceSnapshot(newUnit);
                             cartChanged = true;
                         }
+
                         CustomBouquet cb = ci.getCustomBouquet();
                         if (cb != null && cb.getItems() != null) {
                             boolean bouquetChanged = false;
                             for (CustomBouquetItem line : cb.getItems()) {
                                 Product f = line.getFlower();
-                                if (f != null && Objects.equals(f.getId(), productId)) {
+                                if (f != null && java.util.Objects.equals(f.getId(), productId)) {
                                     line.setFlower(managed);
                                     line.setFlowerNameSnapshot(managed.getName());
                                     line.setUnitPriceSnapshot(newUnit);
@@ -2868,15 +2905,31 @@ public class SimpleServer extends AbstractServer {
                             }
                         }
                     }
-                    if (cartChanged) session.merge(cart);
+                    if (cartChanged) {
+                        // If you maintain cart totals here, recompute and merge (uncomment if applicable):
+                        // cart.recomputeTotals();
+                        session.merge(cart);
+                    }
                 }
             }
-            tx.commit();
+
+            // Flush only if a transaction is active at this point
+            if (session.getTransaction() != null && session.getTransaction().isActive()) {
+                session.flush();
+            }
+
+            if (startedHere && tx != null && tx.isActive()) {
+                tx.commit();
+            }
         } catch (Exception e) {
-            if (tx.isActive()) tx.rollback();
+            if (startedHere && tx != null && tx.isActive()) {
+                tx.rollback();
+            }
             e.printStackTrace();
         }
     }
+
+
 
     private void handleClientRemoval(ConnectionToClient client) {
         subscribersList.removeIf(subscribedClient -> subscribedClient.getClient().equals(client));
@@ -3013,8 +3066,14 @@ public class SimpleServer extends AbstractServer {
 // sendToClient(customerToSend);
 
 
-    public boolean updateProduct(Session session, Long productId, String newProductName, String newColor,
-                                 BigDecimal newPrice, BigDecimal newDiscount, String newType, String newImagePath) {
+    public boolean updateProduct(Session session,
+                                 Long productId,
+                                 String newProductName,
+                                 String newColor,
+                                 BigDecimal newPrice,
+                                 double newDiscount,          // <-- double now
+                                 String newType,
+                                 String newImagePath) {
         catalogLock.writeLock().lock();
         Transaction tx = session.beginTransaction();
         try {
@@ -3025,11 +3084,18 @@ public class SimpleServer extends AbstractServer {
                 return false;
             }
 
-            product.setPrice(newPrice);
-            product.setDiscountPercentage(newDiscount);
-            product.setName(newProductName);
-            product.setType(newType);
-            product.setColor(newColor);
+            // ---- Simple field updates (trim + null-safety) ----
+            if (newProductName != null) product.setName(newProductName.trim());
+            if (newType != null)        product.setType(newType.trim());
+            if (newColor != null)       product.setColor(newColor.trim());
+            if (newPrice != null)       product.setPrice(newPrice);
+
+            // ---- Discount: double with clamping [0,100] ----
+            double d = newDiscount;
+            if (Double.isNaN(d) || Double.isInfinite(d)) d = 0.0;
+            if (d < 0.0)   d = 0.0;
+            if (d > 100.0) d = 100.0;
+            product.setDiscountPercentage(d);
 
             // ---- Image path normalization (server-side) ----
             String finalPath = product.getImagePath(); // keep old unless we can improve it
@@ -3063,7 +3129,7 @@ public class SimpleServer extends AbstractServer {
             product.setImagePath(finalPath);
             // -----------------------------------------------
 
-            session.update(product);
+            session.update(product);   // or session.merge(product);
             tx.commit();
             return true;
         } catch (Exception e) {
@@ -3074,6 +3140,7 @@ public class SimpleServer extends AbstractServer {
             catalogLock.writeLock().unlock();
         }
     }
+
 
 
     private void handleAddToCart(Message message, ConnectionToClient client, Session session) {

@@ -63,11 +63,18 @@ public class AddProductController implements Initializable {
             } catch (Exception e) {
                 colorPicker.setValue(Color.WHITE);
             }
-            priceField.setText(String.format("%.2f", product.getPrice()));
+            // price is BigDecimal → format safely
+            if (product.getPrice() != null) {
+                priceField.setText(product.getPrice().setScale(2, RoundingMode.HALF_UP).toPlainString());
+            } else {
+                priceField.setText("");
+            }
+            // discount is double
             discountField.setText(String.valueOf(product.getDiscountPercentage()));
             saveButton.setText("Update Product");
         }
     }
+
 
     @FXML
     private void handleBrowseImage() {
@@ -99,19 +106,23 @@ public class AddProductController implements Initializable {
                 Product product = new Product();
                 product.setName(nameField.getText().trim());
                 product.setType(typeField.getText().trim());
-                product.setPrice(new BigDecimal(priceField.getText().trim()));
+                product.setPrice(new BigDecimal(priceField.getText().trim())); // BigDecimal price
 
-                // Discount: default to zero
-                BigDecimal discount = BigDecimal.ZERO;
+                // ---- discount as double ----
+                double discount = 0.0;
                 String d = discountField.getText() == null ? "" : discountField.getText().trim();
                 if (!d.isEmpty()) {
                     try {
-                        discount = new BigDecimal(d);
-                    } catch (NumberFormatException ignored) {}
+                        d = d.replace("%", "")
+                                .replace(",", ".")
+                                .replaceAll("[^0-9.]", "");
+                        if (!d.isEmpty()) discount = Double.parseDouble(d);
+                    } catch (NumberFormatException ignored) {
+                        discount = 0.0;
+                    }
                 }
-                // Clamp between [0,100]
-                if (discount.compareTo(BigDecimal.ZERO) < 0) discount = BigDecimal.ZERO;
-                if (discount.compareTo(BigDecimal.valueOf(100)) > 0) discount = BigDecimal.valueOf(100);
+                if (discount < 0.0) discount = 0.0;
+                if (discount > 100.0) discount = 100.0;
                 product.setDiscountPercentage(discount);
 
                 product.setColor(toHexString(colorPicker.getValue()));
@@ -160,6 +171,7 @@ public class AddProductController implements Initializable {
 
         new Thread(task).start();
     }
+
 
 
 
@@ -224,10 +236,14 @@ public class AddProductController implements Initializable {
         String d = discountField.getText() == null ? "" : discountField.getText().trim();
         if (!d.isEmpty()) {
             try {
-                BigDecimal discount = new BigDecimal(d);
-                if (discount.compareTo(BigDecimal.ZERO) < 0
-                        || discount.compareTo(BigDecimal.valueOf(100)) > 0) {
-                    errors.append("• Discount must be between 0 and 100\n");
+                String norm = d.replace("%", "")
+                        .replace(",", ".")
+                        .replaceAll("[^0-9.]", "");
+                if (!norm.isEmpty()) {
+                    double discount = Double.parseDouble(norm);
+                    if (discount < 0.0 || discount > 100.0) {
+                        errors.append("• Discount must be between 0 and 100\n");
+                    }
                 }
             } catch (NumberFormatException e) {
                 errors.append("• Discount must be a valid number\n");
@@ -245,6 +261,7 @@ public class AddProductController implements Initializable {
         return true;
     }
 
+
     // ==== OLD IMAGE HANDLING LOGIC, adapted here ====
     private Product createProductFromForm() {
         Product product = new Product();
@@ -252,31 +269,29 @@ public class AddProductController implements Initializable {
         // Standard fields
         product.setName(nameField.getText().trim());
         product.setType(typeField.getText().trim());
-        product.setPrice(new BigDecimal(priceField.getText().trim()));
+        product.setPrice(new BigDecimal(priceField.getText().trim())); // BigDecimal price
 
-        // Discount: default to 0 if empty, clamp to [0, 100]
-        BigDecimal discount = BigDecimal.ZERO;
+        // ---- Discount as double, default 0, clamp [0,100] ----
+        double discount = 0.0;
         String d = discountField.getText() == null ? "" : discountField.getText().trim();
         if (!d.isEmpty()) {
             try {
-                discount = new BigDecimal(d);
+                d = d.replace("%", "")
+                        .replace(",", ".")
+                        .replaceAll("[^0-9.]", "");
+                if (!d.isEmpty()) discount = Double.parseDouble(d);
             } catch (NumberFormatException ignored) {
-                discount = BigDecimal.ZERO;
+                discount = 0.0;
             }
         }
-        // Clamp between 0 and 100
-        if (discount.compareTo(BigDecimal.ZERO) < 0) {
-            discount = BigDecimal.ZERO;
-        }
-        if (discount.compareTo(BigDecimal.valueOf(100)) > 0) {
-            discount = BigDecimal.valueOf(100);
-        }
+        if (discount < 0.0) discount = 0.0;
+        if (discount > 100.0) discount = 100.0;
         product.setDiscountPercentage(discount);
 
         // Color
         product.setColor(toHexString(colorPicker.getValue()));
 
-        // ---- EXACT old image logic starts here ----
+        // ---- exact old image logic starts here ----
         String originalPath = imagePathField.getText() == null ? "" : imagePathField.getText().trim();
         if (!originalPath.isEmpty()) {
             File sourceFile = new File(originalPath);
@@ -315,6 +330,8 @@ public class AddProductController implements Initializable {
 
         return product;
     }
+// ==============================================
+
     // ==============================================
 
     private void setupValidation() {
@@ -347,13 +364,22 @@ public class AddProductController implements Initializable {
     private void setupDiscountListener() {
         discountField.textProperty().addListener((obs, oldText, newText) -> {
             try {
-                if (!newText.trim().isEmpty()) {
-                    BigDecimal discount = new BigDecimal(newText.trim());
+                String s = newText == null ? "" : newText.trim();
+                if (!s.isEmpty()) {
+                    String norm = s.replace("%", "")
+                            .replace(",", ".")
+                            .replaceAll("[^0-9.]", "");
+                    if (norm.isEmpty()) {
+                        discountInfoLabel.setText("(Invalid number)");
+                        discountInfoLabel.setTextFill(Color.RED);
+                        return;
+                    }
+                    double discount = Double.parseDouble(norm);
 
-                    if (discount.compareTo(BigDecimal.ZERO) > 0 && discount.compareTo(BigDecimal.valueOf(100)) <= 0) {
-                        discountInfoLabel.setText("(" + discount.setScale(0, RoundingMode.DOWN).toPlainString() + "% off)");
+                    if (discount > 0.0 && discount <= 100.0) {
+                        discountInfoLabel.setText("(" + (int)Math.floor(discount) + "% off)");
                         discountInfoLabel.setTextFill(Color.GREEN);
-                    } else if (discount.compareTo(BigDecimal.ZERO) == 0) {
+                    } else if (discount == 0.0) {
                         discountInfoLabel.setText("(No discount)");
                         discountInfoLabel.setTextFill(Color.GRAY);
                     } else {
