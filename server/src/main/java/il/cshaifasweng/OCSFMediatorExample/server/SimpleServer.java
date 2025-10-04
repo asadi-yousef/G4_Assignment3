@@ -1399,17 +1399,22 @@ public class SimpleServer extends AbstractServer {
             if (customer != null && deliveryTime != null) {
                 LocalDateTime now = LocalDateTime.now();
                 Duration diff = Duration.between(now, deliveryTime);
-                long hoursUntilDelivery = diff.toHours();
 
-                if (hoursUntilDelivery >= 24) {
-                    refund = order.getTotalPrice(); // full refund
-                } else if (hoursUntilDelivery >= 3) {
-                    refund = order.getTotalPrice()
+                if(diff.isNegative()) {
+                    refund = BigDecimal.ZERO;
+                } else {
+                    long minutesUntilDelivery = diff.toMinutes();
+                    if(minutesUntilDelivery >= 180) {
+                        refund = order.getTotalPrice(); // full refund
+                    } else if(minutesUntilDelivery >= 60) {
+                        refund = order.getTotalPrice()
                             .multiply(BigDecimal.valueOf(0.5))
                             .setScale(2, RoundingMode.HALF_UP); // 50% refund
-                } else {
-                    refund = BigDecimal.ZERO; // no refund
+                    } else {
+                        refund = BigDecimal.ZERO;
+                    }
                 }
+
             }
 
             // Apply refund to customer's budget

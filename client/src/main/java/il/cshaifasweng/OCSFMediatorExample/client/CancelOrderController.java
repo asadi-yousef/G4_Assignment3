@@ -102,36 +102,33 @@ public class CancelOrderController implements Initializable {
             LocalDateTime currentTime = LocalDateTime.now();
 
             Duration diff = Duration.between(currentTime, deliveryTime);
-            long hoursUntilDelivery = diff.toHours() + 3;
 
-            if (hoursUntilDelivery > 0) {
-                if (hoursUntilDelivery >= 24) {
-                    showAlert("Success", "Full Refund, your refund is stored in your budget balance.");
-                } else if (hoursUntilDelivery >= 3) {
-                    showAlert("Success", "50% Refund, your refund is stored in your budget balance.");
-                    refund = refund.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
-                } else {
-                    showAlert("Success", "No Refund");
-                    refund = BigDecimal.ZERO;
-                }
-
-                // Locally update budget if you want
-                // budget.addFunds(refund);
-
-                // Send cancel request along with refund amount to server
-                ArrayList<Object> payload = new ArrayList<>();
-                payload.add(selectedOrder.getId());
-                // if your server expects BigDecimal, send directly. If it expects double, use refund.doubleValue()
-                payload.add(refund);
-
-                Message message = new Message("cancel_order", null, payload);
-                SimpleClient.getClient().sendToServer(message);
-
-                confirmButton.setDisable(true);
-                confirmButton.setText("Cancelling...");
-            } else {
+            if (diff.isNegative()) {
                 showAlert("Error", "Cannot cancel order, order date and time has already passed!");
+                return;
             }
+            long minutesUntilDelivery = diff.toMinutes();
+
+            if(minutesUntilDelivery >= 180){
+                showAlert("Success", "Full Refund, your refund is stored in your budget balance.");
+            } else if(minutesUntilDelivery >= 60) {
+                showAlert("Success", "50% Refund, your refund is stored in your budget balance.");
+                refund = refund.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+            } else {
+                showAlert("Success", "No Refund");
+                refund = BigDecimal.ZERO;
+            }
+            ArrayList<Object> payload = new ArrayList<>();
+            payload.add(selectedOrder.getId());
+            // if your server expects BigDecimal, send directly. If it expects double, use refund.doubleValue()
+            payload.add(refund);
+
+            Message message = new Message("cancel_order", null, payload);
+            SimpleClient.getClient().sendToServer(message);
+
+            confirmButton.setDisable(true);
+            confirmButton.setText("Cancelling...");
+
         } catch (Exception e) {
             showAlert("Error", "Failed to send cancel request.");
             confirmButton.setDisable(false);
