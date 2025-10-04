@@ -2029,25 +2029,28 @@ public class SimpleServer extends AbstractServer {
     }
 
 
-    /** Mark a complaint as resolved, set responder/response/compensation, and notify clients. */
     private void handleResolveComplaint(Message m, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();
+
+        // For post-commit targeted push:
+        Long   targetUserId = null;
+        Budget updatedBudgetForPush = null;
+
         try {
             Long complaintId = null;
-            Employee responder = null;
+            Employee responder = null; // keep if you later parse/set responder
             String responseText = null;
             BigDecimal compensation = null;
 
             // --- parse payload ---
             if (m.getObjectList() != null && !m.getObjectList().isEmpty()) {
                 Object first = m.getObjectList().get(0);
-                if (first instanceof Map) {
-                    Map<?,?> p = (Map<?,?>) first;
+                if (first instanceof Map<?,?> p) {
                     if (p.get("complaintId") != null) {
                         complaintId = Long.valueOf(p.get("complaintId").toString());
                     }
-                    if (p.get("responseText") instanceof String) {
-                        responseText = ((String) p.get("responseText")).trim();
+                    if (p.get("responseText") instanceof String s) {
+                        responseText = s.trim();
                     }
                     if (p.get("compensation") != null) {
                         compensation = new BigDecimal(p.get("compensation").toString());
@@ -2057,14 +2060,14 @@ public class SimpleServer extends AbstractServer {
 
             if (complaintId == null) {
                 tx.rollback();
-                client.sendToClient(new Message("complaint_resolve_error", "Missing complaint id", null));
+                clientSendSafe(client, new Message("complaint_resolve_error", "Missing complaint id", null));
                 return;
             }
 
             Complaint c = session.get(Complaint.class, complaintId);
             if (c == null) {
                 tx.rollback();
-                client.sendToClient(new Message("complaint_resolve_error", "Complaint not found", null));
+                clientSendSafe(client, new Message("complaint_resolve_error", "Complaint not found", null));
                 return;
             }
 
@@ -2079,24 +2082,26 @@ public class SimpleServer extends AbstractServer {
 
             session.merge(c);
 
-            // --- Compensation logic ---
+            // --- Compensation logic & collect data for push ---
             if (compensation != null && compensation.compareTo(BigDecimal.ZERO) > 0) {
                 Customer managedCustomer = session.get(Customer.class, c.getCustomer().getId());
                 if (managedCustomer != null) {
                     Budget budget = managedCustomer.getBudget();
                     if (budget == null) {
-                        budget = new Budget(managedCustomer, BigDecimal.ZERO);;
+                        budget = new Budget(managedCustomer, BigDecimal.ZERO);
                         managedCustomer.setBudget(budget);
                         session.persist(budget);
                     }
-                    BigDecimal oldBal = budget.getBalance();
+                    BigDecimal oldBal = safe(budget.getBalance());
                     budget.addFunds(compensation);
-
-                    // No need for session.update(budget) if budget is managed
-                    session.merge(managedCustomer);  // ensure customer + budget changes are tracked
+                    session.merge(managedCustomer); // ensure changes tracked
 
                     System.out.printf("[DBG] Compensation added: customer %d balance %.2f -> %.2f%n",
                             managedCustomer.getId(), oldBal, budget.getBalance());
+
+                    // Save for post-commit targeted push
+                    targetUserId = managedCustomer.getId();
+                    updatedBudgetForPush = budget;
                 }
             }
 
@@ -2110,18 +2115,54 @@ public class SimpleServer extends AbstractServer {
 
             tx.commit();
 
-            client.sendToClient(new Message("complaint_resolved", new ComplaintDTO(c), null));
+            // Respond to the staff client who resolved it
+            clientSendSafe(client, new Message("complaint_resolved", new ComplaintDTO(c), null));
+
+            // Broadcast for lists/grids that show complaints
             sendToAllClients(new Message("complaints_refresh", null, null));
+
+            // Targeted **post-commit** push to the compensated user so their UI updates instantly
+            if (targetUserId != null && updatedBudgetForPush != null) {
+                sendToUserId(targetUserId, new Message("budget_updated", updatedBudgetForPush, null));
+                // If your client expects a plain number instead:
+                // sendToUserId(targetUserId, new Message("budget_updated", updatedBudgetForPush.getBalance(), null));
+            }
         } catch (Exception e) {
             if (tx.isActive()) tx.rollback();
             e.printStackTrace();
-            try {
-                client.sendToClient(new Message("complaint_resolve_error", "Exception: " + e.getMessage(), null));
-            } catch (IOException ignored) {}
+            clientSendSafe(client, new Message("complaint_resolve_error", "Exception: " + e.getMessage(), null));
+        }
+    }
+    private void sendToUserId(Long targetUserId, Message msg) {
+        if (targetUserId == null || msg == null) return;
+
+        try {
+            // getClientConnections() returns a thread-safe collection of ConnectionToClient
+            for (Thread t : getClientConnections()) {
+                if (!(t instanceof ConnectionToClient c)) continue;
+
+                Object info = c.getInfo("userId");
+                if (info == null) continue;
+
+                Long uid = (info instanceof Number)
+                        ? ((Number) info).longValue()
+                        : Long.valueOf(info.toString());
+
+                if (targetUserId.equals(uid)) {
+                    c.sendToClient(msg);
+                }
+            }
+        } catch (IOException ioe) {
+            ioe.printStackTrace();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
 
+    private static BigDecimal safe(BigDecimal x) {
+        return (x == null) ? BigDecimal.ZERO : x;
+    }
 
     private void handleAddCustomBouquetToCart(Message message, ConnectionToClient client, Session session) {
         Transaction tx = session.beginTransaction();

@@ -139,7 +139,7 @@ public class App {
                     Session session1 = sessionFactory.openSession();
                     Transaction tx1 = session1.beginTransaction();
                     Branch haifaBranch = session1.get(Branch.class, 1L);
-                    Employee employee3 = new Employee("212744916", "Renata_", "Haiek", "Renata_", "renata2002", "branchmanager", haifaBranch, true);
+                    Employee employee3 = new Employee("212744916", "Renata_", "Haiek", "Renata_", "renata2002", "branchmanager", haifaBranch, false);
                     employee3.setBranch(haifaBranch);
                     session1.save(employee3);
                     tx1.commit();
