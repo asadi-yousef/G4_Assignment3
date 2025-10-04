@@ -1366,10 +1366,9 @@ public class SimpleServer extends AbstractServer {
             return;
         }
 
-        Object first = m.getObjectList().get(0);
         Long orderId;
         try {
-            orderId = (Long) first;
+            orderId = (Long) m.getObjectList().get(0);
         } catch (Exception e) {
             sendCancelError(client, "Invalid order ID.");
             return;
@@ -1381,47 +1380,49 @@ public class SimpleServer extends AbstractServer {
 
             Order order = session.get(Order.class, orderId);
             if (order == null) {
+                tx.rollback();
                 sendCancelError(client, "Order not found.");
                 return;
             }
 
+            // --- GUARD: prevent cancelling delivered/completed/cancelled orders ---
+            String status = (order.getStatus() == null) ? "" : order.getStatus().trim().toUpperCase();
+            if ("DELIVERED".equals(status) || "COMPLETED".equals(status) || "CANCELLED".equals(status)) {
+                tx.rollback();
+                sendCancelError(client, "This order cannot be canceled because its status is: " + status + ".");
+                return;
+            }
+            // ---------------------------------------------------------------------
+
             Customer customer = order.getCustomer();
 
-            // Calculate refund based on delivery time
+            // Calculate refund based on time remaining to delivery/pickup
             BigDecimal refund = BigDecimal.ZERO;
-            boolean delivery = order.getDelivery();
-            LocalDateTime deliveryTime;
-            if(delivery) {
-                deliveryTime = order.getDeliveryDateTime();
-            } else {
-                deliveryTime = order.getPickupDateTime();
-            }
+            boolean delivery = Boolean.TRUE.equals(order.getDelivery());
+            LocalDateTime deliveryTime = delivery ? order.getDeliveryDateTime() : order.getPickupDateTime();
+
             if (customer != null && deliveryTime != null) {
                 LocalDateTime now = LocalDateTime.now();
                 Duration diff = Duration.between(now, deliveryTime);
 
-                if(diff.isNegative()) {
-                    refund = BigDecimal.ZERO;
-                } else {
+                if (!diff.isNegative()) {
                     long minutesUntilDelivery = diff.toMinutes();
-                    if(minutesUntilDelivery >= 180) {
+                    if (minutesUntilDelivery >= 180) {
                         refund = order.getTotalPrice(); // full refund
-                    } else if(minutesUntilDelivery >= 60) {
+                    } else if (minutesUntilDelivery >= 60) {
                         refund = order.getTotalPrice()
-                            .multiply(BigDecimal.valueOf(0.5))
-                            .setScale(2, RoundingMode.HALF_UP); // 50% refund
-                    } else {
-                        refund = BigDecimal.ZERO;
+                                .multiply(BigDecimal.valueOf(0.5))
+                                .setScale(2, RoundingMode.HALF_UP); // 50% refund
                     }
+                    // else <60 → no refund
                 }
-
             }
 
             // Apply refund to customer's budget
-            Budget budget = customer.getBudget();
+            Budget budget = (customer != null) ? customer.getBudget() : null;
             if (budget != null && refund.compareTo(BigDecimal.ZERO) > 0) {
                 budget.addFunds(refund);
-                session.update(budget); // persist update
+                session.update(budget);
             }
 
             // Delete complaints linked to the order
@@ -1429,12 +1430,11 @@ public class SimpleServer extends AbstractServer {
                             "FROM Complaint c WHERE c.order.id = :orderId", Complaint.class)
                     .setParameter("orderId", orderId)
                     .list();
-
             for (Complaint c : complaints) {
                 session.delete(c);
             }
 
-            // Delete the order itself
+            // Delete the order itself (your existing behavior)
             session.delete(order);
 
             session.flush();
@@ -1443,7 +1443,7 @@ public class SimpleServer extends AbstractServer {
             // Send success response including updated budget
             Message response = new Message(
                     "order_cancelled_successfully",
-                    budget, // include updated budget
+                    budget, // may be null if no customer/budget
                     new ArrayList<>(List.of(orderId))
             );
             client.sendToClient(response);
@@ -1456,6 +1456,7 @@ public class SimpleServer extends AbstractServer {
             sendCancelError(client, "Error cancelling order: " + e.getMessage());
         }
     }
+
     private void handleStaffMarkOrderCompleted(Message m, ConnectionToClient client, org.hibernate.Session session) {
         try { client.sendToClient(new Message("order_completed_ack", null, null)); } catch (IOException ignored) {}
         handleMarkOrderCompleted(m, client, session);

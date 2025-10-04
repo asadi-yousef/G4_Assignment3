@@ -81,57 +81,61 @@ public class CancelOrderController implements Initializable {
     private void handleConfirmCancel() {
         if (selectedOrder == null) return;
 
+        // Block on non-cancelable statuses (mirror server-side rule)
+        String status = selectedOrder.getStatus() == null
+                ? ""
+                : selectedOrder.getStatus().trim().toUpperCase();
+        if ("DELIVERED".equals(status) || "COMPLETED".equals(status) || "CANCELLED".equals(status)) {
+            showAlert("Error", "This order cannot be canceled because its status is: " + status + ".");
+            return;
+        }
+
         User user = SessionManager.getInstance().getCurrentUser();
         if (!(user instanceof Customer customer)) {
             showAlert("Error", "Current user is not a customer.");
             return;
         }
 
-        Budget budget = customer.getBudget();
-        if (budget == null) {
-            showAlert("Error", "Customer budget not found.");
+        // Delivery/pickup time must exist to proceed
+        LocalDateTime deliveryTime = selectedOrder.getDelivery()
+                ? selectedOrder.getDeliveryDateTime()
+                : selectedOrder.getPickupDateTime();
+        if (deliveryTime == null) {
+            showAlert("Error", "Missing delivery/pickup time for this order.");
             return;
         }
 
-        try {
-            BigDecimal refund = selectedOrder.getTotalPrice();
-
-            LocalDateTime deliveryTime = selectedOrder.getDelivery()
-                    ? selectedOrder.getDeliveryDateTime()
-                    : selectedOrder.getPickupDateTime();
-            LocalDateTime currentTime = LocalDateTime.now();
-
-            Duration diff = Duration.between(currentTime, deliveryTime);
-
-            if (diff.isNegative()) {
-                showAlert("Error", "Cannot cancel order, order date and time has already passed!");
-                return;
-            }
-            long minutesUntilDelivery = diff.toMinutes();
-
-            if(minutesUntilDelivery >= 180){
-                showAlert("Success", "Full Refund, your refund is stored in your budget balance.");
-            } else if(minutesUntilDelivery >= 60) {
-                showAlert("Success", "50% Refund, your refund is stored in your budget balance.");
-                refund = refund.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+        // Optional: do a *preview* for the user (server remains the authority)
+        var now = LocalDateTime.now();
+        var diff = java.time.Duration.between(now, deliveryTime);
+        if (diff.isNegative()) {
+            showAlert("Error", "Cannot cancel order: the scheduled time has already passed.");
+            return;
+        } else {
+            long minutesUntil = diff.toMinutes();
+            if (minutesUntil >= 180) {
+                showAlert("Info", "Preview: Full refund (final amount set by server).");
+            } else if (minutesUntil >= 60) {
+                showAlert("Info", "Preview: 50% refund (final amount set by server).");
             } else {
-                showAlert("Success", "No Refund");
-                refund = BigDecimal.ZERO;
+                showAlert("Info", "Preview: No refund (final decision by server).");
             }
-            ArrayList<Object> payload = new ArrayList<>();
-            payload.add(selectedOrder.getId());
-            // if your server expects BigDecimal, send directly. If it expects double, use refund.doubleValue()
-            payload.add(refund);
+        }
 
-            Message message = new Message("cancel_order", null, payload);
+        try {
+            // Send ONLY the orderId; server computes refund and validates status
+            var payload = new ArrayList<Object>();
+            payload.add(selectedOrder.getId());
+
+            var message = new Message("cancel_order", null, payload);
             SimpleClient.getClient().sendToServer(message);
 
             confirmButton.setDisable(true);
             confirmButton.setText("Cancelling...");
-
         } catch (Exception e) {
             showAlert("Error", "Failed to send cancel request.");
             confirmButton.setDisable(false);
+            confirmButton.setText("Confirm");
         }
     }
 
