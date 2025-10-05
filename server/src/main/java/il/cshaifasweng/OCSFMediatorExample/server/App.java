@@ -89,9 +89,9 @@ public class App {
                 ).getSingleResult();
 
                 if (productCount == null || productCount == 0L) {
-                    Product product1 = new Product("Roses", "Flower", BigDecimal.valueOf(19.99), "Red",
+                    Product product1 = new Product("Roses", "Bouquet", BigDecimal.valueOf(19.99), "Red",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/roses.png");
-                    Product product2 = new Product("Tulips", "Flower", BigDecimal.valueOf(14.50), "Purple",
+                    Product product2 = new Product("Tulips", "Bouquet", BigDecimal.valueOf(14.50), "Purple",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/white tulip.png");
                     Product product3 = new Product("Pretty in Pink Lilies", "Bouquet", BigDecimal.valueOf(17.25), "Pink",
                             "/il/cshaifasweng/OCSFMediatorExample/client/images/lilies.png");
